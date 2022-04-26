@@ -90,14 +90,20 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         private DummyAirstreamShield shield;
 
+        public const string GroupName = "FARAeroGroup";
+        public const string GroupDisplayName = "FAR Debug";
         private bool fieldsVisible;
+        private bool thermalFieldsVisible;
+        public readonly List<BaseField> ThermalFields = new List<BaseField>();
 
         // ReSharper disable once NotAccessedField.Global -> unity
         [KSPField(isPersistant = false,
                   guiActive = false,
                   guiActiveEditor = false,
                   guiFormat = "F3",
-                  guiUnits = "FARUnitKN")]
+                  guiUnits = "FARUnitKN",
+                  groupName = GroupName,
+                  groupDisplayName = GroupDisplayName)]
         public float dragForce;
 
         // ReSharper disable once NotAccessedField.Global -> unity
@@ -105,8 +111,57 @@ namespace FerramAerospaceResearch.FARAeroComponents
                   guiActive = false,
                   guiActiveEditor = false,
                   guiFormat = "F3",
-                  guiUnits = "FARUnitKN")]
+                  guiUnits = "FARUnitKN",
+                  groupName = GroupName)]
         public float liftForce;
+
+        [KSPField(guiFormat = "F3", guiUnits = "FARUnitMSq", groupName = GroupName, groupDisplayName = GroupDisplayName)]
+        public double radiativeArea;
+        [KSPField(guiFormat = "F3", guiUnits = "FARUnitMSq", groupName = GroupName)]
+        public double convectionArea;
+        [KSPField(guiFormat = "F1", guiUnits = "K", groupName = GroupName)]
+        public double exposedSkinTemp;
+        [KSPField(guiFormat = "F1", guiUnits = "K", groupName = GroupName)]
+        public double unexposedSkinTemp;
+        [KSPField(guiFormat = "F1", guiUnits = "K", groupName = GroupName)]
+        public double partTemp;
+        [KSPField(guiFormat = "F1", guiUnits = "K", groupName = GroupName)]
+        public double atmosphereTemp;
+        [KSPField(guiFormat = "F1", guiUnits = "K", groupName = GroupName)]
+        public double externalTemp;
+        [KSPField(guiFormat = "F1", guiUnits = "K", groupName = GroupName)]
+        public double exposedBackgroundTemp;
+
+        [KSPField(guiFormat = "F3", groupName = GroupName)]
+        public double convergenceFactor;
+        [KSPField(guiFormat = "F3", groupName = GroupName)]
+        public double skinSkinConductionMult;
+        [KSPField(guiFormat = "F3", groupName = GroupName)]
+        public double skinSkinConductionFactor;
+        [KSPField(guiFormat = "F1", guiUnits = "kW", groupName = GroupName)]
+        public double convectionFlux;
+        [KSPField(guiFormat = "F3", groupName = GroupName)]
+        public double finalConvCoeff;
+        [KSPField(guiFormat = "F1", guiUnits = "kW", groupName = GroupName)]
+        public double intConductionFlux;
+        [KSPField(guiFormat = "F1", guiUnits = "kW", groupName = GroupName)]
+        public double skinConductionFlux;
+        [KSPField(guiFormat = "F1", guiUnits = "kW", groupName = GroupName)]
+        public double skinInternalConductionFlux;
+        [KSPField(guiFormat = "F1", guiUnits = "kW", groupName = GroupName)]
+        public double unexpSkinInternalConductionFlux;
+        [KSPField(guiFormat = "P1", groupName = GroupName)]
+        public double skinExposedAreaFrac;
+        [KSPField(guiFormat = "F1", guiUnits = "kW", groupName = GroupName)]
+        public double radiationFlux;
+        [KSPField(guiFormat = "F1", guiUnits = "kW", groupName = GroupName)]
+        public double unexpRadiationFlux;
+        [KSPField(guiFormat = "F1", guiUnits = "kW", groupName = GroupName)]
+        public double skinSkinConductionFlux;
+        [KSPField(guiFormat = "F3", guiUnits = "ms", groupName = GroupName)]
+        public double fixedUpdateStall;
+        [KSPField(guiFormat = "F3", guiUnits = "ms", groupName = GroupName)]
+        public double updateStall;
 
         private Transform partTransform;
 
@@ -202,12 +257,6 @@ namespace FerramAerospaceResearch.FARAeroComponents
             {
                 part.ShieldedFromAirstream = true;
                 part.AddShield(shield);
-                if (fieldsVisible)
-                {
-                    Fields["dragForce"].guiActive = false;
-                    Fields["liftForce"].guiActive = false;
-                    fieldsVisible = false;
-                }
 
                 if (!(liftArrow is null))
                 {
@@ -312,6 +361,74 @@ namespace FerramAerospaceResearch.FARAeroComponents
             stockAeroSurfaceModule = part.Modules.Contains<ModuleAeroSurface>()
                                          ? part.Modules.GetModule<ModuleAeroSurface>()
                                          : null;
+            AddThermalDebugFields();
+        }
+
+        private void AddThermalDebugFields()
+        {
+            ThermalFields.Clear();
+            ThermalFields.Add(Fields[nameof(convergenceFactor)]);
+            ThermalFields.Add(Fields[nameof(skinSkinConductionMult)]);
+            ThermalFields.Add(Fields[nameof(skinSkinConductionFactor)]);
+            ThermalFields.Add(Fields[nameof(convectionArea)]);
+            ThermalFields.Add(Fields[nameof(radiativeArea)]);
+            ThermalFields.Add(Fields[nameof(skinExposedAreaFrac)]);
+            ThermalFields.Add(Fields[nameof(exposedSkinTemp)]);
+            ThermalFields.Add(Fields[nameof(unexposedSkinTemp)]);
+            ThermalFields.Add(Fields[nameof(partTemp)]);
+            ThermalFields.Add(Fields[nameof(externalTemp)]);
+            ThermalFields.Add(Fields[nameof(atmosphereTemp)]);
+            ThermalFields.Add(Fields[nameof(exposedBackgroundTemp)]);
+            ThermalFields.Add(Fields[nameof(convectionFlux)]);
+            ThermalFields.Add(Fields[nameof(finalConvCoeff)]);
+            ThermalFields.Add(Fields[nameof(intConductionFlux)]);
+            ThermalFields.Add(Fields[nameof(skinConductionFlux)]);
+            ThermalFields.Add(Fields[nameof(skinInternalConductionFlux)]);
+            ThermalFields.Add(Fields[nameof(skinSkinConductionFlux)]);
+            ThermalFields.Add(Fields[nameof(unexpSkinInternalConductionFlux)]);
+            ThermalFields.Add(Fields[nameof(radiationFlux)]);
+            ThermalFields.Add(Fields[nameof(unexpRadiationFlux)]);
+            ThermalFields.Add(Fields[nameof(fixedUpdateStall)]);
+            ThermalFields.Add(Fields[nameof(updateStall)]);
+        }
+        private void SetThermalFieldsVisibility(bool enabled)
+        {
+            thermalFieldsVisible = enabled;
+            foreach (BaseField f in ThermalFields)
+                f.guiActive = enabled;
+        }
+        private void UpdateThermalDebugFields()
+        {
+            convergenceFactor = PhysicsGlobals.ThermalConvergenceFactor;
+            skinSkinConductionMult = part.skinSkinConductionMult;
+            skinSkinConductionFactor = PhysicsGlobals.SkinSkinConductionFactor;
+            convectionArea = part.ptd.convectionArea;
+            radiativeArea = 1f / part.ptd.radAreaRecip;
+            skinExposedAreaFrac = part.skinExposedAreaFrac;
+            exposedSkinTemp = part.skinTemperature;
+            unexposedSkinTemp = part.skinUnexposedTemperature;
+            partTemp = part.temperature;
+            externalTemp = FlightIntegrator.ActiveVesselFI.externalTemperature;
+            atmosphereTemp = FlightIntegrator.ActiveVesselFI.atmosphericTemperature;
+            exposedBackgroundTemp = part.ptd.brtExposed;
+            //bodyArea = FlightIntegrator.ActiveVesselFI.GetBodyArea(part.ptd);
+            //sunArea = FlightIntegrator.ActiveVesselFI.GetSunArea(part.ptd);
+            convectionFlux = part.ptd.convectionFlux;
+            finalConvCoeff = part.ptd.finalCoeff;
+            intConductionFlux = part.ptd.intConductionFlux;
+            skinConductionFlux = part.ptd.skinConductionFlux;
+            skinInternalConductionFlux = part.ptd.skinInteralConductionFlux;
+            skinSkinConductionFlux = part.ptd.skinSkinConductionFlux;
+            unexpSkinInternalConductionFlux = part.ptd.unexpSkinInternalConductionFlux;
+            //expFlux = part.ptd.expFlux;
+            //unexpFlux = part.ptd.unexpFlux;
+            radiationFlux = part.ptd.radiationFlux;
+            unexpRadiationFlux = part.ptd.unexpRadiationFlux;
+            if (vessel.GetComponent<VehicleOcclusion>() is VehicleOcclusion vo)
+            {
+                fixedUpdateStall = vo.metrics.data.TryGetValue(VehicleOcclusion.FixedUpdateMetric, out Utils.MetricsElement e) ? e.hysteresisTime : 0;
+                updateStall = vo.metrics.data.TryGetValue(VehicleOcclusion.UpdateMetric, out Utils.MetricsElement e2) ? e2.hysteresisTime : 0;
+            }
         }
 
         public double ProjectedAreaWorld(Vector3 normalizedDirectionVector)
@@ -701,13 +818,12 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     momentArrow = null;
                 }
             }
-
             if (PhysicsGlobals.AeroDataDisplay && !part.ShieldedFromAirstream)
             {
                 if (!fieldsVisible)
                 {
-                    Fields["dragForce"].guiActive = true;
-                    Fields["liftForce"].guiActive = true;
+                    Fields[nameof(dragForce)].guiActive = true;
+                    Fields[nameof(liftForce)].guiActive = true;
                     fieldsVisible = true;
                 }
 
@@ -716,10 +832,18 @@ namespace FerramAerospaceResearch.FARAeroComponents
             }
             else if (fieldsVisible)
             {
-                Fields["dragForce"].guiActive = false;
-                Fields["liftForce"].guiActive = false;
+                Fields[nameof(dragForce)].guiActive = false;
+                Fields[nameof(liftForce)].guiActive = false;
                 fieldsVisible = false;
             }
+        }
+
+        public override void OnUpdate()
+        {
+            if (PhysicsGlobals.ThermalDataDisplay != thermalFieldsVisible)
+                SetThermalFieldsVisibility(PhysicsGlobals.ThermalDataDisplay);
+            if (PhysicsGlobals.ThermalDataDisplay)
+                UpdateThermalDebugFields();
         }
 
         public override void OnLoad(ConfigNode node)

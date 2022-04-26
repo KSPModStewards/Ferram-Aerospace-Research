@@ -83,6 +83,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
         private Vector3d _voxelLowerRightCorner;
         private double _voxelElementSize;
         private double _sectionThickness;
+        public Vector3d VoxelCenter { get; private set; }
+        public Vector3d VoxelMeshExtents { get; private set; }
 
         private Vector3 _vehicleMainAxis;
         private List<Part> _vehiclePartList;
@@ -399,6 +401,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
                     _voxelLowerRightCorner = _voxel.LocalLowerRightCorner;
                     _voxelElementSize = _voxel.ElementSize;
+                    VoxelCenter = _voxel.Center;
+                    VoxelMeshExtents = _voxel.MeshExtents;
 
                     CalculateVesselAeroProperties();
                     CalculationCompleted = true;

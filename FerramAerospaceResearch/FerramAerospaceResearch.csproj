@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
@@ -21,7 +21,18 @@
     <DebugType>portable</DebugType>
     <Optimize>false</Optimize>
     <OutputPath>$(SolutionDir)bin\$(Configuration)\</OutputPath>
-    <DefineConstants>DEBUG;TRACE;ASSERT;LOG_TRACE</DefineConstants>
+    <DefineConstants>TRACE;DEBUG;ASSERT;LOG_TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Profile|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>portable</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>$(SolutionDir)bin\$(Configuration)\</OutputPath>
+    <DefineConstants>TRACE;DEBUG;ASSERT;LOG_TRACE;ENABLE_PROFILER</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -54,7 +65,18 @@
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\GameData\FerramAerospaceResearch\Plugins\Scale_Redist.dll</HintPath>
     </Reference>
-    <Reference Include="System" />
+    <Reference Include="System, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089, processorArchitecture=MSIL" />
+    <Reference Include="System.Runtime.CompilerServices.Unsafe, Version=4.0.4.1, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+      <HintPath>$(KSP_DIR_BUILD)GameData\000_KSPBurst\Plugins\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Collections, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>$(KSP_DIR_BUILD)GameData\000_KSPBurst\Plugins\Unity.Collections.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Mathematics, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>$(KSP_DIR_BUILD)GameData\000_KSPBurst\Plugins\Unity.Mathematics.dll</HintPath>
+    </Reference>
     <Reference Include="UnityEngine, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>$(KSP_DIR_BUILD)KSP_x64_Data\Managed\UnityEngine.dll</HintPath>
@@ -90,6 +112,7 @@
     <Compile Include="FARAeroComponents\FlightForceContext.cs" />
     <Compile Include="FARAeroComponents\ModularFlightIntegratorRegisterer.cs" />
     <Compile Include="FARAeroComponents\SimulatedForceContext.cs" />
+    <Compile Include="FARAeroComponents\VehicleOcclusion.cs" />
     <Compile Include="FARAeroComponents\VesselIntakeRamDrag.cs" />
     <Compile Include="FARAPI.cs" />
     <Compile Include="FARDebugAndSettings.cs" />
@@ -178,6 +201,7 @@
     <Compile Include="RealChuteLite\ChuteCalculator.cs" />
     <Compile Include="RealChuteLite\PhysicsWatch.cs" />
     <Compile Include="RealChuteLite\RealChuteFAR.cs" />
+    <Compile Include="Settings\OcclusionSettings.cs" />
     <Compile Include="Settings\Settings.cs" />
     <Compile Include="Settings\FARAeroData.cs" />
     <Compile Include="Settings\FARAeroStress.cs" />

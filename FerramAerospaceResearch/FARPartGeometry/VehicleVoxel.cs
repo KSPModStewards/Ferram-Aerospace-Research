@@ -91,6 +91,8 @@ namespace FerramAerospaceResearch.FARPartGeometry
         public double ElementSize { get; private set; }
 
         public Vector3d LocalLowerRightCorner { get; private set; }
+        public Vector3d Center { get; private set; }
+        public Vector3d MeshExtents { get; private set; }
 
         public VoxelCrossSection[] EmptyCrossSectionArray
         {
@@ -210,6 +212,7 @@ namespace FerramAerospaceResearch.FARPartGeometry
             }
 
             Vector3d size = max - min;
+            MeshExtents = size;
 
             Volume = size.x * size.y * size.z; //from bounds, get voxel volume
 
@@ -245,17 +248,17 @@ namespace FerramAerospaceResearch.FARPartGeometry
             zCellLength = zLength * 8;
 
             //this will be the distance from the center to the edges of the voxel object
-            var extents = new Vector3d
+            Vector3d extents = new Vector3d
             {
                 x = xLength * 4 * ElementSize,
                 y = yLength * 4 * ElementSize,
                 z = zLength * 4 * ElementSize
             };
 
-            Vector3d center = (max + min) * 0.5f; //Center of the vessel
+            Center = (max + min) * 0.5f; //Center of the vessel
 
             //This places the center of the voxel at the center of the vehicle to achieve maximum symmetry
-            LocalLowerRightCorner = center - extents;
+            LocalLowerRightCorner = Center - extents;
 
             voxelChunks = new VoxelChunk[xLength, yLength, zLength];
 

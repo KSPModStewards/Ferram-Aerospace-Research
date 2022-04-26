@@ -36,6 +36,22 @@
     </PropertyGroup>
     <ItemGroup>
         <Reference Include="System" />
+        <Reference Include="Unity.Burst, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+            <SpecificVersion>False</SpecificVersion>
+            <HintPath>$(KSP_DIR_BUILD)GameData\000_KSPBurst\Plugins\Unity.Burst.dll</HintPath>
+        </Reference>
+        <Reference Include="Unity.Burst.Unsafe, Version=4.0.5.0, Culture=neutral, processorArchitecture=MSIL">
+            <SpecificVersion>False</SpecificVersion>
+            <HintPath>$(KSP_DIR_BUILD)GameData\000_KSPBurst\Plugins\Unity.Burst.Unsafe.dll</HintPath>
+        </Reference>
+        <Reference Include="Unity.Collections, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+            <SpecificVersion>False</SpecificVersion>
+            <HintPath>$(KSP_DIR_BUILD)GameData\000_KSPBurst\Plugins\\Unity.Collections.dll</HintPath>
+        </Reference>
+        <Reference Include="Unity.Mathematics, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+            <SpecificVersion>False</SpecificVersion>
+            <HintPath>$(KSP_DIR_BUILD)GameData\000_KSPBurst\Plugins\Unity.Mathematics.dll</HintPath>
+        </Reference>
         <Reference Include="UnityEngine">
             <HintPath>$(KSP_DIR_BUILD)KSP_x64_Data\Managed\UnityEngine.dll</HintPath>
         </Reference>
@@ -119,10 +135,12 @@
         <Compile Include="Resources\ShaderPropertyIds.cs" />
         <Compile Include="Threading\MainThread.cs" />
         <Compile Include="Threading\ReaderWriteLockExtensions.cs" />
+        <Compile Include="UnityJobs\OcclusionJobs.cs" />
         <Compile Include="Utils\CsvWriter.cs" />
         <Compile Include="Utils\FARLogger.cs" />
         <Compile Include="Utils\FARLogHandler.cs" />
         <Compile Include="Utils\FARUtils.cs" />
+        <Compile Include="Utils\Metrics.cs" />
         <Compile Include="Utils\MonoSingleton.cs" />
         <Compile Include="Utils\Observable.cs" />
         <Compile Include="Utils\Pair.cs" />
