@@ -224,6 +224,35 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             return new VehicleProperties(CoM, mass, Ix, Iy, Iz, Ixy, Iyz, Ixz, areaWings.ToArray());
         }
 
+        /// <summary>The derivatives at an altitude and Mach, as before the per-condition split.</summary>
+        public StabilityDerivOutput CalculateStabilityDerivs(
+            CelestialBody body,
+            double alt,
+            double machNumber,
+            int flapSetting,
+            bool spoilers,
+            double alpha,
+            double beta,
+            double phi
+        )
+        {
+            GasProperties properties = FARAtmosphere.GetGasProperties(body,
+                                                                      new Vector3d(0, 0, alt),
+                                                                      Planetarium.GetUniversalTime());
+            VehicleProperties props = ComputeVehicleProperties(flapSetting, spoilers);
+            return CalculateStabilityDerivs(props,
+                                            body,
+                                            alt,
+                                            machNumber,
+                                            properties.Density,
+                                            properties.SpeedOfSound,
+                                            flapSetting,
+                                            spoilers,
+                                            alpha,
+                                            beta,
+                                            phi);
+        }
+
         /// <summary>
         /// Per-cell stability derivatives at one (Mach, altitude), given the vehicle mass properties from
         /// <see cref="ComputeVehicleProperties" />. The aero solve reads only thread-local sim state

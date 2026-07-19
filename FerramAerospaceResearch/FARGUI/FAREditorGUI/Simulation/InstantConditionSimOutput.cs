@@ -52,5 +52,17 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         public double Cy;
         public double Cn;
         public double C_roll;
+
+        // Cd/Cl split by source, for diagnosing editor-vs-flight drag: WingCd + BodyCd == Cd. Wing is
+        // the sum over the lifting-surface models; Body is the voxel aero sections (fuselage, nacelles).
+        public double WingCl;
+        public double WingCd;
+        public double BodyCl;
+        public double BodyCd;
+
+        // Wing Cd subdivided: WingCdInduced (lift-dependent) + WingCdProfile (zero-lift + skin
+        // friction) == WingCd in attached flow.
+        public double WingCdInduced;
+        public double WingCdProfile;
     }
 }

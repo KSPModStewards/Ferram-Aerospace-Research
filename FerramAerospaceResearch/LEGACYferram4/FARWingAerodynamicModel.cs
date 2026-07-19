@@ -486,6 +486,16 @@ namespace ferram4
             return _scratch.rawAoAmax;
         }
 
+        public double GetCdInduced()
+        {
+            return _scratch.CdInduced;
+        }
+
+        public double GetCdProfile()
+        {
+            return _scratch.CdProfile;
+        }
+
         // Editor velocity comes from the thread-local scratch so that a neighbour wing read
         // during the parallel sweep (FARWingInteraction) sees the value from the calling
         // thread's cell, not whichever thread last touched the shared instance field.
@@ -580,7 +590,24 @@ namespace ferram4
             return _scratch.zeroLiftCdIncrement;
         }
 
-        public Vector3d ComputeForceEditor(Vector3d velocityVector, double M, double density)
+        /// <summary>
+        /// Editor-side force evaluation.
+        /// </summary>
+        /// <param name="skinFrictionOverride">
+        /// Skin friction coefficient to use instead of the editor's default constant. Outside
+        /// flight, DoCalculateForces cannot derive skin friction itself: the editor sim passes a
+        /// unit velocity vector (so that q works out to exactly 1 and forces come out as
+        /// coefficients), which makes the Reynolds number meaningless. It therefore falls back to a
+        /// fixed 0.005, which is roughly double the true value at sea-level Reynolds numbers and
+        /// below it at low ones. Callers that know the real flight condition being simulated can
+        /// supply the correct value here; passing null preserves the historical behaviour.
+        /// </param>
+        public Vector3d ComputeForceEditor(
+            Vector3d velocityVector,
+            double M,
+            double density,
+            double? skinFrictionOverride = null
+        )
         {
             _scratch.velocityEditor = velocityVector;
             if (SimThreadContext.Slot == 0)
@@ -590,7 +617,7 @@ namespace ferram4
             }
 
             double AoA = CalculateAoA(velocityVector);
-            return CalculateForces(velocityVector, M, AoA, density);
+            return CalculateForces(velocityVector, M, AoA, density, true, skinFrictionOverride);
         }
 
         public void ComputeClCdEditor(Vector3d velocityVector, double M, double density)
@@ -1043,14 +1070,21 @@ namespace ferram4
             double MachNumber,
             double AoA,
             double density,
-            bool updateAeroArrows = true
+            bool updateAeroArrows = true,
+            double? skinFrictionOverride = null
         )
         {
             _scratch.CurWingCentroid = WingCentroid();
             if (SimThreadContext.Slot == 0)
                 CurWingCentroid = _scratch.CurWingCentroid;
 
-            return DoCalculateForces(velocity, MachNumber, AoA, density, 1, updateAeroArrows);
+            return DoCalculateForces(velocity,
+                                     MachNumber,
+                                     AoA,
+                                     density,
+                                     1,
+                                     updateAeroArrows,
+                                     skinFrictionOverride);
         }
 
         public Vector3d CalculateForces(
@@ -1059,14 +1093,21 @@ namespace ferram4
             double AoA,
             double density,
             double failureForceScaling,
-            bool updateAeroArrows = true
+            bool updateAeroArrows = true,
+            double? skinFrictionOverride = null
         )
         {
             _scratch.CurWingCentroid = WingCentroid();
             if (SimThreadContext.Slot == 0)
                 CurWingCentroid = _scratch.CurWingCentroid;
 
-            return DoCalculateForces(velocity, MachNumber, AoA, density, failureForceScaling, updateAeroArrows);
+            return DoCalculateForces(velocity,
+                                     MachNumber,
+                                     AoA,
+                                     density,
+                                     failureForceScaling,
+                                     updateAeroArrows,
+                                     skinFrictionOverride);
         }
 
         private Vector3d DoCalculateForces(
@@ -1075,7 +1116,8 @@ namespace ferram4
             double AoA,
             double density,
             double failureForceScaling,
-            bool updateAeroArrows = true
+            bool updateAeroArrows = true,
+            double? skinFrictionOverride = null
         )
         {
             double v_scalar = velocity.magnitude;
@@ -1102,16 +1144,22 @@ namespace ferram4
 
             //Throw AoA into lifting line theory and adjust for part exposure and compressibility effects
 
-            double skinFrictionDrag = HighLogic.LoadedSceneIsFlight
-                                          ? FARAeroUtil.SkinFrictionDrag(density,
-                                                                         _scratch.effective_MAC,
-                                                                         v_scalar,
-                                                                         MachNumber,
-                                                                         SimThreadContext.Prediction?.ExternalTemperature ??
-                                                                         vessel.externalTemperature,
-                                                                         SimThreadContext.Prediction?.VesselAdiabaticIndex ??
-                                                                         FARAtmosphere.GetAdiabaticIndex(vessel))
-                                          : 0.005;
+            // Outside flight the Reynolds number cannot be derived here: the editor sim passes a
+            // unit velocity vector so that q comes out to exactly 1 and forces read as
+            // coefficients, which makes v_scalar useless for this. The 0.005 fallback is roughly
+            // double the true coefficient at sea-level Reynolds numbers and below it at low ones,
+            // so callers that know the real condition being simulated can pass it in instead.
+            double skinFrictionDrag = skinFrictionOverride ??
+                                      (HighLogic.LoadedSceneIsFlight
+                                           ? FARAeroUtil.SkinFrictionDrag(density,
+                                                                          _scratch.effective_MAC,
+                                                                          v_scalar,
+                                                                          MachNumber,
+                                                                          SimThreadContext.Prediction?.ExternalTemperature ??
+                                                                          vessel.externalTemperature,
+                                                                          SimThreadContext.Prediction?.VesselAdiabaticIndex ??
+                                                                          FARAtmosphere.GetAdiabaticIndex(vessel))
+                                           : 0.005);
 
 
             skinFrictionDrag *= 1.1; //account for thickness
@@ -1183,7 +1231,7 @@ namespace ferram4
             // Sync scratch back to instance fields for KSPField/observable consumers and the UI.
             // NOTE: the solve path itself never reads these instance fields - downstream wings and
             // the sim read the per-slot scratch via the Get*() accessors (GetStall/GetRawAoAmax/
-            // GetCd0/GetAerodynamicCenter). Do not reintroduce a direct instance read on
+            // GetCd0/GetCdInduced/GetAerodynamicCenter). Do not reintroduce a direct instance read on
             // the solve path. Only slot 0 (flight and the serial editor tabs, on the main thread)
             // writes them: a worker or another slot writing here would race with the main thread and
             // change what the flight and the UI see.
@@ -1191,6 +1239,8 @@ namespace ferram4
                 return force;
             Cl = _scratch.Cl;
             Cd = _scratch.Cd;
+            CdInduced = _scratch.CdInduced;
+            CdProfile = _scratch.CdProfile;
             stall = _scratch.stall;
             e = _scratch.e;
             rawAoAmax = _scratch.rawAoAmax;
@@ -1379,6 +1429,7 @@ namespace ferram4
 
             double Cd0 = CdCompressibilityZeroLiftIncrement(MachNumber, _scratch.cosSweepAngle, TanSweep, beta_TanSweep, beta) +
                          2 * skinFrictionCoefficient;
+            _scratch.CdProfile = Cd0; // zero-lift + skin friction; the induced part is captured per branch
             double CdMax = CdMaxFlatPlate(MachNumber, beta);
             _scratch.e = FARAeroUtil.CalculateOswaldsEfficiencyNitaScholz(_scratch.effective_AR, _scratch.cosSweepAngle, Cd0, TaperRatio);
             _scratch.piARe = _scratch.effective_AR * _scratch.e * Math.PI;
@@ -1398,6 +1449,7 @@ namespace ferram4
                 if (Math.Abs(_scratch.Cl) > Math.Abs(ACweight))
                     ACshift *= Math.Abs(ACweight / _scratch.Cl).Clamp(0, 1);
                 _scratch.Cd = _scratch.Cl * _scratch.Cl / _scratch.piARe; //Drag due to 3D effects on wing and base constant
+                _scratch.CdInduced = _scratch.Cd;
                 _scratch.Cd += Cd0;
             }
             /*
@@ -1415,6 +1467,7 @@ namespace ferram4
 
                 _scratch.Cl = _scratch.FinalLiftSlope * CosAoA * Math.Sign(AoA);
                 _scratch.Cd = beta * _scratch.Cl * _scratch.Cl / _scratch.piARe;
+                _scratch.CdInduced = _scratch.Cd;
 
                 _scratch.Cd += Cd0;
             }
@@ -1464,6 +1517,7 @@ namespace ferram4
                 double effectiveBeta = beta * supScale + (1 - supScale);
 
                 _scratch.Cd = effectiveBeta * _scratch.Cl * _scratch.Cl / _scratch.piARe;
+                _scratch.CdInduced = _scratch.Cd;
 
                 _scratch.Cd += Cd0;
             }
