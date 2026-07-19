@@ -109,6 +109,30 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         private Vector3d _simCoM;
         private EditorFacility _simEditorFacility;
 
+        /// <summary>
+        /// Real viscous conditions for the point being simulated, or null to keep the historical
+        /// fixed constants.
+        ///
+        /// This sim evaluates forces with a unit velocity vector and density 2 so that q works out
+        /// to exactly 1 and forces read as coefficients. That destroys the Reynolds number, so both
+        /// the wing model and the aero sections fall back to a hardcoded skin friction of 0.005.
+        /// Measured against flight, that is roughly double the true value at sea-level Reynolds and
+        /// below it at low Reynolds — drag comes out ~2x high near the ground and low at altitude.
+        ///
+        /// Setting this makes a caller's sweep use the real numbers. It is deliberately opt-in and
+        /// defaults to null so Static Analysis and the stability derivative tabs keep their existing
+        /// behaviour. Callers must clear it when done: it is instance state, and leaving it set
+        /// would silently change results for whatever runs next.
+        /// </summary>
+        private readonly SimAeroCondition?[] _aeroConditionSlots =
+            new SimAeroCondition?[SimThreadContext.MaxSlots];
+
+        public SimAeroCondition? AeroCondition
+        {
+            get => _aeroConditionSlots[SimThreadContext.Slot];
+            set => _aeroConditionSlots[SimThreadContext.Slot] = value;
+        }
+
         public bool Ready
         {
             get { return _currentAeroSections != null && _currentAeroModules != null && _wingAerodynamicModel != null; }
@@ -235,12 +259,25 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             angVel += up * (sinPhi * alphaDot - cosAlpha * cosPhi * betaDot);
 
 
+            double? skinFriction = AeroCondition?.SkinFriction;
+            double? condReynoldsPerLength = AeroCondition?.ReynoldsPerLength;
+
             foreach (FARWingAerodynamicModel w in _wingAerodynamicModel)
             {
                 if (!(w && w.part))
                     continue;
 
-                w.ComputeForceEditor(velocity, input.machNumber, 2);
+                // Skin friction from THIS wing's own chord (MAC), the way flight computes it. A single
+                // vehicle-length value understates wing skin friction badly, since a wing chord is far
+                // shorter than the fuselage (higher Reynolds -> lower Cf), which under-predicts wing
+                // profile drag. Reynolds/length is length-independent, so scale it by the wing's MAC.
+                double wingMAC = w.GetMAC();
+                double? wingSkinFriction = condReynoldsPerLength > 0 && wingMAC > 0
+                                               ? FARAeroUtil.SkinFrictionDrag(condReynoldsPerLength.Value * wingMAC,
+                                                                              input.machNumber)
+                                               : skinFriction;
+
+                w.ComputeForceEditor(velocity, input.machNumber, 2, wingSkinFriction);
 
                 if (clear)
                     w.EditorClClear(reset_stall);
@@ -260,11 +297,19 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                 else if (w.GetShielded())
                     continue;
 
-                Vector3d force = w.ComputeForceEditor(vel.normalized, input.machNumber, 2) * 1000;
+                Vector3d force = w.ComputeForceEditor(vel.normalized, input.machNumber, 2, wingSkinFriction) * 1000;
 
                 output.Cl += -Vector3d.Dot(force, liftDown);
                 output.Cy += Vector3d.Dot(force, sideways);
                 output.Cd += -Vector3d.Dot(force, velocity);
+
+                output.WingCl += -Vector3d.Dot(force, liftDown);
+                output.WingCd += -Vector3d.Dot(force, velocity);
+
+                // Cd split accumulates area-weighted coefficients directly (the force above already
+                // resolves to Cd*S, so these are on the same scale and sum to the wing Cd contribution).
+                output.WingCdInduced += w.GetCdInduced() * w.S;
+                output.WingCdProfile += w.GetCdProfile() * w.S;
 
                 Vector3d moment = -Vector3d.Cross(relPos, force);
 
@@ -277,13 +322,19 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                 b_2 += w.Getb_2() * w.S;
             }
 
+            // Density stays 2 with a unit velocity vector: that is what makes q exactly 1, so these
+            // forces come out as coefficients. Only the viscous terms are substituted.
+            float reynoldsPerLength = AeroCondition.HasValue ? (float)AeroCondition.Value.ReynoldsPerLength : 10000;
+            float pseudoKnudsen = AeroCondition.HasValue ? (float)AeroCondition.Value.PseudoKnudsen : 0;
+            var sectionSkinFriction = (float)(skinFriction ?? 0.005);
+
             var center = new FARCenterQuery();
             foreach (FARAeroSection aeroSection in _currentAeroSections)
                 aeroSection.PredictionCalculateAeroForces(2,
                                                           (float)input.machNumber,
-                                                          10000,
-                                                          0,
-                                                          0.005f,
+                                                          reynoldsPerLength,
+                                                          pseudoKnudsen,
+                                                          sectionSkinFriction,
                                                           velocity.normalized,
                                                           center);
 
@@ -292,6 +343,9 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             output.Cl += -Vector3d.Dot(centerForce, liftDown);
             output.Cy += Vector3d.Dot(centerForce, sideways);
             output.Cd += -Vector3d.Dot(centerForce, velocity);
+
+            output.BodyCl += -Vector3d.Dot(centerForce, liftDown);
+            output.BodyCd += -Vector3d.Dot(centerForce, velocity);
 
             Vector3d centerMoment = -center.TorqueAt(CoM) * 1000;
 
@@ -316,6 +370,13 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             output.Cy *= recipArea;
             output.Cn *= recipArea / b_2;
             output.C_roll *= recipArea / b_2;
+
+            output.WingCl *= recipArea;
+            output.WingCd *= recipArea;
+            output.BodyCl *= recipArea;
+            output.BodyCd *= recipArea;
+            output.WingCdInduced *= recipArea;
+            output.WingCdProfile *= recipArea;
         }
 
         public void SetState(double machNumber, double Cl, Vector3d CoM, double pitch, int flapSetting, bool spoilers)

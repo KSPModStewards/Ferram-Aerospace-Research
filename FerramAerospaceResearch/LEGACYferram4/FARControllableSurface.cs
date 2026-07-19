@@ -473,6 +473,9 @@ namespace ferram4
             set => _ctrlScratch.AoAoffset = value;
         }
 
+        /// <summary>Live total control-surface deflection, degrees. For the heatmap prediction check.</summary>
+        public double ControlDeflection => AoAoffset;
+
         private double lastAoAoffset
         {
             get => _ctrlScratch.lastAoAoffset;

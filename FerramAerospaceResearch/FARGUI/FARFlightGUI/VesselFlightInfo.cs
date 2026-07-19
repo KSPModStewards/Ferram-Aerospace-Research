@@ -70,6 +70,18 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
         public double range;
         public double endurance;
 
+        /// <summary>
+        /// Range (km) projected from the measured burn rate over a rolling window, as opposed to
+        /// <see cref="range" />'s instantaneous estimate. Min across burning fuels. See CruiseRangeEstimator.
+        /// </summary>
+        public double avgRange;
+
+        /// <summary>Aggregate fuel burn rate measured over the rolling window, kg/s.</summary>
+        public double avgFuelBurn;
+
+        /// <summary>Remaining mass of the burning fuels, kg.</summary>
+        public double fuelRemaining;
+
         public double ballisticCoeff;
         public double termVelEst;
 

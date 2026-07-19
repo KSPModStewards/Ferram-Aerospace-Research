@@ -37,6 +37,12 @@ namespace ferram4
         public double Cl;
         public double Cd;
 
+        // Drag split for the editor prediction-check diagnostic: CdInduced (lift-dependent, Cl^2/piARe)
+        // + CdProfile (zero-lift + skin friction) is the pre-stall Cd. Captured before the stall/flat-
+        // plate adjustments, so it is only meaningful in attached flow (i.e. cruise).
+        public double CdInduced;
+        public double CdProfile;
+
         // Stall state (also KSPField-observable on instance)
         public double stall;
         public double minStall;

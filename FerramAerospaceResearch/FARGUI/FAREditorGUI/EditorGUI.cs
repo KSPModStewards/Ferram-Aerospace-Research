@@ -75,6 +75,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             Localizer.Format("FAREditorModeStatic"),
             Localizer.Format("FAREditorModeDataStab"),
             Localizer.Format("FAREditorModeDerivSim"),
+            Localizer.Format("FAREditorModeHeatmaps"),
+            Localizer.Format("FAREditorModeEngineDeck"),
             Localizer.Format("FAREditorModeTrans")
         };
 
@@ -102,6 +104,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         private StaticAnalysisGraphGUI _editorGraph;
         private StabilityDerivGUI _stabDeriv;
         private StabilityDerivSimulationGUI _stabDerivLinSim;
+        private HeatmapsGUI _heatmaps;
+        private EngineDeckGUI _engineDeck;
 
         private MethodInfo editorReportUpdate;
 
@@ -160,6 +164,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                                               FAREditorMode.STATIC,
                                                               FAREditorMode.STABILITY,
                                                               FAREditorMode.SIMULATION,
+                                                              FAREditorMode.HEATMAPS,
+                                                              FAREditorMode.ENGINE_DECK,
                                                               FAREditorMode.AREA_RULING
                                                           });
 
@@ -168,6 +174,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             _editorGraph = new StaticAnalysisGraphGUI(_simManager, flapSettingDropDown, celestialBodyDropdown);
             _stabDeriv = new StabilityDerivGUI(_simManager, flapSettingDropDown, celestialBodyDropdown);
             _stabDerivLinSim = new StabilityDerivSimulationGUI(_simManager);
+            _heatmaps = new HeatmapsGUI(_simManager, flapSettingDropDown, celestialBodyDropdown);
+            _engineDeck = new EngineDeckGUI(celestialBodyDropdown);
 
             Color crossSection = FARConfig.GUIColors.LdColor;
             crossSection.a = 0.8f;
@@ -236,6 +244,9 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             }
 
             _stabDerivLinSim = null;
+            _heatmaps?.Cleanup();
+            _heatmaps = null;
+            _engineDeck = null;
             _instantSim = null;
             _areaRulingOverlay.Cleanup();
             _areaRulingOverlay = null;
@@ -515,6 +526,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 cursorInGUI = guiRect.Contains(GUIUtils.GetMousePos());
             }
 
+            // Heatmap tooltips are drawn here, at the top level, so they are not clipped to the FAR
+            // window. A no-op unless a cell was hovered this frame.
+            HeatmapAxes.DrawQueuedTooltip();
+
             if (cursorInGUI)
             {
                 if (!CameraMouseLook.GetMouseLook())
@@ -560,6 +575,15 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 case FAREditorMode.SIMULATION:
                     _stabDerivLinSim.Display();
                     guiRect.height = useKSPSkin ? 570 : 450;
+                    break;
+                case FAREditorMode.HEATMAPS:
+                    _heatmaps.Display();
+                    // Tall: the combined map wraps the per-type maps onto a second row.
+                    guiRect.height = useKSPSkin ? 1050 : 900;
+                    break;
+                case FAREditorMode.ENGINE_DECK:
+                    _engineDeck.Display();
+                    guiRect.height = useKSPSkin ? 620 : 500;
                     break;
                 case FAREditorMode.AREA_RULING:
                     CrossSectionAnalysisGUI();
@@ -783,6 +807,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             STATIC,
             STABILITY,
             SIMULATION,
+            HEATMAPS,
+            ENGINE_DECK,
             AREA_RULING
         }
     }
