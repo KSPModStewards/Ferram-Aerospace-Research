@@ -537,13 +537,17 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         /// the same object, so leaving it set would silently change results meant to match FAR's own
         /// tab. Between the two, evaluate as many engine sets as needed with <see cref="EvaluateWithAero" />.
         /// </summary>
+        /// <param name="alphaSeed">Cruise AoA (deg) to start the trim's inner solve from — pass the
+        /// adjacent cell's result so it converges in fewer iterations. Row-local in the sweep (reset
+        /// per altitude row), which keeps it thread-local when the row loop is parallelised.</param>
         public AeroContext BeginCell(
             CelestialBody body,
             double alt,
             double mach,
             int flapSetting,
             bool spoilers,
-            VehicleProperties props
+            VehicleProperties props,
+            double alphaSeed = 0
         )
         {
             _instantCondition.AeroCondition = SimAeroCondition.ForFlightPoint(body,
@@ -587,7 +591,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                                      props.CoM,
                                      flapSetting,
                                      spoilers,
-                                     0,
+                                     alphaSeed,
                                      out double alphaCruise,
                                      out double cruisePitch,
                                      out InstantConditionSimOutput cruiseOutput);
