@@ -655,6 +655,12 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
                 double sos = SpeedOfSoundAt(body, alt);
 
+                // Warm-start the trim from the previous cell in this row — adjacent Mach cells trim to
+                // a similar AoA, so seeding the inner solve cuts its iterations. Deliberately reset per
+                // row (not carried across altitudes): the seed is then row-local, so it stays
+                // thread-local once this altitude loop is parallelised across rows.
+                double rowAlphaSeed = 0;
+
                 for (int i = 0; i < machAxis.Length; i++)
                 {
                     double mach = ColumnMach(machAxis[i], sos);
@@ -669,7 +675,9 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                         PerformanceEnvelopeCalculator.AeroContext ctx = default;
                         try
                         {
-                            ctx = calc.BeginCell(body, alt, mach, flapSetting, spoilers, props);
+                            ctx = calc.BeginCell(body, alt, mach, flapSetting, spoilers, props, rowAlphaSeed);
+                            if (ctx.Trimmed)
+                                rowAlphaSeed = ctx.Alpha;
                             for (int t = 0; t < mapCount; t++)
                             {
                                 bool isCombined = _sweepGroups[t] == null;

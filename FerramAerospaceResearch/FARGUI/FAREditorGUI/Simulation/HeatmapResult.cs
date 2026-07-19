@@ -269,11 +269,16 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
 
             c.Feasible = true;
             c.Cruise = PerformanceEnvelopeCalculator.CruiseState.Ok;
-            c.EnduranceHours = PerformanceEnvelopeCalculator.EnduranceHours(c.DragN,
-                                                                           c.FuelFlowKgPerS,
-                                                                           c.LiftToDrag,
-                                                                           massKg,
-                                                                           DryMassKg);
+            // At or below the swept dry mass the tank is empty, so range/endurance is 0, not the NaN
+            // that ln(mass/dry) = ln(1) produces. FillForMass clamps live mass to the dry sample, so
+            // once the aircraft burns down to it the whole map would otherwise read NaN.
+            c.EnduranceHours = massKg <= DryMassKg
+                                   ? 0
+                                   : PerformanceEnvelopeCalculator.EnduranceHours(c.DragN,
+                                                                                  c.FuelFlowKgPerS,
+                                                                                  c.LiftToDrag,
+                                                                                  massKg,
+                                                                                  DryMassKg);
             return c;
         }
 
