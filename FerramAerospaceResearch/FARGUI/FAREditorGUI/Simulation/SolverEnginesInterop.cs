@@ -82,6 +82,44 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         private static readonly object[] args3 = new object[3];
         private static readonly object[] args7 = new object[7];
 
+        // --- parallel engine sampling: drive per-thread solver clones directly ---
+        // The serial path above mutates the one live ModuleEnginesSolver per engine. The parallel
+        // sweep instead clones each engine's EngineSolver per worker slot (MemberwiseClone — every
+        // performance field is a value type or the value-type EngineThermodynamics struct, so a
+        // shallow copy is independent) and drives the clone's own SetEngineState/SetFreestreamAndInlet/
+        // CalculatePerformance, reading the read-only module scalars off a snapshot. Resolved
+        // separately from Available so an old SolverEngines still samples serially.
+        public static bool ParallelAvailable { get; private set; }
+
+        private static MethodInfo objectMemberwiseClone;
+        private static MethodInfo solverSetEngineState;
+        private static MethodInfo solverSetFreestreamAndInlet;
+        private static MethodInfo solverCalculatePerformance;
+        private static FieldInfo engineFlowMult;
+        private static FieldInfo engineIspMult;
+        private static FieldInfo engineMultFlow;
+        private static FieldInfo engineMultIsp;
+        private static FieldInfo engineLastPropFrac;
+
+        // Per-thread arg arrays for the drive path (the shared args* above are not thread-safe).
+        [ThreadStatic] private static object[] driveState2;
+        [ThreadStatic] private static object[] driveStream7;
+        [ThreadStatic] private static object[] drivePerf4;
+
+        /// <summary>
+        /// The read-only per-engine values UpdateSolver folds in, snapshotted once on the main thread
+        /// so the parallel drive path needs no reflection reads against the live module.
+        /// </summary>
+        public struct EngineDriveScalars
+        {
+            public double FlowMultiplier;          // flowMult * multFlow
+            public double IspMultiplier;           // ispMult * multIsp
+            public double LastPropellantFraction;
+            public double MaxEngineTemp;
+            public float ThrustPercentage;
+            public float NeedArea;
+        }
+
         public static void Initialize()
         {
             if (initialized)
@@ -157,7 +195,35 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                     solverGetIsp = engineSolverType.GetMethod("GetIsp", Type.EmptyTypes);
                     solverGetRunning = engineSolverType.GetMethod("GetRunning", Type.EmptyTypes);
                     solverGetEngineTemp = engineSolverType.GetMethod("GetEngineTemp", Type.EmptyTypes);
+
+                    // Drive path for per-thread solver clones.
+                    objectMemberwiseClone = typeof(object).GetMethod("MemberwiseClone",
+                                                                     BindingFlags.NonPublic | BindingFlags.Instance);
+                    solverSetEngineState = engineSolverType.GetMethod("SetEngineState",
+                                                                      new[] {typeof(bool), typeof(double)});
+                    solverSetFreestreamAndInlet =
+                        engineSolverType.GetMethod("SetFreestreamAndInlet",
+                                                   new[]
+                                                   {
+                                                       thermoType, thermoType, typeof(double), typeof(double),
+                                                       typeof(Vector3), typeof(bool), typeof(bool)
+                                                   });
+                    solverCalculatePerformance =
+                        engineSolverType.GetMethod("CalculatePerformance",
+                                                   new[]
+                                                   {
+                                                       typeof(double), typeof(double), typeof(double), typeof(double)
+                                                   });
                 }
+
+                // flowMult/ispMult are public on ModuleEnginesSolver; multFlow/multIsp are inherited
+                // public from stock ModuleEngines; lastPropellantFraction is protected on the solver.
+                engineFlowMult = moduleEnginesSolverType.GetField("flowMult");
+                engineIspMult = moduleEnginesSolverType.GetField("ispMult");
+                engineMultFlow = moduleEnginesSolverType.GetField("multFlow");
+                engineMultIsp = moduleEnginesSolverType.GetField("multIsp");
+                engineLastPropFrac = moduleEnginesSolverType.GetField("lastPropellantFraction",
+                                                                      BindingFlags.NonPublic | BindingFlags.Instance);
 
                 inletArea = ajeInletType.GetField("Area");
                 inletOverallTpr = ajeInletType.GetField("overallTPR");
@@ -199,8 +265,21 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                             inletOverallTpr != null &&
                             inletUpdateOverallTpr != null;
 
+                ParallelAvailable = Available &&
+                                    objectMemberwiseClone != null &&
+                                    solverSetEngineState != null &&
+                                    solverSetFreestreamAndInlet != null &&
+                                    solverCalculatePerformance != null &&
+                                    engineFlowMult != null &&
+                                    engineIspMult != null &&
+                                    engineMultFlow != null &&
+                                    engineMultIsp != null &&
+                                    engineLastPropFrac != null &&
+                                    engineMaxTemp != null;
+
                 if (Available)
-                    FARLogger.Info("SolverEngines interop ready; editor engine sampling enabled");
+                    FARLogger.Info("SolverEngines interop ready; editor engine sampling enabled" +
+                                   (ParallelAvailable ? " (parallel-capable)" : " (serial only)"));
                 else
                     FARLogger.Warning("SolverEngines interop incomplete; engine sampling unavailable");
             }
@@ -480,6 +559,128 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             args2[0] = velocity;
             args2[1] = mach;
             inletUpdateOverallTpr.Invoke(inlet, args2);
+        }
+
+        /// <summary>Snapshots the read-only scalars the drive path needs. Main thread; call once per engine.</summary>
+        public static EngineDriveScalars GetDriveScalars(PartModule engine)
+        {
+            // These stock/SolverEngines fields differ in float-vs-double between members and KSP
+            // versions (maxEngineTemp is a double, multFlow/multIsp are floats); Convert.ToDouble
+            // unboxes any of them without an InvalidCastException.
+            var s = new EngineDriveScalars();
+            double flowMult = Convert.ToDouble(engineFlowMult.GetValue(engine));
+            double ispMult = Convert.ToDouble(engineIspMult.GetValue(engine));
+            double multFlow = Convert.ToDouble(engineMultFlow.GetValue(engine));
+            double multIsp = Convert.ToDouble(engineMultIsp.GetValue(engine));
+            s.FlowMultiplier = flowMult * multFlow;
+            s.IspMultiplier = ispMult * multIsp;
+            s.LastPropellantFraction = Convert.ToDouble(engineLastPropFrac.GetValue(engine));
+            s.MaxEngineTemp = Convert.ToDouble(engineMaxTemp.GetValue(engine));
+            return s;
+        }
+
+        /// <summary>
+        /// An independent copy of the engine's EngineSolver for one worker slot. MemberwiseClone
+        /// copies every value field (including the value-type EngineThermodynamics gas states) by
+        /// value; only reference-typed FloatCurve fields (the centrifugal-flow maps on a jet) would
+        /// stay shared, and AnimationCurve.Evaluate mutates an internal cache, so each is deep-copied.
+        /// Main thread only — builds Unity AnimationCurves.
+        /// </summary>
+        public static object CloneSolver(PartModule engine)
+        {
+            object solver = engineSolverField.GetValue(engine);
+            if (solver == null)
+                return null;
+
+            object clone = objectMemberwiseClone.Invoke(solver, null);
+
+            for (Type t = clone.GetType(); t != null && t != typeof(object); t = t.BaseType)
+                foreach (FieldInfo f in t.GetFields(BindingFlags.Instance |
+                                                    BindingFlags.Public |
+                                                    BindingFlags.NonPublic |
+                                                    BindingFlags.DeclaredOnly))
+                {
+                    if (!typeof(FloatCurve).IsAssignableFrom(f.FieldType))
+                        continue;
+                    if (f.GetValue(clone) is FloatCurve src)
+                        f.SetValue(clone, CloneFloatCurve(src));
+                }
+
+            return clone;
+        }
+
+        private static FloatCurve CloneFloatCurve(FloatCurve src)
+        {
+            var dst = new FloatCurve();
+            AnimationCurve c = src.Curve;
+            if (c != null)
+                foreach (Keyframe k in c.keys)
+                    dst.Add(k.time, k.value, k.inTangent, k.outTangent);
+            return dst;
+        }
+
+        /// <summary>
+        /// Drives one cloned solver to a flight condition and reads its outputs. Thread-safe: touches
+        /// only the passed clone and per-thread arg arrays. Returns false (skip the engine) if the
+        /// solver threw — AJE throws out of Math.Sign on NaN rather than returning it, exactly as the
+        /// serial <see cref="UpdateSolver" /> guards against.
+        /// </summary>
+        public static bool DriveClonedSolver(
+            object cloneSolver,
+            EngineDriveScalars scalars,
+            object ambientTherm,
+            object inletTherm,
+            double areaRatio,
+            double altitude,
+            Vector3 velocity,
+            double mach,
+            double currentThrottle,
+            out double thrustN,
+            out double fuelFlow,
+            out double engineTemp,
+            out bool running
+        )
+        {
+            thrustN = 0;
+            fuelFlow = 0;
+            engineTemp = 0;
+            running = false;
+
+            object[] a2 = driveState2 ?? (driveState2 = new object[2]);
+            a2[0] = true; // ignited
+            a2[1] = scalars.LastPropellantFraction;
+
+            object[] a7 = driveStream7 ?? (driveStream7 = new object[7]);
+            a7[0] = ambientTherm;
+            a7[1] = inletTherm;
+            a7[2] = altitude;
+            a7[3] = mach;
+            a7[4] = velocity;
+            a7[5] = true;  // oxygen
+            a7[6] = false; // underwater
+
+            object[] a4 = drivePerf4 ?? (drivePerf4 = new object[4]);
+            a4[0] = areaRatio;
+            a4[1] = currentThrottle;
+            a4[2] = scalars.FlowMultiplier;
+            a4[3] = scalars.IspMultiplier;
+
+            try
+            {
+                solverSetEngineState.Invoke(cloneSolver, a2);
+                solverSetFreestreamAndInlet.Invoke(cloneSolver, a7);
+                solverCalculatePerformance.Invoke(cloneSolver, a4);
+            }
+            catch (TargetInvocationException)
+            {
+                return false;
+            }
+
+            thrustN = (double)solverGetThrust.Invoke(cloneSolver, null);
+            fuelFlow = (double)solverGetFuelFlow.Invoke(cloneSolver, null);
+            running = (bool)solverGetRunning.Invoke(cloneSolver, null);
+            engineTemp = solverGetEngineTemp != null ? (double)solverGetEngineTemp.Invoke(cloneSolver, null) : 0;
+            return true;
         }
     }
 }

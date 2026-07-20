@@ -108,6 +108,51 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         // which is also what SolverFlightSys reports in flight when the pilot flies on one type.
         private List<PartModule> _active;
 
+        // --- parallel sampling state ---
+        // Built on the main thread by BeginParallel and consumed read-only by worker threads. Each
+        // engine gets one solver clone per worker slot so threads never share solver state; the
+        // read-only module scalars and thrust direction are snapshotted alongside. IntakeSnap freezes
+        // the intake geometry the ram-drag magnitude reads, so that too runs off the main thread.
+        private bool _parallel;
+        private object[][] _clones; // [engineIndex][slot]
+        private SolverEnginesInterop.EngineDriveScalars[] _scalars;
+        private Vector3d[] _thrustDir;
+        private Dictionary<PartModule, int> _engineIndexOf;
+        private IntakeSnap[] _intakeSnap;
+
+        private struct IntakeSnap
+        {
+            public Vector3d Forward;
+            public double Area;
+        }
+
+        /// <summary>
+        /// The main-thread-only part of a cell's engine conditions — gas state and the inlet geometry
+        /// bookkeeping that reads Unity intake transforms. Group-independent; the small group-dependent
+        /// scaling (engine area → area ratio → inlet pressure) is applied per group in EvaluateEnv.
+        /// </summary>
+        public struct CellEnv
+        {
+            public bool Valid;
+            public double Mach;
+            public double Alt;
+            public double Speed;
+            public Vector3d Forward;
+            public double AmbientP;
+            public double AmbientT;
+            public double InletArea;
+            public double AreaWeightedTpr;  // sum over intakes of area * overallTPR
+            public double InletPreP;        // stagnation inlet pressure before the *overallTpr scaling
+            public double InletPreT;        // stagnation inlet temperature
+        }
+
+        /// <summary>The engines of one map, resolved to clone-array indices, with their summed intake demand.</summary>
+        public sealed class ParallelGroupContext
+        {
+            public int[] EngineIndices;
+            public double EngineArea;
+        }
+
         /// <summary>Engine kinds present on the craft, one entry per distinct module type.</summary>
         public IReadOnlyList<EngineGroup> Groups
         {
@@ -524,19 +569,37 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         /// </summary>
         public double IntakeRamDragMagnitudeN(double mach, double qPa, Vector3d velDir)
         {
-            if (_inlets.Count == 0 || qPa <= 0)
+            if (qPa <= 0)
                 return 0;
 
             Vector3d vel = velDir.normalized;
             double areaCos = 0;
-            foreach (ModuleResourceIntake intake in _inlets)
-            {
-                if (!IntakeActiveInEditor(intake))
-                    continue;
 
-                double cosAoA = Vector3d.Dot((Vector3d)intake.intakeTransform.forward, vel);
-                if (cosAoA > 0)
-                    areaCos += cosAoA * intake.area;
+            // Off the main thread the live intake transforms cannot be read; use the frozen snapshot.
+            if (_parallel)
+            {
+                if (_intakeSnap == null)
+                    return 0;
+                foreach (IntakeSnap snap in _intakeSnap)
+                {
+                    double cosAoA = Vector3d.Dot(snap.Forward, vel);
+                    if (cosAoA > 0)
+                        areaCos += cosAoA * snap.Area;
+                }
+            }
+            else
+            {
+                if (_inlets.Count == 0)
+                    return 0;
+                foreach (ModuleResourceIntake intake in _inlets)
+                {
+                    if (!IntakeActiveInEditor(intake))
+                        continue;
+
+                    double cosAoA = Vector3d.Dot((Vector3d)intake.intakeTransform.forward, vel);
+                    if (cosAoA > 0)
+                        areaCos += cosAoA * intake.area;
+                }
             }
 
             if (areaCos <= 0)
@@ -546,6 +609,256 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             // with q in Pa this is the same force in N.
             double ramPerArea = 2.0 / (1.0 + mach * mach) * AvgNozzleVelFactor + 0.1;
             return areaCos * ramPerArea * 100.0 * qPa;
+        }
+
+        /// <summary>
+        /// Mints the per-worker solver clones and snapshots the read-only engine/intake state the
+        /// parallel drive path reads, so <see cref="EvaluateEnv" /> can run on worker threads. Main
+        /// thread only. Returns false (caller falls back to the serial pass) if the interop cannot
+        /// drive clones. Pair with <see cref="EndParallel" />.
+        /// </summary>
+        public bool BeginParallel(int slotCount)
+        {
+            if (!Ready || !SolverEnginesInterop.ParallelAvailable || slotCount < 1)
+                return false;
+
+            // Any failure minting the clone pool (an unexpected engine type, a reflection surprise)
+            // falls back to the serial engine pass rather than aborting the whole sweep.
+            try
+            {
+                int n = _engines.Count;
+                _clones = new object[n][];
+                _scalars = new SolverEnginesInterop.EngineDriveScalars[n];
+                _thrustDir = new Vector3d[n];
+                _engineIndexOf = new Dictionary<PartModule, int>(n);
+
+                for (int ei = 0; ei < n; ei++)
+                {
+                    PartModule m = _engines[ei];
+                    _engineIndexOf[m] = ei;
+
+                    SolverEnginesInterop.EngineDriveScalars s = SolverEnginesInterop.GetDriveScalars(m);
+                    s.NeedArea = SolverEnginesInterop.GetNeedArea(m);
+                    s.ThrustPercentage = m is ModuleEngines e0 ? e0.thrustPercentage : 100f;
+                    _scalars[ei] = s;
+
+                    _thrustDir[ei] = m is ModuleEngines e1 ? ThrustDirection(m, e1) : VehicleForward();
+
+                    var arr = new object[slotCount];
+                    for (int slot = 0; slot < slotCount; slot++)
+                        arr[slot] = SolverEnginesInterop.CloneSolver(m);
+                    _clones[ei] = arr;
+                }
+
+                var snaps = new List<IntakeSnap>(_inlets.Count);
+                foreach (ModuleResourceIntake intake in _inlets)
+                {
+                    if (!IntakeActiveInEditor(intake))
+                        continue;
+                    snaps.Add(new IntakeSnap
+                    {
+                        Forward = (Vector3d)intake.intakeTransform.forward,
+                        Area = intake.area
+                    });
+                }
+
+                _intakeSnap = snaps.ToArray();
+                _parallel = true;
+                return true;
+            }
+            catch (Exception e)
+            {
+                FARLogger.Exception(e, "while building the parallel engine clone pool; falling back to serial engine pass");
+                EndParallel();
+                return false;
+            }
+        }
+
+        /// <summary>Releases the parallel clone pool. Main thread; call in the sweep's finally.</summary>
+        public void EndParallel()
+        {
+            _parallel = false;
+            _clones = null;
+            _scalars = null;
+            _thrustDir = null;
+            _engineIndexOf = null;
+            _intakeSnap = null;
+        }
+
+        /// <summary>
+        /// Resolves an engine group to the clone-array indices and summed intake demand a worker needs.
+        /// Main thread, after <see cref="BeginParallel" />. Pass null for the combined all-engines map.
+        /// </summary>
+        public ParallelGroupContext BuildGroupContext(EngineGroup group)
+        {
+            return BuildGroupContextFromList(group != null ? group.Engines : _engines);
+        }
+
+        /// <summary>The compressor-less engines as a group context, for the combined map's ram-only shed.</summary>
+        public ParallelGroupContext CompressorlessContext()
+        {
+            return BuildGroupContextFromList(_compressorless);
+        }
+
+        private ParallelGroupContext BuildGroupContextFromList(List<PartModule> list)
+        {
+            var idx = new int[list.Count];
+            double area = 0;
+            for (int nn = 0; nn < list.Count; nn++)
+            {
+                int ei = _engineIndexOf[list[nn]];
+                idx[nn] = ei;
+                area += _scalars[ei].NeedArea;
+            }
+
+            return new ParallelGroupContext {EngineIndices = idx, EngineArea = area};
+        }
+
+        /// <summary>
+        /// The main-thread half of <see cref="Evaluate" />: gas state plus the inlet bookkeeping that
+        /// reads Unity intake transforms (area ratio, area-weighted TPR, stagnation inlet conditions).
+        /// Group-independent, so it is computed once per (Mach, altitude) cell and shared across the
+        /// per-type and combined maps.
+        /// </summary>
+        public CellEnv BuildCellEnv(GasProperties gas, double alt, double mach)
+        {
+            var env = new CellEnv {Mach = mach, Alt = alt};
+            if (gas.Pressure <= 0)
+                return env;
+
+            double speed = mach * gas.SpeedOfSound;
+            Vector3d forward = VehicleForward();
+            var velocity = (Vector3)(forward * speed);
+
+            env.Forward = forward;
+            env.Speed = speed;
+            env.AmbientP = gas.Pressure;
+            env.AmbientT = gas.Temperature;
+
+            double inletArea = 0;
+            double areaWeightedTpr = 0;
+            foreach (ModuleResourceIntake intake in _inlets)
+            {
+                if (!IntakeActiveInEditor(intake))
+                    continue;
+
+                SolverEnginesInterop.UpdateInletOverallTPR(intake, velocity, mach);
+                double area = SolverEnginesInterop.GetInletArea(intake);
+                inletArea += area;
+                areaWeightedTpr += area * SolverEnginesInterop.GetInletOverallTPR(intake);
+            }
+
+            env.InletArea = inletArea;
+            env.AreaWeightedTpr = areaWeightedTpr;
+
+            // Stagnation (total) inlet conditions before the *overallTpr pressure scaling, which is
+            // group-dependent and so applied in EvaluateEnv. Below ~still air the ambient stands in.
+            if (speed < 0.01)
+            {
+                env.InletPreP = gas.Pressure;
+                env.InletPreT = gas.Temperature;
+            }
+            else
+            {
+                object ambient = SolverEnginesInterop.MakeThermo(gas.Pressure, gas.Temperature);
+                object inlet = SolverEnginesInterop.ChangeReferenceFrame(ambient, speed);
+                env.InletPreP = SolverEnginesInterop.GetPressure(inlet);
+                env.InletPreT = SolverEnginesInterop.GetTemperature(inlet);
+            }
+
+            env.Valid = true;
+            return env;
+        }
+
+        /// <summary>
+        /// The worker-thread counterpart of <see cref="Evaluate" />: drives the slot's solver clones
+        /// for one engine group at a throttle, using the pre-built <see cref="CellEnv" />. Mirrors the
+        /// area-ratio / TPR / inlet-pressure arithmetic and the aggregation of the serial path, but
+        /// touches only the passed slot's clones and per-thread arg arrays.
+        /// </summary>
+        public Sample EvaluateEnv(in CellEnv env, ParallelGroupContext group, int slot, double throttle)
+        {
+            var sample = new Sample();
+            if (!env.Valid || group == null || _clones == null)
+                return sample;
+
+            double engineArea = group.EngineArea;
+            double inletArea = env.InletArea;
+            double areaRatio;
+            double overallTpr;
+
+            if (engineArea <= 0)
+            {
+                areaRatio = 1;
+                overallTpr = 1;
+            }
+            else if (inletArea <= 0)
+            {
+                return sample;
+            }
+            else
+            {
+                areaRatio = Math.Min(1, inletArea / engineArea);
+                overallTpr = env.AreaWeightedTpr / inletArea * areaRatio;
+            }
+
+            double inletP = env.InletPreP * overallTpr;
+            object ambientTherm = SolverEnginesInterop.MakeThermo(env.AmbientP, env.AmbientT);
+            object inletTherm = SolverEnginesInterop.MakeThermo(inletP, env.InletPreT);
+
+            var vel = (Vector3)(env.Forward * env.Speed);
+            var throttleF = (float)Math.Max(0, Math.Min(1, throttle));
+            Vector3d thrustSum = Vector3d.zero;
+
+            foreach (int ei in group.EngineIndices)
+            {
+                object clone = _clones[ei][slot];
+                if (clone == null)
+                    continue;
+
+                SolverEnginesInterop.EngineDriveScalars s = _scalars[ei];
+                double currentThrottle = throttleF * (0.01f * s.ThrustPercentage);
+
+                if (!SolverEnginesInterop.DriveClonedSolver(clone,
+                                                            s,
+                                                            ambientTherm,
+                                                            inletTherm,
+                                                            areaRatio,
+                                                            env.Alt,
+                                                            vel,
+                                                            env.Mach,
+                                                            currentThrottle,
+                                                            out double thrustN,
+                                                            out double fuelFlow,
+                                                            out double engineTemp,
+                                                            out bool running))
+                    continue;
+
+                if (!FARMathUtil.IsFinite(thrustN) || !FARMathUtil.IsFinite(fuelFlow))
+                    continue;
+
+                thrustSum += _thrustDir[ei] * thrustN;
+                sample.FuelFlow += fuelFlow;
+
+                double thermalRatio = s.MaxEngineTemp > 0 ? engineTemp / s.MaxEngineTemp : 0;
+                if (thermalRatio > sample.MaxThermalRatio)
+                    sample.MaxThermalRatio = thermalRatio;
+
+                if (running)
+                    sample.RunningCount++;
+            }
+
+            sample.Thrust = thrustSum;
+            sample.ThrustMagnitude = thrustSum.magnitude;
+            sample.InletArea = inletArea;
+            sample.EngineArea = engineArea;
+            sample.AreaRatio = areaRatio;
+            sample.OverallTpr = overallTpr;
+            sample.AmbientP = env.AmbientP;
+            sample.AmbientT = env.AmbientT;
+            sample.InletP = inletP;
+            sample.InletT = env.InletPreT;
+            return sample;
         }
 
         /// <summary>
