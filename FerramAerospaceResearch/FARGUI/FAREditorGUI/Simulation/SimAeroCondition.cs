@@ -73,8 +73,19 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
 
             double skinFriction = FARAeroUtil.SkinFrictionDrag(reynolds, mach);
 
+            // A flight point with no meaningful atmosphere — near-zero density at or above the top of the
+            // atmosphere, which the Static Analysis tab lets the user dial in — drives Reynolds to zero
+            // and the skin-friction correlation to NaN/Inf. Fall back to the historical constant there so
+            // the viscous path degrades to the original behaviour instead of poisoning the solve with a
+            // NaN (which the graph and stability code cannot handle). (!(x > 0) also catches NaN.)
+            if (!(gas.Density > 0) || !(reynolds > 0) || double.IsNaN(skinFriction) || double.IsInfinity(skinFriction))
+            {
+                reynolds = 0;
+                skinFriction = 0.005;
+            }
+
             // Matches FARVesselAero's formulation exactly rather than inventing one.
-            double pseudoKnudsen = mach / (reynolds + mach);
+            double pseudoKnudsen = reynolds > 0 ? mach / (reynolds + mach) : 0;
 
             double reynoldsPerLength = lengthScale > 0 ? reynolds / lengthScale : 0;
 

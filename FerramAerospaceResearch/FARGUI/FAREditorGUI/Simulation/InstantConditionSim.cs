@@ -476,6 +476,13 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             _simActive = false;
             FARAeroUtil.SimAdiabaticIndexOverride = null;
 
+            // Clear every slot's viscous AeroCondition. The sweep's main-thread warm-up cell sets it
+            // with no paired EndCell, so without this the accuracy skin-friction/Reynolds terms would
+            // linger on the main thread's slot and leak into FAR's own static/stability tabs, which
+            // must run on the null-condition (original) path. Workers have already joined here.
+            for (int i = 0; i < _aeroConditionSlots.Length; i++)
+                _aeroConditionSlots[i] = null;
+
             if (_wingAerodynamicModel != null)
                 foreach (FARWingAerodynamicModel w in _wingAerodynamicModel)
                     if (w && w.part)

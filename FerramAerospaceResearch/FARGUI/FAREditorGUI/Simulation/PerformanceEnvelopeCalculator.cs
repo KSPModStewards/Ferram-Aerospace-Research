@@ -53,6 +53,20 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         }
 
         /// <summary>
+        /// Freezes the main-thread-only geometry the aero solve reads so the cruise trim can run on
+        /// worker threads. Main thread only; pair with <see cref="EndParallelSweep" />.
+        /// </summary>
+        public void BeginParallelSweep()
+        {
+            _instantCondition.BeginParallelSweep();
+        }
+
+        public void EndParallelSweep()
+        {
+            _instantCondition.EndParallelSweep();
+        }
+
+        /// <summary>
         /// Vehicle-level quantities that do not vary with flight condition, so they are computed
         /// once per sweep rather than per cell.
         /// </summary>
@@ -537,9 +551,29 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         /// the same object, so leaving it set would silently change results meant to match FAR's own
         /// tab. Between the two, evaluate as many engine sets as needed with <see cref="EvaluateWithAero" />.
         /// </summary>
-        /// <param name="alphaSeed">Cruise AoA (deg) to start the trim's inner solve from — pass the
-        /// adjacent cell's result so it converges in fewer iterations. Row-local in the sweep (reset
-        /// per altitude row), which keeps it thread-local when the row loop is parallelised.</param>
+        /// <summary>
+        /// The atmosphere reads a cell's trim needs — the viscous condition and the gas properties.
+        /// Both call into KSP's CelestialBody/Planetarium, which are main-thread-only, so the parallel
+        /// sweep computes them here on the main thread and hands them to <see cref="BeginCellPrecomputed" />.
+        /// </summary>
+        public void GetCellAtmosphere(
+            CelestialBody body,
+            double alt,
+            double mach,
+            out GasProperties gas,
+            out SimAeroCondition aeroCond
+        )
+        {
+            gas = EditorAtmosphere.GetGasProperties(body, alt);
+            aeroCond = SimAeroCondition.ForFlightPoint(body, alt, mach, _instantCondition._bodyLength);
+        }
+
+        /// <summary>Sets the sim's (thread-local) viscous condition for the calling thread's cell.</summary>
+        public void SetAeroCondition(SimAeroCondition? aeroCond)
+        {
+            _instantCondition.AeroCondition = aeroCond;
+        }
+
         public AeroContext BeginCell(
             CelestialBody body,
             double alt,
@@ -550,19 +584,33 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             double alphaSeed = 0
         )
         {
-            _instantCondition.AeroCondition = SimAeroCondition.ForFlightPoint(body,
-                                                                              alt,
-                                                                              mach,
-                                                                              _instantCondition._bodyLength);
+            GetCellAtmosphere(body, alt, mach, out GasProperties gas, out SimAeroCondition aeroCond);
+            return BeginCellPrecomputed(body, alt, mach, flapSetting, spoilers, props, alphaSeed, gas, aeroCond);
+        }
+
+        /// <summary>
+        /// The thread-safe core of <see cref="BeginCell" />: given the pre-sampled atmosphere (see
+        /// <see cref="GetCellAtmosphere" />), solves the cruise trim. Reads only plain data and the
+        /// frozen geometry snapshot, so it runs on the parallel sweep's worker threads.
+        /// </summary>
+        public AeroContext BeginCellPrecomputed(
+            CelestialBody body,
+            double alt,
+            double mach,
+            int flapSetting,
+            bool spoilers,
+            VehicleProperties props,
+            double alphaSeed,
+            GasProperties gas,
+            SimAeroCondition aeroCond
+        )
+        {
+            _instantCondition.AeroCondition = aeroCond;
 
             var ctx = new AeroContext {Mach = mach, FlapSetting = flapSetting, Spoilers = spoilers};
             if (!props.Valid)
                 return ctx;
 
-            // Includes the flight scene's solar temperature term — it drives density (hence q and
-            // the trim target) and the speed of sound (hence the true airspeed at this Mach), so
-            // the bare altitude curve would skew all of them.
-            GasProperties gas = EditorAtmosphere.GetGasProperties(body, alt);
             if (gas.Pressure <= 0)
                 return ctx;
 
@@ -595,6 +643,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                                      out double alphaCruise,
                                      out double cruisePitch,
                                      out InstantConditionSimOutput cruiseOutput);
+
             ctx.Alpha = alphaCruise;
             ctx.CruisePitch = cruisePitch;
             ctx.CruiseOutput = cruiseOutput;
@@ -628,6 +677,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         /// aerodynamics <see cref="BeginCell" /> already solved. Only the engine-dependent work is done
         /// here — full-throttle thrust, the thrust-lift feasibility trim, and the cruise-throttle solve.
         /// </summary>
+        /// <summary>
+        /// Serial wrapper: samples the deck's live engines directly. Used by the single-threaded sweep
+        /// and the Engine Deck tab.
+        /// </summary>
         public CellResult EvaluateWithAero(
             AeroContext ctx,
             CelestialBody body,
@@ -635,6 +688,46 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             double mach,
             EditorEngineDeck deck,
             VehicleProperties props
+        )
+        {
+            return EvaluateWithAeroCore(ctx,
+                                        mach,
+                                        props,
+                                        deck.Ready,
+                                        t => deck.Evaluate(body, alt, mach, t),
+                                        deck.IntakeRamDragMagnitudeN(mach, ctx.Q, ctx.CruiseVelDir));
+        }
+
+        /// <summary>
+        /// Parallel wrapper: samples per-worker solver clones through <see cref="EditorEngineDeck.EvaluateEnv" />
+        /// against the pre-built cell environment, so the whole engine pass runs on worker threads.
+        /// </summary>
+        public CellResult EvaluateWithAeroParallel(
+            AeroContext ctx,
+            EditorEngineDeck deck,
+            in EditorEngineDeck.CellEnv env,
+            EditorEngineDeck.ParallelGroupContext group,
+            int slot,
+            VehicleProperties props
+        )
+        {
+            // env is passed by 'in' and cannot be captured by the lambda; copy the pieces it needs.
+            EditorEngineDeck.CellEnv cellEnv = env;
+            return EvaluateWithAeroCore(ctx,
+                                        ctx.Mach,
+                                        props,
+                                        deck.Ready,
+                                        t => deck.EvaluateEnv(cellEnv, group, slot, t),
+                                        deck.IntakeRamDragMagnitudeN(ctx.Mach, ctx.Q, ctx.CruiseVelDir));
+        }
+
+        private CellResult EvaluateWithAeroCore(
+            AeroContext ctx,
+            double mach,
+            VehicleProperties props,
+            bool deckReady,
+            Func<double, EditorEngineDeck.Sample> sampleEngines,
+            double ramDragMagN
         )
         {
             var cell = new CellResult
@@ -645,14 +738,14 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                 SpeedMPerS = ctx.SpeedMPerS
             };
 
-            if (!ctx.Valid || !props.Valid || !deck.Ready)
+            if (!ctx.Valid || !props.Valid || !deckReady)
                 return cell;
 
             double q = ctx.Q;
             double weightN = ctx.WeightN;
 
             // Thrust does not depend on AoA, so one full-throttle sample serves the whole cell.
-            EditorEngineDeck.Sample maxSample = deck.Evaluate(body, alt, mach, 1.0);
+            EditorEngineDeck.Sample maxSample = sampleEngines(1.0);
 
             cell.InletArea = maxSample.InletArea;
             cell.EngineArea = maxSample.EngineArea;
@@ -749,11 +842,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             // The thermal ratio is captured AT the cruise throttle: a ramjet runs cooler at part
             // throttle, so a cell it flies through at 30% must not be walled by its full-throttle
             // temperature. A jet's temp is throttle-independent, so this still walls it correctly.
-            double ramDragMagN = deck.IntakeRamDragMagnitudeN(mach, q, ctx.CruiseVelDir);
-            cell.Cruise = TrySolveCruiseThrottle(body,
-                                                 alt,
-                                                 mach,
-                                                 deck,
+            cell.Cruise = TrySolveCruiseThrottle(sampleEngines,
                                                  ctx.CruiseVelDir,
                                                  ctx.DragN,
                                                  ramDragMagN,
@@ -825,10 +914,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         /// Finds the throttle where thrust along the wind equals <paramref name="dragN" />.
         /// </summary>
         private static CruiseState TrySolveCruiseThrottle(
-            CelestialBody body,
-            double alt,
-            double mach,
-            EditorEngineDeck deck,
+            Func<double, EditorEngineDeck.Sample> sampleEngines,
             Vector3d velDir,
             double dragN,
             double ramDragMagN,
@@ -855,7 +941,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
 
             double Excess(double t)
             {
-                EditorEngineDeck.Sample s = deck.Evaluate(body, alt, mach, t);
+                EditorEngineDeck.Sample s = sampleEngines(t);
                 lastFlow = s.FuelFlow;
                 lastThermal = s.MaxThermalRatio;
                 return Vector3d.Dot(s.Thrust, velDir) - (dragN + RamDrag(t));

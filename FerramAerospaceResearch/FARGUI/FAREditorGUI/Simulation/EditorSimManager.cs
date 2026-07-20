@@ -45,6 +45,7 @@ Copyright 2022, Michael Ferrara, aka Ferram4
 using System.Collections.Generic;
 using ferram4;
 using FerramAerospaceResearch.FARAeroComponents;
+using KSP.IO;
 
 namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
 {
@@ -55,6 +56,53 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         private readonly EditorAeroCenter _aeroCenter;
 
         public StabilityDerivOutput vehicleData;
+
+        // Shared opt-in: when on, the Static Analysis and Stability Derivatives tabs solve with the real
+        // viscous conditions (skin friction / Reynolds sampled from the actual flight point) instead of
+        // FAR's original hardcoded defaults — the same accuracy the heatmap sweep uses. Off by default so
+        // those tabs match historical FAR behaviour. Persisted in the plugin config, loaded lazily.
+        private static bool _viscousLoaded;
+        private static bool _useAccurateViscous;
+
+        public static bool UseAccurateViscousCalc
+        {
+            get
+            {
+                if (!_viscousLoaded)
+                {
+                    PluginConfiguration cfg = FARDebugAndSettings.config;
+                    _useAccurateViscous = cfg != null && cfg.GetValue("editor_useViscousCalc", 0) != 0;
+                    _viscousLoaded = true;
+                }
+
+                return _useAccurateViscous;
+            }
+            set
+            {
+                _useAccurateViscous = value;
+                _viscousLoaded = true;
+                PluginConfiguration cfg = FARDebugAndSettings.config;
+                if (cfg == null)
+                    return;
+                cfg.SetValue("editor_useViscousCalc", value ? 1 : 0);
+                cfg.save();
+            }
+        }
+
+        /// <summary>Builds the viscous condition for a flight point, using the vehicle's reference length.</summary>
+        public SimAeroCondition MakeAeroCondition(CelestialBody body, double altitude, double mach)
+        {
+            return SimAeroCondition.ForFlightPoint(body, altitude, mach, _instantCondition._bodyLength);
+        }
+
+        /// <summary>
+        /// Sets (or clears, with null) the viscous condition the shared sim reads. Callers MUST clear it
+        /// in a finally — it is instance state on the one sim every tab solves against.
+        /// </summary>
+        public void SetAeroCondition(SimAeroCondition? cond)
+        {
+            _instantCondition.AeroCondition = cond;
+        }
 
         public EditorSimManager(InstantConditionSim _instantSim)
         {
