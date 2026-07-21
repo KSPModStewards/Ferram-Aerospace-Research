@@ -61,6 +61,10 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
         private readonly FARCenterQuery aeroForces = new FARCenterQuery();
         private readonly int intakeAirId;
         private readonly double intakeAirDensity = 1;
+
+        // Resource ids the ignited engines are actually consuming this tick; used to size the
+        // range/endurance mass ratio off burnable fuel rather than every resource aboard.
+        private readonly HashSet<int> _burningFuelIds = new HashSet<int>();
         // private NavBall _navball;
 
         private List<FARAeroPartModule> _currentAeroModules;
@@ -261,11 +265,13 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
             double totalThrust_Isp = 0;
 
             double fuelConsumptionVol = 0;
+            double fuelBurnMassRateT = 0; // t/s, this tick's actual burn across the ignited engines
             double airDemandVol = 0;
             double airAvailableVol = 0;
 
             double invDeltaTime = 1 / TimeWarp.fixedDeltaTime;
 
+            _burningFuelIds.Clear();
 
             List<Part> partsList = _vessel.Parts;
             foreach (Part p in partsList)
@@ -284,6 +290,7 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                                                     ref totalThrust,
                                                     ref totalThrust_Isp,
                                                     ref fuelConsumptionVol,
+                                                    ref fuelBurnMassRateT,
                                                     ref airDemandVol,
                                                     invDeltaTime);
                 }
@@ -326,10 +333,45 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                 VL_D_TSFC = vesselInfo.velocityLiftToDragRatio / vesselInfo.tSFC * 3600;
             }
 
-            vesselInfo.range = vesselInfo.fullMass / vesselInfo.dryMass;
-            vesselInfo.range = Math.Log(vesselInfo.range);
-            vesselInfo.endurance = L_D_TSFC * vesselInfo.range;
-            vesselInfo.range *= VL_D_TSFC * 0.001;
+            double burningFuelMass = BurningFuelMass(); // t, across the connected tanks
+
+            vesselInfo.avgFuelBurn = fuelBurnMassRateT * 1000.0; // kg/s
+            vesselInfo.fuelRemaining = burningFuelMass * 1000.0; // kg
+
+            // Burn down only the fuel the engines actually consume, not every resource aboard: an
+            // oxidiser load a jet can't touch (or fuel in a tank it can't draw from) isn't range.
+            // m1 is the mass once that fuel is gone.
+            double emptyMass = vesselInfo.fullMass - burningFuelMass;
+            if (emptyMass > 0 && emptyMass < vesselInfo.fullMass)
+            {
+                vesselInfo.range = Math.Log(vesselInfo.fullMass / emptyMass);
+                vesselInfo.endurance = L_D_TSFC * vesselInfo.range;
+                vesselInfo.range *= VL_D_TSFC * 0.001;
+            }
+            else
+            {
+                vesselInfo.range = 0;
+                vesselInfo.endurance = 0;
+            }
+        }
+
+        // Mass (t) of the resources the ignited engines are burning, summed over the vessel's
+        // connected totals. Skips intake air and any massless resource.
+        private double BurningFuelMass()
+        {
+            double mass = 0;
+            foreach (int id in _burningFuelIds)
+            {
+                if (id == intakeAirId)
+                    continue;
+                PartResourceDefinition def = PartResourceLibrary.Instance.GetDefinition(id);
+                if (def == null || def.density <= 0)
+                    continue;
+                _vessel.GetConnectedResourceTotals(id, out double amount, out double _);
+                mass += amount * def.density;
+            }
+
+            return mass;
         }
 
         private void FuelConsumptionFromEngineModule(
@@ -337,6 +379,7 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
             ref double totalThrust,
             ref double totalThrust_Isp,
             ref double fuelConsumptionVol,
+            ref double fuelBurnMassRateT,
             ref double airDemandVol,
             double invDeltaTime
         )
@@ -351,7 +394,14 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                     airDemandVol += v.currentRequirement;
 
                 if (!v.ignoreForIsp)
-                    fuelConsumptionVol += v.currentRequirement * invDeltaTime;
+                {
+                    double rate = v.currentRequirement * invDeltaTime; // units/s
+                    fuelConsumptionVol += rate;
+                    _burningFuelIds.Add(v.id);
+                    PartResourceDefinition def = PartResourceLibrary.Instance.GetDefinition(v.id);
+                    if (def != null)
+                        fuelBurnMassRateT += rate * def.density;
+                }
             }
         }
 
