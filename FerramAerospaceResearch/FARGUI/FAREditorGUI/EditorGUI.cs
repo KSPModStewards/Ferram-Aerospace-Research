@@ -280,7 +280,46 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                     UpdateGeometryModule(part);
             }
 
+            // Only re-voxelize when the voxelized ship actually changed. onEditorShipModified also
+            // fires for edits that leave SortedShipList untouched -- most visibly moving or deleting a
+            // detached piece, but also fuel/crew/action-group tweaks -- and those can't change the
+            // voxel model. Mesh/shape edits queue their own voxel through GeometryPartModule, so gating
+            // here can't drop a real geometry change.
+            int sig = ComputeShipVoxelSignature();
+            if (_haveShipVoxelSig && sig == _lastShipVoxelSig)
+                return;
+            _haveShipVoxelSig = true;
+            _lastShipVoxelSig = sig;
+
             RequestUpdateVoxel();
+        }
+
+        private int _lastShipVoxelSig;
+        private bool _haveShipVoxelSig;
+
+        // Cheap signature of the voxelized ship: part count plus each part's id and world transform.
+        // A detached piece isn't in SortedShipList, so moving or deleting it leaves this unchanged.
+        private static int ComputeShipVoxelSignature()
+        {
+            List<Part> parts = EditorLogic.SortedShipList;
+            if (parts == null)
+                return 0;
+
+            int hash = 17;
+            hash = hash * 31 + parts.Count;
+            foreach (Part p in parts)
+            {
+                if (p is null)
+                    continue;
+                hash = hash * 31 + (int)p.persistentId;
+                Transform t = p.partTransform;
+                if (t == null)
+                    continue;
+                hash = hash * 31 + t.position.GetHashCode();
+                hash = hash * 31 + t.rotation.GetHashCode();
+            }
+
+            return hash;
         }
 
         // ReSharper disable once MemberCanBeMadeStatic.Local -> static does not work with GameEvents
