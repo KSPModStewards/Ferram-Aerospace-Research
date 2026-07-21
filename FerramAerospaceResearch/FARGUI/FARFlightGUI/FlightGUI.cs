@@ -92,7 +92,6 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
         private bool showHeatmapWindow;
 
         private readonly FlightHeatmapGUI _heatmapGUI = new FlightHeatmapGUI();
-        private readonly CruiseRangeEstimator _cruiseRange = new CruiseRangeEstimator();
 
         private GUIDropDown<int> settingsWindow;
         public VesselFlightInfo InfoParameters { get; private set; }
@@ -250,15 +249,6 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                 return;
 
             InfoParameters = _physicsCalcs.UpdatePhysicsParameters();
-
-            // Range projected from the measured burn rate over a rolling window (km). Folded into the
-            // struct here so every consumer (data window, logger) sees it alongside the other figures.
-            _cruiseRange.Update(_vessel);
-            VesselFlightInfo info = InfoParameters;
-            info.avgRange = _cruiseRange.RangeMeters / 1000.0;
-            info.avgFuelBurn = _cruiseRange.TotalBurnKgPerSec;
-            info.fuelRemaining = _cruiseRange.TotalFuelKg;
-            InfoParameters = info;
 
             _stabilityAugmentation.UpdatePhysicsInfo(InfoParameters);
             _flightStatusGUI.UpdateInfoParameters(InfoParameters);

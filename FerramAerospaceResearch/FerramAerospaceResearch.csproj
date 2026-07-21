@@ -128,7 +128,6 @@
     <Compile Include="FARGUI\FARFlightGUI\FlightStatusGUI.cs" />
     <Compile Include="FARGUI\FARFlightGUI\FlightGUIDrawer.cs" />
     <Compile Include="FARGUI\FARFlightGUI\FlightDataGUI.cs" />
-    <Compile Include="FARGUI\FARFlightGUI\CruiseRangeEstimator.cs" />
     <Compile Include="FARGUI\FARFlightGUI\InternalSpeedFAR.cs" />
     <Compile Include="FARGUI\FARFlightGUI\StabilityAugmentation.cs" />
     <Compile Include="FARGUI\FARFlightGUI\VesselFlightInfo.cs" />
