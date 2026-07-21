@@ -98,6 +98,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         // both follow this; each cell's Mach is then derived per altitude from the local sound speed.
         private bool _speedInMS;
 
+        // Which fuel load the envelope maps show: an index into EnvelopeSamples/SampleMassesKg, where
+        // 0 is empty (dry) and MassSamples-1 is full. A slider picks it; defaults to full.
+        private int _fuelSample = MassSamples - 1;
+
         private List<HeatmapResult> _results;
         private List<EditorEngineDeck.EngineGroup> _sweepGroups; // engines per map; null = combined
 
@@ -318,6 +322,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             if (_results == null || _results.Count == 0)
                 return;
 
+            DrawFuelSlider();
             DrawHistoryNav();
 
             // Up to two maps fit across the 650 px window. With the combined map that makes three,
@@ -351,6 +356,76 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             foreach (HeatmapRenderer r in _envRenderers)
                 r.DrawTooltips();
             _stabRenderer.DrawTooltips();
+        }
+
+        /// <summary>
+        /// Fuel-load slider: steps the envelope maps through the swept fuel samples (empty → full) so the
+        /// envelope can be read at each load. Only shown for envelope maps swept at several masses.
+        /// </summary>
+        private void DrawFuelSlider()
+        {
+            HeatmapResult r = FirstSampledResult();
+            if (r == null)
+                return;
+
+            int n = r.SampleMassesKg.Length;
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Fuel:", GUILayout.Width(34));
+            GUI.enabled = !IsSweepRunning; // re-pointing Envelope mid-sweep would race the fill
+            int idx = Mathf.Clamp(Mathf.RoundToInt(GUILayout.HorizontalSlider(_fuelSample, 0, n - 1,
+                                                                              GUILayout.Width(120))),
+                                  0,
+                                  n - 1);
+            GUI.enabled = true;
+            GUILayout.Space(8);
+            GUILayout.Label(FuelSampleLabel(r, idx), GUILayout.Width(160));
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+
+            if (idx != _fuelSample)
+            {
+                _fuelSample = idx;
+                ApplyFuelSample();
+            }
+        }
+
+        private static string FuelSampleLabel(HeatmapResult r, int idx)
+        {
+            int n = r.SampleMassesKg.Length;
+            string name = idx == 0 ? "empty" : idx == n - 1 ? "full" : "mid";
+            return string.Format(CultureInfo.InvariantCulture, "{0} — {1:0.00} t", name,
+                                 r.SampleMassesKg[idx] / 1000.0);
+        }
+
+        private HeatmapResult FirstSampledResult()
+        {
+            if (_results == null)
+                return null;
+            foreach (HeatmapResult r in _results)
+                if (r.HasMassSamples)
+                    return r;
+            return null;
+        }
+
+        /// <summary>
+        /// Points every envelope map at the selected fuel sample and repaints. The stored per-mass grids
+        /// are exact (no interpolation), so this just re-references and rescales the colour ramp.
+        /// </summary>
+        private void ApplyFuelSample()
+        {
+            for (int t = 0; t < _results.Count; t++)
+            {
+                HeatmapResult r = _results[t];
+                if (!r.HasMassSamples)
+                    continue;
+                int idx = Mathf.Clamp(_fuelSample, 0, r.EnvelopeSamples.Length - 1);
+                r.Envelope = r.EnvelopeSamples[idx];
+                r.MassKg = r.SampleMassesKg[idx];
+                r.Recompute();
+                if (t < _envRenderers.Count)
+                    _envRenderers[t].RepaintEnvelope();
+            }
         }
 
         /// <summary>One map's placement in the row flow: an envelope renderer, or the stability map.</summary>
@@ -1247,6 +1322,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 _envRenderers[t].RepaintEnvelope(); // endurance colours scale to each map's own best cell
             }
 
+            // The loop above left the wet sample displayed; honour the fuel slider if it isn't at full.
+            if (_fuelSample != MassSamples - 1)
+                ApplyFuelSample();
+
             _deck.Restore();
 
             HeatmapResult.Cached = _results;
@@ -1304,6 +1383,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             }
 
             _stabRenderer.SetResult(_results[0]);
+
+            // Renderers were built from each grid's stored (wet) Envelope; sync them to the fuel slider.
+            if (_fuelSample != MassSamples - 1)
+                ApplyFuelSample();
         }
 
         private void ClearHistory()
