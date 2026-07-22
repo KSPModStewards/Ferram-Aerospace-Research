@@ -140,10 +140,12 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         // cancel checks — volatile so an in-flight worker is guaranteed to observe a mid-sweep cancel.
         private volatile bool _cancelRequested;
 
-        // Diagnostics for the parallel trim: worker exceptions blank a cell silently, so count them and
-        // log the first with its location.
-        private volatile bool _parallelErrorLogged;
+        // Diagnostics for the parallel sweep: worker exceptions blank a cell silently, so count them and
+        // capture the first. It is logged from the MAIN THREAD after the join, never from a worker --
+        // FARLogger routes to Unity's Debug.LogException (via ModuleManager's log intercept), which is
+        // not thread-safe and crashes the process natively when called off the main thread.
         private int _parallelErrorCount;
+        private Exception _firstParallelException;
         private int _cellsDone;
         private int _cellsTotal;
         private string _statusMessage = "";
@@ -279,6 +281,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                                  GUILayout.Width(150));
             GUILayout.FlexibleSpace();
 
+            string inputError = RangeInputError();
+
             if (IsSweepRunning)
             {
                 if (GUILayout.Button(Localizer.Format("FARStabHeatmapCancel"),
@@ -288,7 +292,9 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             }
             else
             {
-                GUI.enabled = !EditorGUI.Instance.VoxelizationUpdateQueued;
+                // Bad input can't sweep, so grey Run out — with the reason shown below it doesn't just
+                // fail silently.
+                GUI.enabled = !EditorGUI.Instance.VoxelizationUpdateQueued && inputError == null;
                 if (GUILayout.Button(Localizer.Format("FARStabHeatmapRun"),
                                      GUILayout.Width(110),
                                      GUILayout.Height(24)))
@@ -316,6 +322,13 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 GUILayout.Label(Localizer.Format("FARStabHeatmapProgress",
                                                  _cellsDone.ToString(CultureInfo.InvariantCulture),
                                                  _cellsTotal.ToString(CultureInfo.InvariantCulture)));
+            else if (inputError != null)
+            {
+                Color prev = GUI.contentColor;
+                GUI.contentColor = new Color(1f, 0.45f, 0.1f); // vivid orange-red — a fix-me, not a status
+                GUILayout.Label(inputError);
+                GUI.contentColor = prev;
+            }
             else if (!string.IsNullOrEmpty(_statusMessage))
                 GUILayout.Label(_statusMessage);
 
@@ -587,7 +600,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 _simManager.SweepSim.IsReady())
             {
                 _recalcPending = false;
-                StartSweep();
+                // Don't auto-fire (and log an abort every edit) into bad range inputs; the greyed Run
+                // button and the on-screen reason already tell the user what to fix.
+                if (RangeInputError() == null)
+                    StartSweep();
             }
         }
 
@@ -937,7 +953,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                     }
                 }
 
-                _parallelErrorLogged = false;
+                _firstParallelException = null;
                 _parallelErrorCount = 0;
 
                 // The slot pool (SimThreadContext) recycles a slot per row, so it only needs one per
@@ -1042,12 +1058,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                         catch (Exception e)
                                         {
                                             System.Threading.Interlocked.Increment(ref _parallelErrorCount);
-                                            if (!_parallelErrorLogged)
-                                            {
-                                                _parallelErrorLogged = true;
-                                                FARLogger.Exception(e,
-                                                                    $"parallel trim threw at i{i} j{j} k{k} (M {mach:F2}, alt {altRow:F0})");
-                                            }
+                                            System.Threading.Interlocked.CompareExchange(
+                                                ref _firstParallelException,
+                                                new Exception($"parallel trim threw at i{i} j{j} k{k} (M {mach:F2}, alt {altRow:F0})", e),
+                                                null);
 
                                             System.Threading.Interlocked.Add(ref _cellsDone, mapCount);
                                             continue;
@@ -1124,9 +1138,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                             engineSum += engineTicks[s];
                         }
 
-                        if (_parallelErrorCount > 0)
-                            FARLogger.Info("parallel sweep: " + _parallelErrorCount +
-                                           " cell(s) threw and were blanked (see the first exception above).");
+                        LogParallelErrors();
                         FARLogger.Info("Heatmap envelope timings: bootstrap " + bootstrapTimer.ElapsedMilliseconds +
                                        " ms, sweep " + sweepTimer.ElapsedMilliseconds + " ms (parallel); of which trim ~" +
                                        trimSum * 1000 / freq + " ms + engine ~" + engineSum * 1000 / freq +
@@ -1163,12 +1175,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                         catch (Exception e)
                                         {
                                             System.Threading.Interlocked.Increment(ref _parallelErrorCount);
-                                            if (!_parallelErrorLogged)
-                                            {
-                                                _parallelErrorLogged = true;
-                                                FARLogger.Exception(e,
-                                                                    $"parallel trim threw at i{i} j{j} k{k} (M {mach:F2}, alt {altRow:F0})");
-                                            }
+                                            System.Threading.Interlocked.CompareExchange(
+                                                ref _firstParallelException,
+                                                new Exception($"parallel trim threw at i{i} j{j} k{k} (M {mach:F2}, alt {altRow:F0})", e),
+                                                null);
 
                                             ctxGrid[i, j, k] = default;
                                         }
@@ -1242,9 +1252,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                         }
 
                         engineTimer.Stop();
-                        if (_parallelErrorCount > 0)
-                            FARLogger.Info("parallel sweep: " + _parallelErrorCount +
-                                           " cell(s) threw and were blanked (see the first exception above).");
+                        LogParallelErrors();
                         FARLogger.Info("Heatmap envelope timings: bootstrap " + bootstrapTimer.ElapsedMilliseconds +
                                        " ms, trim " + trimTimer.ElapsedMilliseconds + " ms (parallel), engine " +
                                        engineTimer.ElapsedMilliseconds + " ms (serial).");
@@ -1317,7 +1325,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             for (int t = 0; t < mapCount; t++)
             {
                 foreach (PerformanceEnvelopeCalculator.CellResult[,] grid in _results[t].EnvelopeSamples)
+                {
                     CleanIsolatedGreyDots(grid, nMach, nAlt);
+                    RemoveDisconnectedIslands(grid, nMach, nAlt);
+                }
                 _results[t].Recompute();
                 _envRenderers[t].RepaintEnvelope(); // endurance colours scale to each map's own best cell
             }
@@ -1528,11 +1539,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 catch (Exception e)
                 {
                     System.Threading.Interlocked.Increment(ref _parallelErrorCount);
-                    if (!_parallelErrorLogged)
-                    {
-                        _parallelErrorLogged = true;
-                        FARLogger.Exception(e, $"parallel engine pass threw at i{i} j{j} k{k}");
-                    }
+                    System.Threading.Interlocked.CompareExchange(
+                        ref _firstParallelException,
+                        new Exception($"parallel engine pass threw at i{i} j{j} k{k}", e),
+                        null);
 
                     cell = default;
                 }
@@ -1540,6 +1550,20 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 _results[t].EnvelopeSamples[k][i, j] = cell;
                 System.Threading.Interlocked.Increment(ref _cellsDone);
             }
+        }
+
+        /// <summary>
+        /// Reports parallel-worker cell failures. MUST run on the main thread: it logs the captured
+        /// exception through FARLogger (Unity's log handler), which crashes natively if touched from a
+        /// worker. Called after a phase's join, so the workers are done.
+        /// </summary>
+        private void LogParallelErrors()
+        {
+            Exception first = System.Threading.Interlocked.Exchange(ref _firstParallelException, null);
+            if (first != null)
+                FARLogger.Exception(first, "first parallel sweep cell failure");
+            if (_parallelErrorCount > 0)
+                FARLogger.Info("parallel sweep: " + _parallelErrorCount + " cell(s) threw and were blanked.");
         }
 
         /// <summary>
@@ -1612,6 +1636,74 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 }
         }
 
+        /// <summary>
+        /// Blanks feasible "islands" — trimmed cells cut off from the main envelope by untrimmable
+        /// (black) cells. They come from the non-repeatable near-stall trim (FAR's stall model carries
+        /// hysteresis across calls, so Cl(alpha) is not a clean function near stall), which lets the
+        /// AoA solve land a spurious low-speed trim while its neighbours fail. Such a cell can't be a
+        /// real cruise if you can't fly to it, so keep only the largest connected group of trimmed
+        /// cells (4-neighbour) and drop the rest.
+        /// </summary>
+        private static void RemoveDisconnectedIslands(
+            PerformanceEnvelopeCalculator.CellResult[,] grid,
+            int nMach,
+            int nAlt
+        )
+        {
+            // 0 = trimmed but unlabelled, -1 = untrimmable (black), >0 = component id.
+            var label = new int[nMach, nAlt];
+            for (int i = 0; i < nMach; i++)
+                for (int j = 0; j < nAlt; j++)
+                    label[i, j] = grid[i, j].Trimmed ? 0 : -1;
+
+            var stack = new List<(int i, int j)>();
+            int bestId = 0, bestSize = 0, nextId = 0;
+
+            for (int si = 0; si < nMach; si++)
+                for (int sj = 0; sj < nAlt; sj++)
+                {
+                    if (label[si, sj] != 0)
+                        continue;
+
+                    nextId++;
+                    int size = 0;
+                    stack.Clear();
+                    stack.Add((si, sj));
+                    label[si, sj] = nextId;
+
+                    while (stack.Count > 0)
+                    {
+                        (int i, int j) = stack[stack.Count - 1];
+                        stack.RemoveAt(stack.Count - 1);
+                        size++;
+
+                        if (i > 0 && label[i - 1, j] == 0) { label[i - 1, j] = nextId; stack.Add((i - 1, j)); }
+                        if (i < nMach - 1 && label[i + 1, j] == 0) { label[i + 1, j] = nextId; stack.Add((i + 1, j)); }
+                        if (j > 0 && label[i, j - 1] == 0) { label[i, j - 1] = nextId; stack.Add((i, j - 1)); }
+                        if (j < nAlt - 1 && label[i, j + 1] == 0) { label[i, j + 1] = nextId; stack.Add((i, j + 1)); }
+                    }
+
+                    if (size > bestSize)
+                    {
+                        bestSize = size;
+                        bestId = nextId;
+                    }
+                }
+
+            if (bestId == 0)
+                return; // nothing trimmed
+
+            for (int i = 0; i < nMach; i++)
+                for (int j = 0; j < nAlt; j++)
+                    if (label[i, j] > 0 && label[i, j] != bestId)
+                    {
+                        PerformanceEnvelopeCalculator.CellResult c = grid[i, j];
+                        c.Trimmed = false;
+                        c.Feasible = false;
+                        grid[i, j] = c;
+                    }
+        }
+
         private void Cancelled()
         {
             _statusMessage = Localizer.Format("FAREnvelopeCancelled");
@@ -1642,6 +1734,38 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             }
         }
 
+        /// <summary>
+        /// A human-readable reason the current range inputs can't be swept, or null when they are valid.
+        /// Evaluated live so the GUI can flag a bad field — a stray letter in a range box, say — the
+        /// moment it is typed, rather than only when a sweep is attempted. The x-range wording follows
+        /// the speed/Mach mode so it names the field the user actually edited.
+        /// </summary>
+        private string RangeInputError()
+        {
+            string xLabel = _speedInMS ? "Speed range" : "Mach range";
+
+            if (!double.TryParse(_machMin, NumberStyles.Float, CultureInfo.InvariantCulture, out double lo) ||
+                !double.TryParse(_machMax, NumberStyles.Float, CultureInfo.InvariantCulture, out double hi))
+                return xLabel + " must be numeric.";
+            if (hi <= lo || lo <= 0)
+                return xLabel + " must be increasing and above zero.";
+
+            if (!double.TryParse(_altMinKm, NumberStyles.Float, CultureInfo.InvariantCulture, out double aMin) ||
+                !double.TryParse(_altMaxKm, NumberStyles.Float, CultureInfo.InvariantCulture, out double aMax))
+                return "Altitude range must be numeric.";
+            if (aMax <= aMin || aMin < 0)
+                return "Altitude range must be increasing and non-negative.";
+
+            // Capped: every cell costs at least one aero trim solve, and with stability enabled a full
+            // derivative set on top. 100 is a lot of cells (up to 10k per map) but the parallel sweep
+            // handles it; the maps are still meant to be hovered, not zoomed.
+            if (!int.TryParse(_nMach, out int nMach) || nMach < 2 || nMach > 100 ||
+                !int.TryParse(_nAlt, out int nAlt) || nAlt < 2 || nAlt > 100)
+                return "Cell counts must be integers between 2 and 100.";
+
+            return null;
+        }
+
         private bool TryParseRanges(
             out double machMin,
             out double machMax,
@@ -1654,45 +1778,22 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             machMin = machMax = altMin = altMax = 0;
             nMach = nAlt = 0;
 
-            if (!double.TryParse(_machMin, NumberStyles.Float, CultureInfo.InvariantCulture, out machMin) ||
-                !double.TryParse(_machMax, NumberStyles.Float, CultureInfo.InvariantCulture, out machMax))
+            string err = RangeInputError();
+            if (err != null)
             {
-                _statusMessage = "Mach range must be numeric.";
+                _statusMessage = err;
                 return false;
             }
 
-            if (machMax <= machMin || machMin <= 0)
-            {
-                _statusMessage = "Mach range must be increasing and above zero.";
-                return false;
-            }
-
-            if (!double.TryParse(_altMinKm, NumberStyles.Float, CultureInfo.InvariantCulture, out double aMin) ||
-                !double.TryParse(_altMaxKm, NumberStyles.Float, CultureInfo.InvariantCulture, out double aMax))
-            {
-                _statusMessage = "Altitude range must be numeric.";
-                return false;
-            }
-
-            if (aMax <= aMin || aMin < 0)
-            {
-                _statusMessage = "Altitude range must be increasing and non-negative.";
-                return false;
-            }
-
+            // Validated above, so every parse here succeeds.
+            double.TryParse(_machMin, NumberStyles.Float, CultureInfo.InvariantCulture, out machMin);
+            double.TryParse(_machMax, NumberStyles.Float, CultureInfo.InvariantCulture, out machMax);
+            double.TryParse(_altMinKm, NumberStyles.Float, CultureInfo.InvariantCulture, out double aMin);
+            double.TryParse(_altMaxKm, NumberStyles.Float, CultureInfo.InvariantCulture, out double aMax);
             altMin = aMin * 1000;
             altMax = aMax * 1000;
-
-            // Capped: every cell costs at least one aero trim solve, and with stability enabled a full
-            // derivative set on top. 100 is a lot of cells (up to 10k per map) but the parallel sweep
-            // handles it; the maps are still meant to be hovered, not zoomed.
-            if (!int.TryParse(_nMach, out nMach) || nMach < 2 || nMach > 100 ||
-                !int.TryParse(_nAlt, out nAlt) || nAlt < 2 || nAlt > 100)
-            {
-                _statusMessage = "Cell counts must be integers between 2 and 100.";
-                return false;
-            }
-
+            int.TryParse(_nMach, out nMach);
+            int.TryParse(_nAlt, out nAlt);
             return true;
         }
 
