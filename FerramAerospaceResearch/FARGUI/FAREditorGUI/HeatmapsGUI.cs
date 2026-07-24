@@ -61,6 +61,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         // without a straight two-point underestimate.
         private const int MassSamples = 3;
 
+        // The coarse auto-fit probe sweeps a single mass — the leanest (min fuel) — since the lightest
+        // aircraft reaches the highest and fastest, so that one sample bounds the whole envelope, and one
+        // sample is 3x less work than the full dry/mid/wet set.
+        private int SweepMassSamples => _autoFitProbe ? 1 : MassSamples;
+
         private readonly EditorSimManager _simManager;
         private readonly EditorEngineDeck _deck = new EditorEngineDeck();
 
@@ -101,6 +106,22 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         // Which fuel load the envelope maps show: an index into EnvelopeSamples/SampleMassesKg, where
         // 0 is empty (dry) and MassSamples-1 is full. A slider picks it; defaults to full.
         private int _fuelSample = MassSamples - 1;
+
+        // Auto-fit: when a max is being auto-fit, a Run first runs a coarse 10x10 probe over a wide range
+        // (max altitude up to half the atmosphere, speed up to the cap) to find how far the envelope
+        // actually reaches, then runs the user's real sweep framed to that discovered extent. One coarse
+        // grid sees the whole envelope at once, so the coupled ceiling/top-speed edges are found together.
+        // The probe is behind the scenes — it is never cached or added to the history.
+        private bool _autoMaxAlt;
+        private bool _autoMaxSpeed;
+        private bool _autoFitProbe; // true while the coarse extent-finding probe runs
+        private const int AutoFitProbeCells = 10;
+        private const double AutoFitMargin = 1.15; // frame the real sweep this far past the discovered edge
+        private const double AutoFitSpeedCapMach = 15.0;  // wide-enough probe bound; finer than 30 at 10x10
+        private const double AutoFitSpeedCapMS = 5000.0;
+
+        // The user's requested dimensions/bounds, stashed while the probe borrows the input fields.
+        private string _userNMach, _userNAlt, _userMachMin, _userMachMax, _userAltMinKm, _userAltMaxKm;
 
         private List<HeatmapResult> _results;
         private List<EditorEngineDeck.EngineGroup> _sweepGroups; // engines per map; null = combined
@@ -298,7 +319,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 if (GUILayout.Button(Localizer.Format("FARStabHeatmapRun"),
                                      GUILayout.Width(110),
                                      GUILayout.Height(24)))
-                    StartSweep();
+                    StartAutoFitOrSweep();
                 GUI.enabled = true;
             }
 
@@ -306,7 +327,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
             GUILayout.BeginHorizontal();
             DrawMetricToggle();
-            GUILayout.Space(14);
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
             bool prevAuto = _autoRecalc;
             _autoRecalc = GUILayout.Toggle(_autoRecalc,
                                            Localizer.Format("FARHeatmapsAutoRecalc"),
@@ -315,6 +339,15 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 _lastVoxQueued = true; // arm: recalc once the current/next voxelization completes
             GUILayout.Space(14);
             _multithread = GUILayout.Toggle(_multithread, "Multithread", GUILayout.Width(110));
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+
+            // Auto-fit toggles: when on, a Run keeps appending altitude rows / speed columns and
+            // re-sweeping only the new band until the ceiling / top speed is fully enclosed.
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Auto-fit:", GUILayout.Width(60));
+            _autoMaxAlt = GUILayout.Toggle(_autoMaxAlt, "Max altitude", GUILayout.Width(120));
+            _autoMaxSpeed = GUILayout.Toggle(_autoMaxSpeed, _speedInMS ? "Max speed" : "Max Mach", GUILayout.Width(120));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
 
@@ -331,6 +364,25 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             }
             else if (!string.IsNullOrEmpty(_statusMessage))
                 GUILayout.Label(_statusMessage);
+
+            // Clipped-envelope notes: shown once here under the status line, aggregated across the
+            // engine-type maps — a note is no longer tied to any single map. Only after a sweep.
+            if (_results != null && _results.Count > 0 && !IsSweepRunning)
+            {
+                bool anyCeilingClipped = false;
+                bool anyTopClipped = false;
+                foreach (HeatmapRenderer rend in _envRenderers)
+                {
+                    rend.SummaryText(out bool cClip, out bool tClip);
+                    anyCeilingClipped |= cClip;
+                    anyTopClipped |= tClip;
+                }
+
+                if (anyCeilingClipped)
+                    GUILayout.Label(Localizer.Format("FAREnvelopeCeilingClipped"));
+                if (anyTopClipped)
+                    GUILayout.Label(Localizer.Format("FAREnvelopeTopSpeedClipped"));
+            }
 
             if (_results == null || _results.Count == 0)
                 return;
@@ -478,11 +530,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                     {
                         if (multi)
                             GUILayout.Label(cell.Renderer.EngineTypeLabel);
-                        GUILayout.Label(cell.Renderer.SummaryText(out bool ceilingClipped, out bool topClipped));
-                        if (ceilingClipped)
-                            GUILayout.Label(Localizer.Format("FAREnvelopeCeilingClipped"));
-                        if (topClipped)
-                            GUILayout.Label(Localizer.Format("FAREnvelopeTopSpeedClipped"));
+                        // Clipped-envelope notes are aggregated once under the status line, not per map.
+                        GUILayout.Label(cell.Renderer.SummaryText(out bool _, out bool _2));
                     }
 
                     GUILayout.EndVertical();
@@ -499,11 +548,71 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 if (cell.IsStability)
                     cell.Renderer.DrawStabilityMap(w, MapHeight, null, false);
                 else
+                {
                     cell.Renderer.DrawEnvelopeMap(w, MapHeight, null, !multi);
+                    if (cell.Renderer.DiagClickedEnvelopeCell != null)
+                        DumpCellDiagnostics(_envRenderers.IndexOf(cell.Renderer),
+                                            cell.Renderer.DiagClickedEnvelopeCell.Value);
+                }
+
                 GUILayout.EndVertical();
             }
 
             GUILayout.EndHorizontal();
+        }
+
+        /// <summary>
+        /// Hidden diagnostic (middle-click a cell): dumps the cell's predicted values plus each engine's
+        /// resolved thrust cap to the log, so the editor sim can be checked without a flight comparison.
+        /// </summary>
+        private void DumpCellDiagnostics(int mapIndex, (int i, int j) cell)
+        {
+            if (_results == null || mapIndex < 0 || mapIndex >= _results.Count)
+                return;
+            HeatmapResult r = _results[mapIndex];
+            if (r.Envelope == null || cell.i < 0 || cell.j < 0 ||
+                cell.i >= r.MachAxis.Length || cell.j >= r.AltAxis.Length)
+                return;
+
+            PerformanceEnvelopeCalculator.CellResult c = r.Envelope[cell.i, cell.j];
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("=== FAR heatmap cell diagnostic ===");
+            sb.AppendFormat(CultureInfo.InvariantCulture,
+                            "Map: {0}  cell [{1},{2}]  M {3:F3}  alt {4:F0} m  TAS {5:F1} m/s  mass {6:F2} t\n",
+                            string.IsNullOrEmpty(r.EngineTypeLabel) ? "envelope" : r.EngineTypeLabel,
+                            cell.i, cell.j, c.Mach, r.AltAxis[cell.j], c.SpeedMPerS, r.MassKg / 1000);
+            sb.AppendFormat(CultureInfo.InvariantCulture,
+                            "Trimmed {0}  Feasible {1}  Overheats {2}  Suppressed {3}  Reduced {4}  Cruise {5}\n",
+                            c.Trimmed, c.Feasible, c.Overheats, c.Suppressed, c.ReducedEngines, c.Cruise);
+            sb.AppendFormat(CultureInfo.InvariantCulture,
+                            "Drag {0:F2} kN  ThrustAvail {1:F2} kN  Excess {2:F2} kN\n",
+                            c.DragN / 1000, c.ThrustAvailableN / 1000, c.ExcessThrustN / 1000);
+            sb.AppendFormat(CultureInfo.InvariantCulture,
+                            "ThrottleReq {0:F1}%  AoA {1:F2} deg  FuelFlow {2:F3} kg/s  Thermal {3:F0}%\n",
+                            c.ThrottleRequired * 100, c.Alpha, c.FuelFlowKgPerS, c.ThermalRatio * 100);
+            sb.AppendLine("Engine thrust caps (editor):");
+            SolverEnginesInterop.AppendEditorEngineCaps(sb);
+
+            // Re-run the deck at this cell to break down raw-vs-capped thrust and the inlet terms feeding
+            // it — at the cell's cruise throttle (the operating point flight disagrees with) and at full
+            // throttle (where the cap binds). Restricted to the clicked map's engine group.
+            CelestialBody body = _bodySettingDropdown.ActiveSelection;
+            double alt = r.AltAxis[cell.j];
+            _deck.UpdateShip();
+            if (_deck.Ready && mapIndex < _sweepGroups.Count)
+            {
+                _deck.SetActiveGroup(_sweepGroups[mapIndex]);
+                double cruise = c.ThrottleRequired > 0 && c.ThrottleRequired <= 1 ? c.ThrottleRequired : 1.0;
+
+                sb.AppendFormat(CultureInfo.InvariantCulture, "Deck eval @ cruise throttle {0:F1}%:\n", cruise * 100);
+                _deck.Evaluate(body, alt, c.Mach, cruise, sb);
+                sb.AppendLine("Deck eval @ full throttle:");
+                _deck.Evaluate(body, alt, c.Mach, 1.0, sb);
+                _deck.Restore();
+            }
+
+            FARLogger.Info(sb.ToString());
         }
 
         /// <summary>
@@ -513,18 +622,12 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         private void DrawMetricToggle()
         {
             GUILayout.Label(Localizer.Format("FARHeatmapsColorBy"), GUILayout.Width(60));
-            bool endurance = GUILayout.Toggle(HeatmapRenderer.ColorMetric == HeatmapRenderer.Metric.Endurance,
-                                              Localizer.Format("FARHeatmapsEndurance"),
-                                              GUILayout.Width(90));
-            bool range = GUILayout.Toggle(HeatmapRenderer.ColorMetric == HeatmapRenderer.Metric.Range,
-                                          Localizer.Format("FARHeatmapsRange"),
-                                          GUILayout.Width(80));
 
             HeatmapRenderer.Metric want = HeatmapRenderer.ColorMetric;
-            if (range && HeatmapRenderer.ColorMetric != HeatmapRenderer.Metric.Range)
-                want = HeatmapRenderer.Metric.Range;
-            else if (endurance && HeatmapRenderer.ColorMetric != HeatmapRenderer.Metric.Endurance)
-                want = HeatmapRenderer.Metric.Endurance;
+            want = MetricToggle(want, HeatmapRenderer.Metric.Endurance, Localizer.Format("FARHeatmapsEndurance"), 90);
+            want = MetricToggle(want, HeatmapRenderer.Metric.Range, Localizer.Format("FARHeatmapsRange"), 70);
+            want = MetricToggle(want, HeatmapRenderer.Metric.Aoa, "AoA", 60);
+            want = MetricToggle(want, HeatmapRenderer.Metric.Throttle, "Throttle", 85);
 
             if (want != HeatmapRenderer.ColorMetric)
             {
@@ -533,6 +636,18 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                     foreach (HeatmapRenderer r in _envRenderers)
                         r.RepaintEnvelope();
             }
+        }
+
+        // One radio-style metric toggle: returns metric if it was just selected, else the current want.
+        private static HeatmapRenderer.Metric MetricToggle(
+            HeatmapRenderer.Metric want,
+            HeatmapRenderer.Metric metric,
+            string label,
+            float width
+        )
+        {
+            bool on = GUILayout.Toggle(HeatmapRenderer.ColorMetric == metric, label, GUILayout.Width(width));
+            return on && HeatmapRenderer.ColorMetric != metric ? metric : want;
         }
 
         /// <summary>
@@ -603,7 +718,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 // Don't auto-fire (and log an abort every edit) into bad range inputs; the greyed Run
                 // button and the on-screen reason already tell the user what to fix.
                 if (RangeInputError() == null)
-                    StartSweep();
+                    StartAutoFitOrSweep();
             }
         }
 
@@ -629,7 +744,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             _altMaxKm = Math.Ceiling(suggested / 1000.0).ToString(CultureInfo.InvariantCulture);
         }
 
-        private void StartSweep()
+        private bool StartSweep()
         {
             if (!TryParseRanges(out double machMin,
                                 out double machMax,
@@ -639,14 +754,14 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                 out int nAlt))
             {
                 FARLogger.Info("Heatmap sweep aborted: bad ranges — " + _statusMessage);
-                return;
+                return false;
             }
 
             if (!_simManager.SweepSim.IsReady())
             {
                 _statusMessage = Localizer.Format("FAREnvelopeNotReady");
                 FARLogger.Info("Heatmap sweep aborted: sim not ready (voxelization/aero data pending).");
-                return;
+                return false;
             }
 
             // The thrust-based envelope needs SolverEngines/AJE and at least one usable engine. Without
@@ -668,7 +783,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                                       ? "FAREngineDeckNoEngines"
                                                       : "FAREngineDeckNoSolver");
                 FARLogger.Info("Heatmap sweep aborted: no engine envelope available and stability disabled.");
-                return;
+                return false;
             }
 
             CelestialBody body = _bodySettingDropdown.ActiveSelection;
@@ -742,7 +857,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                               Localizer.Format("FARHeatmapsCombined"), null);
 
                 _stabRenderer.SetResult(_results[0]); // shares the stability grid
-                _cellsTotal = nMach * nAlt * (_results.Count * MassSamples + (_includeStability ? 1 : 0));
+                _cellsTotal = nMach * nAlt * (_results.Count * SweepMassSamples + (_includeStability ? 1 : 0));
             }
 
             _cellsDone = 0;
@@ -750,6 +865,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
             _statusMessage = "";
             _sweep = EditorGUI.Instance.StartCoroutine(SweepCoroutine(body));
+            return true;
         }
 
         private void AddResult(
@@ -765,9 +881,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         )
         {
             // One envelope grid per mass sample; the displayed grid is the wet (last) one until flight
-            // interpolates it. Filled in during the sweep.
-            var samples = new PerformanceEnvelopeCalculator.CellResult[MassSamples][,];
-            for (int k = 0; k < MassSamples; k++)
+            // interpolates it. Filled in during the sweep. The probe uses a single (min-fuel) sample.
+            int massCount = SweepMassSamples;
+            var samples = new PerformanceEnvelopeCalculator.CellResult[massCount][,];
+            for (int k = 0; k < massCount; k++)
                 samples[k] = new PerformanceEnvelopeCalculator.CellResult[nMach, nAlt];
 
             var result = new HeatmapResult
@@ -776,7 +893,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 AltAxis = altAxis,
                 SpeedAxisMode = _speedInMS,
                 EnvelopeSamples = samples,
-                Envelope = samples[MassSamples - 1],
+                Envelope = samples[massCount - 1],
                 Stability = stability,
                 HasStability = _includeStability,
                 EngineTypeLabel = label,
@@ -811,7 +928,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             PerformanceEnvelopeCalculator.VehicleProperties[] massProps = null;
             if (!_stabilityOnly)
             {
-                massProps = calc.ComputeMassSamples(_deck, MassSamples);
+                // The probe runs the single leanest (min-fuel) sample — the lightest aircraft reaches
+                // highest and fastest, so it bounds the whole envelope; the real sweep uses dry/mid/wet.
+                massProps = _autoFitProbe
+                                ? new[] { calc.ComputeMassSamples(_deck, MassSamples)[0] }
+                                : calc.ComputeMassSamples(_deck, MassSamples);
                 PerformanceEnvelopeCalculator.VehicleProperties wetProps = massProps[massProps.Length - 1];
 
                 if (!wetProps.Valid)
@@ -822,7 +943,9 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                     yield break;
                 }
 
-                double dryMass = massProps[0].MassKg; // sample 0 is dry (no usable fuel)
+                // True empty mass (Breguet m1). The leanest sample keeps a sliver of fuel, so it is NOT
+                // massProps[0].MassKg any more — compute the real dry mass from the wet sample.
+                double dryMass = wetProps.MassKg - wetProps.UsableFuelKg;
                 int partCount = CountPhysicalParts();
                 foreach (HeatmapResult r in _results)
                 {
@@ -1322,7 +1445,24 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 FARLogger.Info("Heatmap envelope timings: " + serialTimer.ElapsedMilliseconds + " ms (serial).");
             }
 
-            for (int t = 0; t < mapCount; t++)
+            if (FinalizeSweep())
+                yield break; // the auto-fit's real sweep is now running; it owns _sweep and the history
+
+            _sweep = null;
+        }
+
+        /// <summary>
+        /// Runs the whole-grid post-passes and publishes the result, then either starts another auto-fit
+        /// extend pass (envelope still open at the top/right and the matching toggle is on, under the
+        /// caps) or finalises the sweep. Only the finished, fully-enclosed envelope is recorded in the
+        /// history. Returns true when an extend pass was started — the caller must then leave _sweep alone.
+        /// </summary>
+        private bool FinalizeSweep()
+        {
+            int nMach = _results[0].MachAxis.Length;
+            int nAlt = _results[0].AltAxis.Length;
+
+            for (int t = 0; t < _results.Count; t++)
             {
                 foreach (PerformanceEnvelopeCalculator.CellResult[,] grid in _results[t].EnvelopeSamples)
                 {
@@ -1333,17 +1473,134 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 _envRenderers[t].RepaintEnvelope(); // endurance colours scale to each map's own best cell
             }
 
-            // The loop above left the wet sample displayed; honour the fuel slider if it isn't at full.
+            // The post-passes left the wet sample displayed; honour the fuel slider if it isn't at full.
             if (_fuelSample != MassSamples - 1)
                 ApplyFuelSample();
 
-            _deck.Restore();
+            // The coarse probe finished: reframe to the user's sweep at the discovered extent and run it
+            // for real. The probe grid is discarded — not cached, not added to the history.
+            if (_autoFitProbe)
+            {
+                _autoFitProbe = false;
+                ApplyProbeExtent();
+                if (StartSweep())
+                    return true;
+                // Could not relaunch (should not happen after a good sweep) — keep the probe result.
+            }
 
             HeatmapResult.Cached = _results;
+            _deck.Restore();
             AppendGeneration();
             _statusMessage = Localizer.Format("FAREnvelopeDone", _cellsDone.ToString(CultureInfo.InvariantCulture));
             FARLogger.Info("Heatmap sweep complete: " + _cellsDone + " cells across " + _results.Count + " map(s).");
-            _sweep = null;
+            return false;
+        }
+
+        /// <summary>Run entry point: launches the coarse auto-fit probe when a max is being auto-fit,
+        /// otherwise a plain sweep.</summary>
+        private void StartAutoFitOrSweep()
+        {
+            if (_autoMaxAlt || _autoMaxSpeed)
+                BeginAutoFitProbe();
+            else
+                StartSweep();
+        }
+
+        /// <summary>
+        /// Starts the auto-fit: a coarse 10x10 pre-sweep over a wide range (max altitude up to half the
+        /// atmosphere, speed up to the cap) to find how far the envelope reaches. FinalizeSweep launches
+        /// the real sweep — the user's resolution, framed to that extent — once the probe completes. Only
+        /// the dimension(s) being auto-fit are widened; the others keep the user's range.
+        /// </summary>
+        private void BeginAutoFitProbe()
+        {
+            _userNMach = _nMach;
+            _userNAlt = _nAlt;
+            _userMachMin = _machMin;
+            _userMachMax = _machMax;
+            _userAltMinKm = _altMinKm;
+            _userAltMaxKm = _altMaxKm;
+
+            _nMach = AutoFitProbeCells.ToString(CultureInfo.InvariantCulture);
+            _nAlt = AutoFitProbeCells.ToString(CultureInfo.InvariantCulture);
+
+            if (_autoMaxAlt)
+            {
+                CelestialBody body = _bodySettingDropdown.ActiveSelection;
+                double capKm = body != null ? body.atmosphereDepth / 2000.0 : 9999.0; // half the atmosphere
+                _altMaxKm = capKm.ToString("F0", CultureInfo.InvariantCulture);
+            }
+
+            if (_autoMaxSpeed)
+                _machMax = (_speedInMS ? AutoFitSpeedCapMS : AutoFitSpeedCapMach)
+                    .ToString("F0", CultureInfo.InvariantCulture);
+
+            _autoFitProbe = true;
+            if (!StartSweep())
+            {
+                // Bad ranges / not ready — abandon the probe and put the user's fields back.
+                _autoFitProbe = false;
+                RestoreUserSweepFields();
+            }
+        }
+
+        /// <summary>
+        /// Reads the envelope extent (highest feasible altitude and speed, across all mass samples) from
+        /// the finished coarse probe, restores the user's requested dimensions/bounds, then overrides the
+        /// auto-fit max(s) with the discovered extent plus a margin, capped.
+        /// </summary>
+        private void ApplyProbeExtent()
+        {
+            double ceilingM = double.NaN;
+            double topSpeedAxis = double.NaN;
+            foreach (HeatmapResult r in _results)
+            {
+                if (r.EnvelopeSamples == null || r.MachAxis == null || r.AltAxis == null)
+                    continue;
+
+                foreach (PerformanceEnvelopeCalculator.CellResult[,] grid in r.EnvelopeSamples)
+                    for (int j = 0; j < r.AltAxis.Length; j++)
+                        for (int i = 0; i < r.MachAxis.Length; i++)
+                        {
+                            if (!grid[i, j].Feasible)
+                                continue;
+                            if (double.IsNaN(ceilingM) || r.AltAxis[j] > ceilingM)
+                                ceilingM = r.AltAxis[j];
+                            if (double.IsNaN(topSpeedAxis) || r.MachAxis[i] > topSpeedAxis)
+                                topSpeedAxis = r.MachAxis[i];
+                        }
+            }
+
+            // Back to the user's requested grid, then reframe only the auto-fit dimension(s).
+            RestoreUserSweepFields();
+
+            if (_autoMaxAlt && !double.IsNaN(ceilingM))
+            {
+                CelestialBody body = _bodySettingDropdown.ActiveSelection;
+                double capKm = body != null ? body.atmosphereDepth / 2000.0 : double.MaxValue;
+                double km = Math.Min(ceilingM / 1000.0 * AutoFitMargin, capKm);
+                _altMaxKm = km.ToString("F1", CultureInfo.InvariantCulture);
+            }
+
+            if (_autoMaxSpeed && !double.IsNaN(topSpeedAxis))
+            {
+                double cap = _speedInMS ? AutoFitSpeedCapMS : AutoFitSpeedCapMach;
+                double v = Math.Min(topSpeedAxis * AutoFitMargin, cap);
+                _machMax = v.ToString(_speedInMS ? "F0" : "F2", CultureInfo.InvariantCulture);
+            }
+        }
+
+        /// <summary>Restores the user's sweep dimensions/bounds stashed when the probe borrowed them.</summary>
+        private void RestoreUserSweepFields()
+        {
+            if (_userNMach == null)
+                return;
+            _nMach = _userNMach;
+            _nAlt = _userNAlt;
+            _machMin = _userMachMin;
+            _machMax = _userMachMax;
+            _altMinKm = _userAltMinKm;
+            _altMaxKm = _userAltMaxKm;
         }
 
         /// <summary>Records the just-completed sweep in the history and selects it. Oldest drops off.</summary>
@@ -1631,7 +1888,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                     if (anyRealNeighbour)
                         continue;
 
-                    c.Trimmed = false;
+                    c.Suppressed = true; // hide it (renderer blacks it), but keep its drag/thrust data
                     grid[i, j] = c;
                 }
         }
@@ -1650,11 +1907,12 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             int nAlt
         )
         {
-            // 0 = trimmed but unlabelled, -1 = untrimmable (black), >0 = component id.
+            // 0 = trimmed but unlabelled, -1 = untrimmable (black), >0 = component id. A cell already
+            // suppressed (an isolated grey dot from the pass above) does not connect the envelope.
             var label = new int[nMach, nAlt];
             for (int i = 0; i < nMach; i++)
                 for (int j = 0; j < nAlt; j++)
-                    label[i, j] = grid[i, j].Trimmed ? 0 : -1;
+                    label[i, j] = grid[i, j].Trimmed && !grid[i, j].Suppressed ? 0 : -1;
 
             var stack = new List<(int i, int j)>();
             int bestId = 0, bestSize = 0, nextId = 0;
@@ -1698,14 +1956,22 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                     if (label[i, j] > 0 && label[i, j] != bestId)
                     {
                         PerformanceEnvelopeCalculator.CellResult c = grid[i, j];
-                        c.Trimmed = false;
-                        c.Feasible = false;
+                        c.Suppressed = true;   // hide + drop from the flyable envelope...
+                        c.Feasible = false;    // ...but keep Trimmed and the drag/thrust it measured
                         grid[i, j] = c;
                     }
         }
 
         private void Cancelled()
         {
+            // A cancel during the coarse probe leaves the input fields on the probe's borrowed values —
+            // put the user's requested dimensions/bounds back.
+            if (_autoFitProbe)
+            {
+                _autoFitProbe = false;
+                RestoreUserSweepFields();
+            }
+
             _statusMessage = Localizer.Format("FAREnvelopeCancelled");
             _deck.Restore();
             _sweepTask = null;

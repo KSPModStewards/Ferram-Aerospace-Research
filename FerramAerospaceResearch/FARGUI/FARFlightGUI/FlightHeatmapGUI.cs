@@ -54,6 +54,7 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
         private bool _showStability = true;
         private string _logMessage = "";
 
+
         public void Display(Vessel vessel)
         {
             List<HeatmapResult> results = HeatmapResult.Cached;
@@ -215,7 +216,7 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                     cell.Renderer.DrawEnvelopeMap(w, MapHeight, here, !multi);
                     GUILayout.EndVertical();
 
-                    // Clicking any type's cell sets that cell's speed/altitude as the cruise target.
+                    // Clicking a cell sets it as AA's cruise target.
                     if (cell.Renderer.ClickedEnvelopeCell != null)
                         HandleCellClick(vessel, results[t], cell.Renderer.ClickedEnvelopeCell.Value);
                 }
@@ -224,22 +225,17 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
             GUILayout.EndHorizontal();
         }
 
-        /// <summary>Endurance/Range colour toggle, repainting all maps on change. Colour only.</summary>
+        /// <summary>Endurance/Range/AoA/Throttle colour toggle, repainting all maps on change. Colour
+        /// only. Mirrors the editor tab (HeatmapsGUI.DrawMetricToggle) — the two must not drift.</summary>
         private void DrawMetricToggle()
         {
             GUILayout.Label(Localizer.Format("FARHeatmapsColorBy"), GUILayout.Width(60));
-            bool endurance = GUILayout.Toggle(HeatmapRenderer.ColorMetric == HeatmapRenderer.Metric.Endurance,
-                                              Localizer.Format("FARHeatmapsEndurance"),
-                                              GUILayout.Width(90));
-            bool range = GUILayout.Toggle(HeatmapRenderer.ColorMetric == HeatmapRenderer.Metric.Range,
-                                          Localizer.Format("FARHeatmapsRange"),
-                                          GUILayout.Width(80));
 
             HeatmapRenderer.Metric want = HeatmapRenderer.ColorMetric;
-            if (range && HeatmapRenderer.ColorMetric != HeatmapRenderer.Metric.Range)
-                want = HeatmapRenderer.Metric.Range;
-            else if (endurance && HeatmapRenderer.ColorMetric != HeatmapRenderer.Metric.Endurance)
-                want = HeatmapRenderer.Metric.Endurance;
+            want = MetricToggle(want, HeatmapRenderer.Metric.Endurance, Localizer.Format("FARHeatmapsEndurance"), 90);
+            want = MetricToggle(want, HeatmapRenderer.Metric.Range, Localizer.Format("FARHeatmapsRange"), 80);
+            want = MetricToggle(want, HeatmapRenderer.Metric.Aoa, "AoA", 60);
+            want = MetricToggle(want, HeatmapRenderer.Metric.Throttle, "Throttle", 85);
 
             if (want == HeatmapRenderer.ColorMetric)
                 return;
@@ -247,6 +243,18 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
             HeatmapRenderer.ColorMetric = want;
             foreach (HeatmapRenderer r in _envRenderers)
                 r.RepaintEnvelope();
+        }
+
+        // One radio-style metric toggle: returns metric if it was just selected, else the current want.
+        private static HeatmapRenderer.Metric MetricToggle(
+            HeatmapRenderer.Metric want,
+            HeatmapRenderer.Metric metric,
+            string label,
+            float width
+        )
+        {
+            bool on = GUILayout.Toggle(HeatmapRenderer.ColorMetric == metric, label, GUILayout.Width(width));
+            return on && HeatmapRenderer.ColorMetric != metric ? metric : want;
         }
 
         /// <summary>Rebuilds the renderer list when a new sweep set is cached.</summary>
@@ -587,8 +595,9 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                                 c.Cruise,
                                 c.Overheats);
                 sb.AppendFormat(CultureInfo.InvariantCulture,
-                                "  Engine temp: predicted {0:F0}% of limit  (flight tempRatio for comparison)\n",
-                                c.ThermalRatio * 100);
+                                "  Engine temp: predicted {0:F0}% of limit   flight {1:F0}% of limit\n",
+                                c.ThermalRatio * 100,
+                                FlightMaxTempRatio(vessel) * 100);
                 if (c.Cruise == PerformanceEnvelopeCalculator.CruiseState.Ok)
                     sb.AppendFormat(CultureInfo.InvariantCulture,
                                     "  Throttle req {0:F0}%   fuel flow {1:F4} kg/s   endurance {2:F2} hr\n",
@@ -638,7 +647,21 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                 AppendDelta(sb, "AoA   (deg)", info.aoA, c.Alpha);
                 if (c.Cruise == PerformanceEnvelopeCalculator.CruiseState.Ok)
                 {
-                    AppendDelta(sb, "Throttle (%)", vessel.ctrlState.mainThrottle * 100, c.ThrottleRequired * 100);
+                    // Compare the SOLVER throttle, not main-throttle: the sim's ThrottleRequired is the
+                    // solver throttle (at 100% limiter), and with a thrust limiter set the flight main
+                    // throttle is much higher because AJE squares the limiter before the solver sees it.
+                    if (SolverEnginesInterop.TryGetFlightSolverThrottle(vessel, out double solverThrottle))
+                    {
+                        AppendDelta(sb, "Throttle (%)", solverThrottle * 100, c.ThrottleRequired * 100);
+                        sb.AppendFormat(CultureInfo.InvariantCulture,
+                                        "  (flight main-throttle {0:F0}%; solver throttle differs when a thrust limiter is set — AJE squares it)\n",
+                                        vessel.ctrlState.mainThrottle * 100);
+                    }
+                    else
+                    {
+                        AppendDelta(sb, "Throttle (%)", vessel.ctrlState.mainThrottle * 100, c.ThrottleRequired * 100);
+                    }
+
                     AppendDelta(sb, "Fuel (kg/s)", fuelFlowKgS, c.FuelFlowKgPerS);
                 }
             }
@@ -733,6 +756,28 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
         /// Totals live engine output. Isp comes from the engines' own realIsp rather than being
         /// derived, so it is directly comparable with the solver's number.
         /// </summary>
+        /// <summary>
+        /// Highest engine-temperature-to-limit ratio across the vessel's running engines, as the flight
+        /// scene sees it right now — the actual-vs-predicted counterpart to the sweep's ThermalRatio, so
+        /// the prediction check can show whether the sim's overheat flag matches reality.
+        /// </summary>
+        private static double FlightMaxTempRatio(Vessel vessel)
+        {
+            SolverEnginesInterop.Initialize();
+            double max = 0;
+            foreach (Part p in vessel.Parts)
+                foreach (PartModule m in p.Modules)
+                {
+                    if (!(m is ModuleEngines e) || !e.EngineIgnited || e.engineShutdown)
+                        continue;
+                    double r = SolverEnginesInterop.GetThermalRatio(m);
+                    if (r > max)
+                        max = r;
+                }
+
+            return max;
+        }
+
         private static void SumEngines(Vessel vessel, out double thrustKN, out double fuelFlowKgS, out double ispEff)
         {
             thrustKN = 0;

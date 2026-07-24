@@ -11,6 +11,7 @@ Shared axis rendering and hit-testing for (Mach × altitude) heatmaps.
    (at your option) any later version.
  */
 
+using System.Collections.Generic;
 using System.Globalization;
 using KSP.Localization;
 using UnityEngine;
@@ -169,6 +170,17 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         {
             Event e = Event.current;
             if (e == null || e.type != EventType.MouseDown || e.button != 0 || !map.Contains(e.mousePosition))
+                return false;
+
+            e.Use();
+            return true;
+        }
+
+        /// <summary>Middle-button click inside the map — a hidden diagnostic gesture (dumps the cell).</summary>
+        public static bool MiddleClickedIn(Rect map)
+        {
+            Event e = Event.current;
+            if (e == null || e.type != EventType.MouseDown || e.button != 2 || !map.Contains(e.mousePosition))
                 return false;
 
             e.Use();

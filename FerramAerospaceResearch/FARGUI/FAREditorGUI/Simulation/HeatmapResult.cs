@@ -70,6 +70,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         /// <summary>Best range in the sweep; the range colour ramp is relative to it.</summary>
         public double MaxRangeKm;
 
+        /// <summary>Largest cruise AoA (deg) and throttle (0-1) among feasible cells; the AoA and
+        /// throttle colour ramps are relative to these.</summary>
+        public double MaxAlphaDeg;
+        public double MaxThrottle;
+
         public double CeilingM = double.NaN;
         public double BestEnduranceHours = double.NaN;
         public double BestRangeKm = double.NaN;
@@ -139,6 +144,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             BestRangeKm = double.NaN;
             MaxEnduranceHours = 0;
             MaxRangeKm = 0;
+            MaxAlphaDeg = 0;
+            MaxThrottle = 0;
 
             for (int j = 0; j < AltAxis.Length; j++)
                 for (int i = 0; i < MachAxis.Length; i++)
@@ -149,6 +156,13 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
 
                     if (double.IsNaN(CeilingM) || AltAxis[j] > CeilingM)
                         CeilingM = AltAxis[j];
+
+                    // AoA and throttle ramps cover every feasible cell, including those with no endurance
+                    // figure, so scale them before the endurance short-circuit below.
+                    if (Finite(c.Alpha) && c.Alpha > MaxAlphaDeg)
+                        MaxAlphaDeg = c.Alpha;
+                    if (Finite(c.ThrottleRequired) && c.ThrottleRequired > MaxThrottle)
+                        MaxThrottle = c.ThrottleRequired;
 
                     if (!Finite(c.EnduranceHours))
                         continue;
@@ -215,10 +229,30 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             double massKg
         )
         {
-            // Across a trim boundary (one sample stalls, the other flies) the untrimmed sample carries
-            // zero drag, so blending would corrupt the flying one — snap to the nearer sample instead.
-            if (!(a.Trimmed && b.Trimmed))
-                return f < 0.5 ? a : b;
+            // Only blend two samples that are both a valid feasible cruise. A sample that stalls (black),
+            // is thrust-limited (grey) or overheats carries no valid cruise drag/fuel/endurance — it
+            // returned before the cruise solve — so blending it in corrupts the flying sample's range just
+            // as an untrimmed one does. Snap to the nearer sample instead. (Trimmed-but-infeasible grey
+            // cells used to slip into the blend below because they are still trimmed.)
+            if (!(a.Feasible && b.Feasible))
+            {
+                PerformanceEnvelopeCalculator.CellResult near = f < 0.5 ? a : b;
+
+                // The snapped-to cell still carries the endurance/range computed at that SAMPLE's mass.
+                // When the heavier sample is infeasible it is the lighter one we snap to, and its mass can
+                // be far below the vessel's actual fuel load — so range reads much too low. Recompute it
+                // against the live mass, exactly as the blend branch below does, so a cell that is only
+                // feasible at lighter mass still reports the range the vessel's real fuel gives.
+                if (near.Feasible)
+                    near.EnduranceHours = massKg <= DryMassKg
+                                              ? 0
+                                              : PerformanceEnvelopeCalculator.EnduranceHours(near.DragN,
+                                                  near.FuelFlowKgPerS,
+                                                  near.LiftToDrag,
+                                                  massKg,
+                                                  DryMassKg);
+                return near;
+            }
 
             var c = new PerformanceEnvelopeCalculator.CellResult
             {
@@ -249,6 +283,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                 LiftToDrag = Lerp(a.LiftToDrag, b.LiftToDrag, f),
                 ThrustAvailableN = Lerp(a.ThrustAvailableN, b.ThrustAvailableN, f),
                 ExcessThrustN = Lerp(a.ExcessThrustN, b.ExcessThrustN, f),
+                ThermalLimitThrottle = Lerp(a.ThermalLimitThrottle, b.ThermalLimitThrottle, f),
+                ThermalLimitedThrustN = Lerp(a.ThermalLimitedThrustN, b.ThermalLimitedThrustN, f),
                 ThermalRatio = Lerp(a.ThermalRatio, b.ThermalRatio, f),
                 ThrottleRequired = LerpFinite(a.ThrottleRequired, b.ThrottleRequired, f),
                 // Fuel flow of 0 means the sample never solved a cruise (infeasible/overheating), so it

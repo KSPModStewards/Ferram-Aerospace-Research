@@ -47,6 +47,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         // authority (trims at neutral) rather than being control-limited at this attitude.
         private const double PitchAuthorityEpsilon = 1e-3;
 
+        // Fuel fraction the leanest mass sample keeps, so it still solves a cruise and reports range
+        // (a 0% sample has none). See ComputeMassSamples.
+        private const double MinFuelFraction = 0.01;
+
         public PerformanceEnvelopeCalculator(InstantConditionSim instantConditionSim)
         {
             _instantCondition = instantConditionSim;
@@ -119,6 +123,14 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             public bool Overheats;
 
             /// <summary>
+            /// Hidden by a post-sweep cleanup pass (isolated grey dot, or a trimmed cell disconnected from
+            /// the main envelope) — the renderer paints it black and it is excluded from the flyable
+            /// envelope, but it KEEPS its measured drag/thrust so tooltips, mass interpolation and the
+            /// flight prediction-check can still read them. <see cref="Trimmed" /> stays true for that.
+            /// </summary>
+            public bool Suppressed;
+
+            /// <summary>
             /// Engine-temperature-to-limit ratio at the cruise throttle this cell would need;
             /// >= 1 means the engine melts trying to hold this speed.
             /// </summary>
@@ -180,6 +192,18 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
 
             /// <summary>Positive when the vehicle can accelerate or climb here, N.</summary>
             public double ExcessThrustN;
+
+            /// <summary>
+            /// The highest throttle (0-1) that keeps every engine at or below its temperature limit here —
+            /// i.e. the thrust-limiter setting the aircraft can actually sustain. 1.0 when full throttle is
+            /// within limits. Below 1 for a ramjet that would overheat wide open (temperature rises with
+            /// throttle); the thrust available within that limit is <see cref="ThermalLimitedThrustN" />.
+            /// </summary>
+            public double ThermalLimitThrottle;
+
+            /// <summary>Thrust along the wind at <see cref="ThermalLimitThrottle" />, N — the max thrust the
+            /// engines can hold here without exceeding temperature (equals ThrustAvailableN when unlimited).</summary>
+            public double ThermalLimitedThrustN;
 
             /// <summary>Throttle holding T = D, or NaN if drag cannot be matched.</summary>
             public double ThrottleRequired;
@@ -296,7 +320,12 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
 
             for (int k = 0; k < count; k++)
             {
+                // Never sample a truly dry (0% fuel) load: with no burnable fuel a cell has no cruise
+                // and no range/endurance, so interpolating a near-empty aircraft toward it would blank
+                // the range. Keep a sliver of fuel in the leanest sample; the Breguet m1 stays the true
+                // dry mass (set by the caller), so the range there is small but real, not NaN.
                 double frac = count <= 1 ? 1.0 : (double)k / (count - 1);
+                frac = Math.Max(frac, MinFuelFraction);
                 VehicleProperties s = wet; // struct copy keeps CoM and Area
                 s.MassKg = dryMass + frac * fuel;
                 s.UsableFuelKg = frac * fuel;
@@ -824,6 +853,32 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             cell.ThrustAvailableN = Vector3d.Dot(maxSample.Thrust, maxVelDir);
             cell.ExcessThrustN = cell.ThrustAvailableN - dragAtMax;
 
+            // Thermal-limited thrust: the most thrust the engines can hold here without exceeding
+            // temperature — the thrust-limiter the aircraft can actually sustain. Full throttle if that is
+            // already within limits; otherwise the throttle where the hottest engine sits at its limit (a
+            // ramjet's temperature rises with throttle, so bisection converges). Informational only — it
+            // does not gate feasibility (a cell is walled by its CRUISE-throttle temperature below).
+            if (maxSample.MaxThermalRatio <= EditorEngineDeck.ThermalLimit)
+            {
+                cell.ThermalLimitThrottle = 1.0;
+                cell.ThermalLimitedThrustN = cell.ThrustAvailableN;
+            }
+            else
+            {
+                double lo = 0.0, hi = 1.0;
+                for (int it = 0; it < 12; it++)
+                {
+                    double mid = 0.5 * (lo + hi);
+                    if (sampleEngines(mid).MaxThermalRatio > EditorEngineDeck.ThermalLimit)
+                        hi = mid;
+                    else
+                        lo = mid;
+                }
+
+                cell.ThermalLimitThrottle = lo;
+                cell.ThermalLimitedThrustN = Vector3d.Dot(sampleEngines(lo).Thrust, maxVelDir);
+            }
+
             // Can the engine physically make enough thrust to hold level flight, heat aside?
             if (cell.ExcessThrustN < 0)
                 return cell; // thrust-limited, not a heat wall
@@ -861,6 +916,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                     if (thermalAtCruise >= EditorEngineDeck.ThermalLimit)
                     {
                         cell.Overheats = true;
+                        // The cruise throttle WAS solved (it just overheats), so keep it and the fuel
+                        // flow rather than discarding them — the prediction check and the throttle
+                        // colouring want the real value at overheating cells, not NaN.
+                        cell.ThrottleRequired = throttle;
+                        cell.FuelFlowKgPerS = fuelFlow;
                         return cell;
                     }
 
