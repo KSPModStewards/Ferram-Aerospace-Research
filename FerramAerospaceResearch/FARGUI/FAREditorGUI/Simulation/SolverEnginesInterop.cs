@@ -52,6 +52,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         private static FieldInfo engineUseZaxis;
         private static FieldInfo engineMaxTemp;
         private static FieldInfo engineAutoignitionTemp;
+        private static FieldInfo engineThrustUpperLimit; // may be null on older SolverEngines: cap is then a no-op
         private static MethodInfo solverGetEngineTemp;
         private static MethodInfo engineCreateIfNecessary;
         private static MethodInfo engineUpdateInletEffects;
@@ -118,6 +119,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             public double MaxEngineTemp;
             public float ThrustPercentage;
             public float NeedArea;
+            public double ThrustUpperLimitKN;      // flight's soft thrust cap (kN); double.MaxValue = uncapped
+            public bool SquaresThrottleLimiter;    // AJE jet/ramjet/rotor apply (0.01*thrustPercentage) twice
         }
 
         public static void Initialize()
@@ -170,6 +173,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                 engineUseZaxis = moduleEnginesSolverType.GetField("useZaxis");
                 engineMaxTemp = moduleEnginesSolverType.GetField("maxEngineTemp");
                 engineAutoignitionTemp = moduleEnginesSolverType.GetField("autoignitionTemp");
+                // Flight clips solver thrust past this per-engine cap before it becomes finalThrust; the
+                // deck reads raw solver thrust, so it must apply the same clip. Absent on older
+                // SolverEngines (null) -> treated as uncapped.
+                engineThrustUpperLimit = moduleEnginesSolverType.GetField("thrustUpperLimit");
                 engineCreateIfNecessary = moduleEnginesSolverType.GetMethod("CreateEngineIfNecessary",
                                                                             Type.EmptyTypes);
                 engineUpdateInletEffects = moduleEnginesSolverType.GetMethod("UpdateInletEffects",
@@ -439,6 +446,166 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         }
 
         /// <summary>
+        /// Flight's soft thrust cap (SolverEngines EngineModule.CalculateEngineParams): above the
+        /// per-engine thrustUpperLimit (kN), thrust grows at only a 10% slope. Raw solver thrust runs far
+        /// past the cap as Mach rises, so the deck applies the same clip or it over-predicts thrust
+        /// (worsening with Mach). Fuel flow is deliberately not capped -- flight does not cap it either.
+        /// </summary>
+        private static double SoftCapThrustN(double thrustN, double thrustUpperLimitKN)
+        {
+            double kN = thrustN * 0.001;
+            if (kN > thrustUpperLimitKN)
+                kN = thrustUpperLimitKN + (kN - thrustUpperLimitKN) * 0.1;
+            return kN * 1000.0;
+        }
+
+        /// <summary>
+        /// True for the AJE engine modules whose UpdateThrottle override applies the thrust-limiter factor
+        /// (0.01*thrustPercentage) a SECOND time (AJEJet.cs:229, AJERamjet.cs:82, AJERotor.cs:178), so the
+        /// solver throttle is main-throttle * limiter^2. AJEPropeller and generic ModuleEnginesSolver apply
+        /// it once. The deck must match whichever the module does, or a set thrust limiter mispredicts.
+        /// </summary>
+        public static bool SquaresThrottleLimiter(PartModule engine)
+        {
+            if (engine == null)
+                return false;
+            string n = engine.GetType().Name;
+            return n == "ModuleEnginesAJEJet" || n == "ModuleEnginesAJERamjet" || n == "ModuleEnginesAJERotor";
+        }
+
+        /// <summary>
+        /// The engine's soft thrust cap in kN; double.MaxValue (uncapped) when nothing sets it. RealFuels
+        /// engines keep the cap in their active ModuleEngineConfigs CONFIG node and do NOT push it onto the
+        /// ModuleEnginesSolver.thrustUpperLimit field in the editor (it lands there only in flight), so when
+        /// the module field reads unset, fall back to that CONFIG node — which is present from part load.
+        /// </summary>
+        private static double ThrustUpperLimitKN(PartModule engine)
+        {
+            if (engineThrustUpperLimit != null)
+            {
+                double tul = Convert.ToDouble(engineThrustUpperLimit.GetValue(engine));
+                if (tul > 0 && tul < double.MaxValue)
+                    return tul;
+            }
+
+            return RealFuelsConfigThrustUpperLimitKN(engine);
+        }
+
+        /// <summary>
+        /// Reads thrustUpperLimit (kN) from the active RealFuels ModuleEngineConfigs CONFIG node on the
+        /// engine's part, matched by module name so FAR keeps no RealFuels reference. double.MaxValue when
+        /// RealFuels is absent, the part has no configs module, or the active config sets no cap.
+        /// </summary>
+        private static double RealFuelsConfigThrustUpperLimitKN(PartModule engine)
+        {
+            Part part = engine != null ? engine.part : null;
+            if (part == null || part.Modules == null)
+                return double.MaxValue;
+
+            foreach (PartModule pm in part.Modules)
+            {
+                if (pm == null || !pm.GetType().Name.StartsWith("ModuleEngineConfigs", StringComparison.Ordinal))
+                    continue;
+
+                Type t = pm.GetType();
+                FieldInfo cfgNameField = t.GetField("configuration"); // both on ModuleEngineConfigsBase
+                FieldInfo configsField = t.GetField("configs");
+                if (cfgNameField == null || configsField == null)
+                    continue;
+
+                string active = cfgNameField.GetValue(pm) as string;
+                var configs = configsField.GetValue(pm) as System.Collections.IEnumerable;
+                if (string.IsNullOrEmpty(active) || configs == null)
+                    continue;
+
+                foreach (object o in configs)
+                {
+                    if (!(o is ConfigNode node) || node.GetValue("name") != active)
+                        continue;
+
+                    if (node.HasValue("thrustUpperLimit") &&
+                        double.TryParse(node.GetValue("thrustUpperLimit"),
+                                        System.Globalization.NumberStyles.Any,
+                                        System.Globalization.CultureInfo.InvariantCulture,
+                                        out double tul) &&
+                        tul > 0)
+                        return tul;
+
+                    return double.MaxValue; // matched the active config; it just sets no cap
+                }
+            }
+
+            return double.MaxValue;
+        }
+
+        /// <summary>
+        /// Diagnostic: logs each editor engine's resolved soft thrust cap — the raw ModuleEnginesSolver
+        /// field, the RealFuels CONFIG value, and which one <see cref="ThrustUpperLimitKN" /> uses — so a
+        /// stuck-uncapped cell can be traced without a flight comparison.
+        /// </summary>
+        public static void AppendEditorEngineCaps(System.Text.StringBuilder sb)
+        {
+            if (!Available)
+            {
+                sb.AppendLine("  (SolverEngines/AJE not available)");
+                return;
+            }
+
+            ShipConstruct ship = EditorLogic.fetch != null ? EditorLogic.fetch.ship : null;
+            if (ship == null || ship.Parts == null)
+            {
+                sb.AppendLine("  (no editor ship)");
+                return;
+            }
+
+            foreach (Part p in ship.Parts)
+                foreach (PartModule pm in p.Modules)
+                {
+                    if (!moduleEnginesSolverType.IsInstanceOfType(pm))
+                        continue;
+
+                    double field = engineThrustUpperLimit != null
+                                       ? Convert.ToDouble(engineThrustUpperLimit.GetValue(pm))
+                                       : double.NaN;
+                    sb.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                                                "  {0} [{1}]: field={2}  rfConfig={3}  -> used={4} kN",
+                                                p.partInfo != null ? p.partInfo.title : p.name,
+                                                pm.GetType().Name,
+                                                FormatCap(field),
+                                                FormatCap(RealFuelsConfigThrustUpperLimitKN(pm)),
+                                                FormatCap(ThrustUpperLimitKN(pm))));
+                }
+        }
+
+        private static string FormatCap(double kN)
+        {
+            if (double.IsNaN(kN))
+                return "n/a";
+            return kN >= double.MaxValue
+                       ? "MaxValue"
+                       : kN.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// Diagnostic: the engine's raw (uncapped) solver thrust, its soft-capped thrust (both N), and the
+        /// cap used (kN) — so a dump can show whether the over-prediction is in the raw thrust or the cap.
+        /// </summary>
+        public static void GetThrustBreakdown(PartModule engine, out double rawN, out double cappedN, out double capKN)
+        {
+            rawN = 0;
+            cappedN = 0;
+            capKN = double.MaxValue;
+
+            object solver = engineSolverField.GetValue(engine);
+            if (solver == null)
+                return;
+
+            rawN = (double)solverGetThrust.Invoke(solver, null);
+            capKN = ThrustUpperLimitKN(engine);
+            cappedN = SoftCapThrustN(rawN, capKN);
+        }
+
+        /// <summary>
         /// Reads the solver outputs left by the last UpdateSolver call. Thrust is newtons,
         /// fuel flow kg/s, SFC in AJE's kg/kgf-hr, Isp seconds.
         /// </summary>
@@ -461,7 +628,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             if (solver == null)
                 return false;
 
-            thrustN = (double)solverGetThrust.Invoke(solver, null);
+            thrustN = SoftCapThrustN((double)solverGetThrust.Invoke(solver, null), ThrustUpperLimitKN(engine));
             fuelFlow = (double)solverGetFuelFlow.Invoke(solver, null);
             sfc = (double)solverGetSfc.Invoke(solver, null);
             isp = (double)solverGetIsp.Invoke(solver, null);
@@ -511,6 +678,34 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         public static double GetTemperature(object thermo)
         {
             return (double)thermoTemperature.GetValue(thermo, null);
+        }
+
+        /// <summary>
+        /// The solver throttle (0-1) the hardest-working running air-breather is actually at in flight —
+        /// i.e. currentThrottle AFTER the thrust limiter (squared, for AJE). This is what compares
+        /// apples-to-apples with the sim's solved ThrottleRequired; vessel.ctrlState.mainThrottle does not
+        /// when a thrust limiter is set. Flight only. Returns false if no such engine is running.
+        /// </summary>
+        public static bool TryGetFlightSolverThrottle(Vessel vessel, out double throttle)
+        {
+            throttle = 0;
+            if (vessel == null || vessel.parts == null || moduleEnginesSolverType == null)
+                return false;
+
+            double max = -1;
+            foreach (Part p in vessel.parts)
+                foreach (PartModule pm in p.Modules)
+                {
+                    if (!moduleEnginesSolverType.IsInstanceOfType(pm) || !(pm is ModuleEngines e))
+                        continue;
+                    if (e.EngineIgnited && !e.flameout && e.currentThrottle > max)
+                        max = e.currentThrottle;
+                }
+
+            if (max < 0)
+                return false;
+            throttle = max;
+            return true;
         }
 
         /// <summary>
@@ -576,6 +771,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             s.IspMultiplier = ispMult * multIsp;
             s.LastPropellantFraction = Convert.ToDouble(engineLastPropFrac.GetValue(engine));
             s.MaxEngineTemp = Convert.ToDouble(engineMaxTemp.GetValue(engine));
+            s.ThrustUpperLimitKN = ThrustUpperLimitKN(engine);
             return s;
         }
 
@@ -676,7 +872,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                 return false;
             }
 
-            thrustN = (double)solverGetThrust.Invoke(cloneSolver, null);
+            thrustN = SoftCapThrustN((double)solverGetThrust.Invoke(cloneSolver, null), scalars.ThrustUpperLimitKN);
             fuelFlow = (double)solverGetFuelFlow.Invoke(cloneSolver, null);
             running = (bool)solverGetRunning.Invoke(cloneSolver, null);
             engineTemp = solverGetEngineTemp != null ? (double)solverGetEngineTemp.Invoke(cloneSolver, null) : 0;

@@ -31,11 +31,14 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
     {
         private const int MaxScore = 11;
 
-        /// <summary>Which quantity the green→amber ramp encodes.</summary>
+        /// <summary>Which quantity the colour ramp encodes. Range/Endurance colour high=best (cool end);
+        /// AoA/Throttle colour low=best (cool end), since a lower AoA or throttle is the better cell.</summary>
         public enum Metric
         {
             Endurance,
-            Range
+            Range,
+            Aoa,
+            Throttle
         }
 
         /// <summary>
@@ -139,8 +142,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         {
             PerformanceEnvelopeCalculator.CellResult c = _result.Envelope[i, j];
 
-            if (!c.Trimmed)
-                return Color.black; // no angle of attack holds level flight here
+            if (!c.Trimmed || c.Suppressed)
+                return Color.black; // no trim here, or hidden by cleanup (isolated dot / disconnected)
             if (c.Overheats)
                 // Thrust is there, the engine cannot take the heat. Off-white rather than pure white
                 // so the white current-cell box still reads against it.
@@ -154,13 +157,31 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 c.Cruise == PerformanceEnvelopeCalculator.CruiseState.IdleExceedsDrag)
                 return new Color(0.35f, 0.6f, 0.65f);
 
-            double value = ColorMetric == Metric.Range ? RangeKm(c) : c.EnduranceHours;
-            double max = ColorMetric == Metric.Range ? _result.MaxRangeKm : _result.MaxEnduranceHours;
+            double value, max;
+            bool lowerIsBetter;
+            switch (ColorMetric)
+            {
+                case Metric.Range:
+                    value = RangeKm(c); max = _result.MaxRangeKm; lowerIsBetter = false;
+                    break;
+                case Metric.Aoa:
+                    value = c.Alpha; max = _result.MaxAlphaDeg; lowerIsBetter = true;
+                    break;
+                case Metric.Throttle:
+                    value = c.ThrottleRequired; max = _result.MaxThrottle; lowerIsBetter = true;
+                    break;
+                default:
+                    value = c.EnduranceHours; max = _result.MaxEnduranceHours; lowerIsBetter = false;
+                    break;
+            }
 
-            // A normal cruise cell whose endurance is unresolved or vanishing (near-empty tanks, where
-            // Breguet endurance → 0) sits at the low end of the ramp rather than blanking to teal.
-            float t = !FARMathUtil.IsFinite(value) || max <= 0 ? 0f : Mathf.Clamp01((float)(value / max));
-            Color feasible = Porkchop(t);
+            // Normalise to 0..1 of the map's own best cell. A cell whose value is unresolved (e.g. a
+            // near-empty cruise with Breguet endurance → 0) sits at the low-performance end rather than
+            // blanking to teal. For AoA/throttle low is best, so invert onto the cool end of the ramp.
+            float n = !FARMathUtil.IsFinite(value) || max <= 0
+                          ? (lowerIsBetter ? 1f : 0f)
+                          : Mathf.Clamp01((float)(value / max));
+            Color feasible = Porkchop(lowerIsBetter ? 1f - n : n);
 
             // Combined-map cells flown on ramjet power alone (turbojets shed to avoid melting) are
             // dimmed so the handoff region reads as distinct from full-combined-power cells.
@@ -218,6 +239,9 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         /// <summary>Envelope cell clicked this frame, consumed by the caller. Null if none.</summary>
         public (int i, int j)? ClickedEnvelopeCell { get; private set; }
 
+        /// <summary>Cell the user middle-clicked this frame — a hidden diagnostic dump gesture.</summary>
+        public (int i, int j)? DiagClickedEnvelopeCell { get; private set; }
+
         /// <summary>
         /// Draws the maps. <paramref name="highlight" /> marks one cell with a white border on both
         /// maps — used in flight to show the aircraft's current (Mach, altitude) against the grid.
@@ -231,6 +255,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         {
             _hoverEnv = null;
             ClickedEnvelopeCell = null;
+            DiagClickedEnvelopeCell = null;
             if (_envTex == null)
                 return;
 
@@ -244,10 +269,16 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             HeatmapAxes.Draw(map, _result.MachAxis, _result.AltAxis, _result.SpeedAxisMode);
             if (highlight != null)
                 HeatmapAxes.DrawCellBorder(map, _result.MachAxis, _result.AltAxis, highlight.Value, Color.white);
+
             _hoverEnv = HeatmapAxes.HitTest(map, _result.MachAxis, _result.AltAxis);
 
-            if (_hoverEnv != null && HeatmapAxes.ClickedIn(map))
-                ClickedEnvelopeCell = _hoverEnv;
+            if (_hoverEnv != null)
+            {
+                if (HeatmapAxes.ClickedIn(map))
+                    ClickedEnvelopeCell = _hoverEnv;
+                else if (HeatmapAxes.MiddleClickedIn(map))
+                    DiagClickedEnvelopeCell = _hoverEnv;
+            }
         }
 
         /// <summary>
@@ -310,9 +341,21 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             }
             else
             {
+                if (c.Suppressed)
+                    sb.Append("\n\nHidden — isolated from the main envelope;\nshown for reference only.");
+
                 sb.AppendFormat(CultureInfo.InvariantCulture,
                                 "\n\nThrust avail : {0:F1} kN",
                                 c.ThrustAvailableN / 1000);
+
+                // When full throttle would overheat, the thrust the aircraft can actually sustain is lower —
+                // show it and the thrust-limiter setting (max safe throttle) that holds it.
+                if (c.ThermalLimitThrottle > 0 && c.ThermalLimitThrottle < 0.999)
+                    sb.AppendFormat(CultureInfo.InvariantCulture,
+                                    "\nSustainable  : {0:F1} kN @ {1:F0}% limiter (heat)",
+                                    c.ThermalLimitedThrustN / 1000,
+                                    c.ThermalLimitThrottle * 100);
+
                 sb.AppendFormat(CultureInfo.InvariantCulture, "\nDrag         : {0:F1} kN", c.DragN / 1000);
                 sb.AppendFormat(CultureInfo.InvariantCulture, "\nAoA          : {0:F1}°", c.Alpha);
                 sb.AppendFormat(CultureInfo.InvariantCulture, "\nL/D          : {0:F2}", c.LiftToDrag);
@@ -447,6 +490,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             PerformanceEnvelopeCalculator.CellResult b = _result.Envelope[iOther, j];
 
             if (!b.Trimmed ||
+                b.Suppressed ||
                 !FARMathUtil.IsFinite(a.ExcessThrustN) ||
                 !FARMathUtil.IsFinite(b.ExcessThrustN) ||
                 a.ExcessThrustN <= 0 ||
@@ -486,7 +530,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 edge.SpeedMPerS = speed;
                 edge.Mach = mach;
             }
-            else if (!_result.Envelope[last + 1, j].Trimmed)
+            else if (!_result.Envelope[last + 1, j].Trimmed || _result.Envelope[last + 1, j].Suppressed)
             {
                 // Anomalous, not physical. Needed Cl scales as 1/V^2, so trimming only gets easier
                 // with speed — the fast edge of a level-flight envelope is always thrust-limited. A
@@ -528,7 +572,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 edge.SpeedMPerS = speed;
                 edge.Mach = mach;
             }
-            else if (!_result.Envelope[first - 1, j].Trimmed)
+            else if (!_result.Envelope[first - 1, j].Trimmed || _result.Envelope[first - 1, j].Suppressed)
             {
                 // The usual slow edge: the wing runs out of lift before the engine runs out of
                 // thrust. This is the stall boundary.

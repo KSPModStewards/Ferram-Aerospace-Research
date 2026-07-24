@@ -13,6 +13,8 @@ Editor-side engine sampling: thrust and fuel flow at an arbitrary (Mach, altitud
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Text;
 using UnityEngine;
 
 namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
@@ -367,6 +369,16 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         /// top of the range engages it, so 1.0 is wet and ~2/3 is dry (see AJEJet.GetStaticThrustInfo).</param>
         public Sample Evaluate(CelestialBody body, double alt, double mach, double throttle)
         {
+            return Evaluate(body, alt, mach, throttle, null);
+        }
+
+        /// <summary>
+        /// As <see cref="Evaluate(CelestialBody,double,double,double)" />, but when <paramref name="diag" />
+        /// is non-null appends a per-engine raw-vs-capped thrust / Isp / fuel breakdown and the vessel-level
+        /// inlet terms — the middle-click cell diagnostic, to localize a high-Mach thrust over-prediction.
+        /// </summary>
+        public Sample Evaluate(CelestialBody body, double alt, double mach, double throttle, StringBuilder diag)
+        {
             var sample = new Sample();
             if (!Ready)
                 return sample;
@@ -463,8 +475,13 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                 SolverEnginesInterop.UpdateInletEffects(m, inletTherm, areaRatio, overallTpr);
 
                 // Assigned directly rather than via UpdateThrottle(), which integrates spool-up
-                // against TimeWarp.fixedDeltaTime. GetStaticThrustInfo does the same.
-                e.currentThrottle = throttleF * (0.01f * e.thrustPercentage);
+                // against TimeWarp.fixedDeltaTime. GetStaticThrustInfo does the same. The AJE jet/ramjet
+                // UpdateThrottle applies the thrust limiter a second time (squares it), so match that here
+                // or a set thrust limiter mispredicts; inert at the usual thrustPercentage = 100.
+                float limiter = 0.01f * e.thrustPercentage;
+                e.currentThrottle = SolverEnginesInterop.SquaresThrottleLimiter(m)
+                                        ? throttleF * limiter * limiter
+                                        : throttleF * limiter;
 
                 // A solver that threw has left its outputs meaningless — skip the engine rather than
                 // read whatever happens to be in its fields.
@@ -481,10 +498,20 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                 if (!SolverEnginesInterop.TryGetSolverOutputs(m,
                                                               out double thrustN,
                                                               out double fuelFlow,
-                                                              out double _,
-                                                              out double _,
+                                                              out double sfc,
+                                                              out double isp,
                                                               out bool running))
                     continue;
+
+                if (diag != null)
+                {
+                    SolverEnginesInterop.GetThrustBreakdown(m, out double rawN, out double cappedN, out double capKN);
+                    diag.AppendFormat(CultureInfo.InvariantCulture,
+                                      "  {0}: raw {1:F1} -> capped {2:F1} kN (cap {3})  fuel {4:F3} kg/s  Isp {5:F0} s  SFC {6:F3}  thermal {7:F0}%  running {8}\n",
+                                      e.part.partInfo.title, rawN / 1000, cappedN / 1000,
+                                      capKN >= double.MaxValue ? "none" : capKN.ToString("F1", CultureInfo.InvariantCulture),
+                                      fuelFlow, isp, sfc, SolverEnginesInterop.GetThermalRatio(m) * 100, running);
+                }
 
                 // The solver can hand back non-finite values at conditions it cannot resolve.
                 // Dropping them here keeps a single bad cell from poisoning the whole sum, and
@@ -526,6 +553,21 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             sample.AmbientT = gas.Temperature;
             sample.InletP = SolverEnginesInterop.GetPressure(inletTherm);
             sample.InletT = SolverEnginesInterop.GetTemperature(inletTherm);
+
+            if (diag != null)
+            {
+                double qPa = 0.5 * gas.Density * speed * speed;
+                double ramMag = IntakeRamDragMagnitudeN(mach, qPa, forward);
+                double ramDragEff = throttleF >= 0.5f ? 0 : ramMag * (1 - 2 * throttleF);
+                diag.AppendFormat(CultureInfo.InvariantCulture,
+                                  "  vessel: inletArea {0:F4} engineArea {1:F4} m2  areaRatio {2:F3}  overallTPR {3:F3}\n" +
+                                  "          ambientP {4:F3} kPa  inletP(postTPR) {5:F3} kPa  ambientT {6:F1} K  inletT {7:F1} K  rho {8:F5}\n" +
+                                  "          thrustSum(capped) {9:F1} kN  ramDrag {10:F2} kN (magnitude {11:F2})\n",
+                                  inletArea, engineArea, areaRatio, overallTpr,
+                                  gas.Pressure / 1000, sample.InletP / 1000, gas.Temperature, sample.InletT, gas.Density,
+                                  sample.ThrustMagnitude / 1000, ramDragEff / 1000, ramMag / 1000);
+            }
+
             return sample;
         }
 
@@ -640,6 +682,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                     SolverEnginesInterop.EngineDriveScalars s = SolverEnginesInterop.GetDriveScalars(m);
                     s.NeedArea = SolverEnginesInterop.GetNeedArea(m);
                     s.ThrustPercentage = m is ModuleEngines e0 ? e0.thrustPercentage : 100f;
+                    s.SquaresThrottleLimiter = SolverEnginesInterop.SquaresThrottleLimiter(m);
                     _scalars[ei] = s;
 
                     _thrustDir[ei] = m is ModuleEngines e1 ? ThrustDirection(m, e1) : VehicleForward();
@@ -817,7 +860,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                     continue;
 
                 SolverEnginesInterop.EngineDriveScalars s = _scalars[ei];
-                double currentThrottle = throttleF * (0.01f * s.ThrustPercentage);
+                double limiter = 0.01f * s.ThrustPercentage;
+                double currentThrottle = s.SquaresThrottleLimiter ? throttleF * limiter * limiter : throttleF * limiter;
 
                 if (!SolverEnginesInterop.DriveClonedSolver(clone,
                                                             s,
