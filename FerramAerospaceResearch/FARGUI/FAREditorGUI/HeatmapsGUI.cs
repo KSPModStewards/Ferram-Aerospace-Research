@@ -125,6 +125,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
         private List<HeatmapResult> _results;
         private List<EditorEngineDeck.EngineGroup> _sweepGroups; // engines per map; null = combined
+        private string _editorLoadTriedSig; // ship name + RAW part count last probed — cheap change-detector
 
         // No SolverEngines/AJE (or no usable engines): the thrust-based envelope can't be built, so the
         // sweep runs the engine-independent stability map only. Set per sweep in StartSweep.
@@ -261,6 +262,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         {
             SyncAltitudeDefaultsToBody();
             CheckAutoRecalc();
+            TryLoadCachedForEditor();
 
             GUILayout.Label(Localizer.Format("FARHeatmapsTitle"));
 
@@ -562,6 +564,72 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         }
 
         /// <summary>
+        /// When the Heatmaps tab is open with no sweep in hand for the current craft, load that craft's
+        /// cached sweep from disk (if any) so the maps appear without re-running. Attempted once per craft
+        /// signature (name + physical part count, the key the cache is stored under); a Run re-sweeps and
+        /// overwrites. A different craft with no cache of its own clears the maps rather than pass off
+        /// another aircraft's envelope as this one's.
+        /// </summary>
+        private void TryLoadCachedForEditor()
+        {
+            if (IsSweepRunning)
+                return;
+
+            ShipConstruct ship = EditorLogic.fetch != null ? EditorLogic.fetch.ship : null;
+            if (ship == null || ship.parts == null || ship.parts.Count == 0)
+                return;
+
+            // O(1) change-detector: the physical-part tally and the load probe only need to run when the
+            // ship actually changes. Raw part count + name is cheap and moves on any edit, so gate on it
+            // and skip the per-frame part walk while the tab sits open unchanged.
+            string name = ship.shipName;
+            string sig = name + "|" + ship.parts.Count;
+            if (sig == _editorLoadTriedSig)
+                return;
+            _editorLoadTriedSig = sig;
+
+            int parts = CountPhysicalParts();
+            if (parts == 0)
+                return;
+
+            // Already displaying this craft's map (swept or loaded this session): keep it.
+            if (_results != null && _results.Count > 0 && _results[0].CraftName == name && _results[0].PartCount == parts)
+                return;
+
+            List<HeatmapResult> loaded = HeatmapPersistence.Load(name, parts);
+            if (loaded == null || loaded.Count == 0)
+            {
+                if (_results != null && _results.Count > 0)
+                    DiscardResults();
+                return;
+            }
+
+            DiscardResults();
+            foreach (HeatmapResult r in loaded)
+            {
+                var rend = new HeatmapRenderer();
+                rend.SetResult(r);
+                _envRenderers.Add(rend);
+                _sweepGroups.Add(null); // loaded maps carry no engine-group info; a Run rebuilds it
+            }
+
+            _stabRenderer.SetResult(loaded[0]);
+            _results = loaded;
+            HeatmapResult.Cached = loaded;
+            _statusMessage = "Loaded cached heatmap for " + name + " — Run to re-sweep.";
+        }
+
+        /// <summary>Releases the displayed maps' textures and drops the results.</summary>
+        private void DiscardResults()
+        {
+            foreach (HeatmapRenderer r in _envRenderers)
+                r.Cleanup();
+            _envRenderers.Clear();
+            _sweepGroups = new List<EditorEngineDeck.EngineGroup>();
+            _results = null;
+        }
+
+        /// <summary>
         /// Hidden diagnostic (middle-click a cell): dumps the cell's predicted values plus each engine's
         /// resolved thrust cap to the log, so the editor sim can be checked without a flight comparison.
         /// </summary>
@@ -624,10 +692,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             GUILayout.Label(Localizer.Format("FARHeatmapsColorBy"), GUILayout.Width(60));
 
             HeatmapRenderer.Metric want = HeatmapRenderer.ColorMetric;
-            want = MetricToggle(want, HeatmapRenderer.Metric.Endurance, Localizer.Format("FARHeatmapsEndurance"), 90);
-            want = MetricToggle(want, HeatmapRenderer.Metric.Range, Localizer.Format("FARHeatmapsRange"), 70);
-            want = MetricToggle(want, HeatmapRenderer.Metric.Aoa, "AoA", 60);
-            want = MetricToggle(want, HeatmapRenderer.Metric.Throttle, "Throttle", 85);
+            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Endurance, Localizer.Format("FARHeatmapsEndurance"), 90);
+            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Range, Localizer.Format("FARHeatmapsRange"), 70);
+            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Aoa, "AoA", 60);
+            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Throttle, "Throttle", 85);
 
             if (want != HeatmapRenderer.ColorMetric)
             {
@@ -638,17 +706,6 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             }
         }
 
-        // One radio-style metric toggle: returns metric if it was just selected, else the current want.
-        private static HeatmapRenderer.Metric MetricToggle(
-            HeatmapRenderer.Metric want,
-            HeatmapRenderer.Metric metric,
-            string label,
-            float width
-        )
-        {
-            bool on = GUILayout.Toggle(HeatmapRenderer.ColorMetric == metric, label, GUILayout.Width(width));
-            return on && HeatmapRenderer.ColorMetric != metric ? metric : want;
-        }
 
         /// <summary>
         /// Requests cancellation and synchronously joins the running worker task, so once this returns
@@ -1180,11 +1237,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                         }
                                         catch (Exception e)
                                         {
-                                            System.Threading.Interlocked.Increment(ref _parallelErrorCount);
-                                            System.Threading.Interlocked.CompareExchange(
-                                                ref _firstParallelException,
-                                                new Exception($"parallel trim threw at i{i} j{j} k{k} (M {mach:F2}, alt {altRow:F0})", e),
-                                                null);
+                                            CaptureParallelError($"parallel trim threw at i{i} j{j} k{k} (M {mach:F2}, alt {altRow:F0})", e);
 
                                             System.Threading.Interlocked.Add(ref _cellsDone, mapCount);
                                             continue;
@@ -1297,11 +1350,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                         }
                                         catch (Exception e)
                                         {
-                                            System.Threading.Interlocked.Increment(ref _parallelErrorCount);
-                                            System.Threading.Interlocked.CompareExchange(
-                                                ref _firstParallelException,
-                                                new Exception($"parallel trim threw at i{i} j{j} k{k} (M {mach:F2}, alt {altRow:F0})", e),
-                                                null);
+                                            CaptureParallelError($"parallel trim threw at i{i} j{j} k{k} (M {mach:F2}, alt {altRow:F0})", e);
 
                                             ctxGrid[i, j, k] = default;
                                         }
@@ -1489,6 +1538,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             }
 
             HeatmapResult.Cached = _results;
+            HeatmapPersistence.Save(_results); // survive a restart, reload for this craft in flight/editor
             _deck.Restore();
             AppendGeneration();
             _statusMessage = Localizer.Format("FAREnvelopeDone", _cellsDone.ToString(CultureInfo.InvariantCulture));
@@ -1795,11 +1845,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 }
                 catch (Exception e)
                 {
-                    System.Threading.Interlocked.Increment(ref _parallelErrorCount);
-                    System.Threading.Interlocked.CompareExchange(
-                        ref _firstParallelException,
-                        new Exception($"parallel engine pass threw at i{i} j{j} k{k}", e),
-                        null);
+                    CaptureParallelError($"parallel engine pass threw at i{i} j{j} k{k}", e);
 
                     cell = default;
                 }
@@ -1814,6 +1860,14 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         /// exception through FARLogger (Unity's log handler), which crashes natively if touched from a
         /// worker. Called after a phase's join, so the workers are done.
         /// </summary>
+        // Records a worker-thread sweep exception lock-free: bumps the count and keeps the first one, for
+        // LogParallelErrors to report on the main thread once the sweep joins. Safe to call from any worker.
+        private void CaptureParallelError(string context, Exception e)
+        {
+            System.Threading.Interlocked.Increment(ref _parallelErrorCount);
+            System.Threading.Interlocked.CompareExchange(ref _firstParallelException, new Exception(context, e), null);
+        }
+
         private void LogParallelErrors()
         {
             Exception first = System.Threading.Interlocked.Exchange(ref _firstParallelException, null);

@@ -187,23 +187,13 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             /// deflection limit — pair with a non-zero CmCruise to spot an un-trimmable high-AoA cell.</summary>
             public double CruisePitch;
 
-            /// <summary>Full-throttle thrust along the relative wind, N.</summary>
+            /// <summary>Sustainable thrust along the relative wind, N — every engine held at or below its
+            /// temperature limit (thermally capped), so this is the max thrust the aircraft can hold, not a
+            /// melting full-throttle figure.</summary>
             public double ThrustAvailableN;
 
-            /// <summary>Positive when the vehicle can accelerate or climb here, N.</summary>
+            /// <summary>Positive when the vehicle can accelerate or climb here, N (against sustainable thrust).</summary>
             public double ExcessThrustN;
-
-            /// <summary>
-            /// The highest throttle (0-1) that keeps every engine at or below its temperature limit here —
-            /// i.e. the thrust-limiter setting the aircraft can actually sustain. 1.0 when full throttle is
-            /// within limits. Below 1 for a ramjet that would overheat wide open (temperature rises with
-            /// throttle); the thrust available within that limit is <see cref="ThermalLimitedThrustN" />.
-            /// </summary>
-            public double ThermalLimitThrottle;
-
-            /// <summary>Thrust along the wind at <see cref="ThermalLimitThrottle" />, N — the max thrust the
-            /// engines can hold here without exceeding temperature (equals ThrustAvailableN when unlimited).</summary>
-            public double ThermalLimitedThrustN;
 
             /// <summary>Throttle holding T = D, or NaN if drag cannot be matched.</summary>
             public double ThrottleRequired;
@@ -853,41 +843,24 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             cell.ThrustAvailableN = Vector3d.Dot(maxSample.Thrust, maxVelDir);
             cell.ExcessThrustN = cell.ThrustAvailableN - dragAtMax;
 
-            // Thermal-limited thrust: the most thrust the engines can hold here without exceeding
-            // temperature — the thrust-limiter the aircraft can actually sustain. Full throttle if that is
-            // already within limits; otherwise the throttle where the hottest engine sits at its limit (a
-            // ramjet's temperature rises with throttle, so bisection converges). Informational only — it
-            // does not gate feasibility (a cell is walled by its CRUISE-throttle temperature below).
-            if (maxSample.MaxThermalRatio <= EditorEngineDeck.ThermalLimit)
-            {
-                cell.ThermalLimitThrottle = 1.0;
-                cell.ThermalLimitedThrustN = cell.ThrustAvailableN;
-            }
-            else
-            {
-                double lo = 0.0, hi = 1.0;
-                for (int it = 0; it < 12; it++)
-                {
-                    double mid = 0.5 * (lo + hi);
-                    if (sampleEngines(mid).MaxThermalRatio > EditorEngineDeck.ThermalLimit)
-                        hi = mid;
-                    else
-                        lo = mid;
-                }
-
-                cell.ThermalLimitThrottle = lo;
-                cell.ThermalLimitedThrustN = Vector3d.Dot(sampleEngines(lo).Thrust, maxVelDir);
-            }
-
-            // Can the engine physically make enough thrust to hold level flight, heat aside?
+            // maxSample is already thermally capped: each engine is held at its own temperature limit
+            // (a heat-managing pilot's per-engine thrust limiter), so ThrustAvailableN is the SUSTAINABLE
+            // max, not a melting full-throttle figure. A cell whose thermally-limited thrust cannot reach
+            // drag is walled; Overheats marks that the wall is a heat wall (an engine is at its limiter),
+            // which is also what tells the combined map to shed its turbojets to ram power.
             if (cell.ExcessThrustN < 0)
-                return cell; // thrust-limited, not a heat wall
+            {
+                cell.ThermalRatio = maxSample.MaxThermalRatio; // report the (uncapped) hot ratio even when walled
+                cell.Overheats = maxSample.ThermalLimited;
+                return cell;
+            }
 
             if (props.UsableFuelKg <= 0)
             {
                 cell.Feasible = true;
                 cell.Cruise = CruiseState.NoBurnableFuel;
                 cell.ThermalRatio = maxSample.MaxThermalRatio;
+                cell.Overheats = maxSample.ThermalLimited;
                 return cell;
             }
 
@@ -910,23 +883,15 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             switch (cell.Cruise)
             {
                 case CruiseState.Ok:
-                    // The minimum throttle that holds this speed would still melt the engine — no
-                    // way to sustain it without destroying the engine. True top-speed wall: fires
-                    // for a jet at any throttle, and for a ramjet only at the throttles it needs.
-                    if (thermalAtCruise >= EditorEngineDeck.ThermalLimit)
-                    {
-                        cell.Overheats = true;
-                        // The cruise throttle WAS solved (it just overheats), so keep it and the fuel
-                        // flow rather than discarding them — the prediction check and the throttle
-                        // colouring want the real value at overheating cells, not NaN.
-                        cell.ThrottleRequired = throttle;
-                        cell.FuelFlowKgPerS = fuelFlow;
-                        return cell;
-                    }
-
                     cell.Feasible = true;
                     cell.ThrottleRequired = throttle;
                     cell.FuelFlowKgPerS = fuelFlow;
+                    // Overheats means "flown on a reduced thrust limiter here". Keyed on the FULL-throttle
+                    // sample, not the cruise throttle: a heat-managing pilot sets the limiter for full-throttle
+                    // safety (so an instant firewall does not melt the engine) and leaves it there, so the cell
+                    // runs limited even when the cruise throttle alone would be cool. On the combined map this
+                    // also flags the turbojet shed. maxSample already thermally caps ThrustAvailableN.
+                    cell.Overheats = maxSample.ThermalLimited;
                     // Add intake spillage drag to the reported cruise drag. Lift (L/D * drag) is held
                     // fixed so endurance tracks the higher fuel burn, not a changed lift.
                     cell.RamDragN = cruiseDragN - ctx.DragN;
