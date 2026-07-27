@@ -283,8 +283,6 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                 LiftToDrag = Lerp(a.LiftToDrag, b.LiftToDrag, f),
                 ThrustAvailableN = Lerp(a.ThrustAvailableN, b.ThrustAvailableN, f),
                 ExcessThrustN = Lerp(a.ExcessThrustN, b.ExcessThrustN, f),
-                ThermalLimitThrottle = Lerp(a.ThermalLimitThrottle, b.ThermalLimitThrottle, f),
-                ThermalLimitedThrustN = Lerp(a.ThermalLimitedThrustN, b.ThermalLimitedThrustN, f),
                 ThermalRatio = Lerp(a.ThermalRatio, b.ThermalRatio, f),
                 ThrottleRequired = LerpFinite(a.ThrottleRequired, b.ThrottleRequired, f),
                 // Fuel flow of 0 means the sample never solved a cruise (infeasible/overheating), so it
@@ -294,17 +292,21 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                 EnduranceHours = double.NaN
             };
 
+            // ExcessThrustN is the thermally-capped (sustainable) excess, so this is a real wall. Overheats
+            // marks it a heat wall (an engine at its limiter) vs a plain thrust shortfall. It is a
+            // full-throttle property (set by the calculator), not a cruise-temperature one, so carry it
+            // from the samples rather than re-derive from the interpolated cruise ThermalRatio.
             if (c.ExcessThrustN < 0)
-                return c; // thrust-limited
-
-            if (c.ThermalRatio >= EditorEngineDeck.ThermalLimit)
             {
-                c.Overheats = true;
+                c.Overheats = a.Overheats || b.Overheats;
                 return c;
             }
 
             c.Feasible = true;
             c.Cruise = PerformanceEnvelopeCalculator.CruiseState.Ok;
+            // Flyable even when an engine is at its thermal limiter here — the thrust/fuel are the capped
+            // values; Overheats just flags that it is running heat-limited (full-throttle basis).
+            c.Overheats = a.Overheats || b.Overheats;
             // At or below the swept dry mass the tank is empty, so range/endurance is 0, not the NaN
             // that ln(mass/dry) = ln(1) produces. FillForMass clamps live mass to the dry sample, so
             // once the aircraft burns down to it the whole map would otherwise read NaN.
@@ -375,12 +377,21 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             if (vessel == null)
                 return false;
 
+            return CountPhysicalParts(vessel) == PartCount && vessel.vesselName == CraftName;
+        }
+
+        /// <summary>Physical (aero-participating) part count of a vessel — the tally used with the craft
+        /// name as the cache key. See <see cref="Matches" />.</summary>
+        public static int CountPhysicalParts(Vessel vessel)
+        {
+            if (vessel == null)
+                return 0;
+
             int parts = 0;
             foreach (Part p in vessel.Parts)
                 if (!FARAeroUtil.IsNonphysical(p))
                     parts++;
-
-            return parts == PartCount && vessel.vesselName == CraftName;
+            return parts;
         }
     }
 }

@@ -192,6 +192,7 @@
     <Compile Include="FARGUI\FAREditorGUI\HeatmapRenderer.cs" />
     <Compile Include="FARGUI\FAREditorGUI\HeatmapsGUI.cs" />
     <Compile Include="FARGUI\FAREditorGUI\Simulation\HeatmapResult.cs" />
+    <Compile Include="FARGUI\FAREditorGUI\Simulation\HeatmapPersistence.cs" />
     <Compile Include="FARGUI\FARFlightGUI\FlightHeatmapGUI.cs" />
     <Compile Include="FARGUI\FAREditorGUI\EngineDeckGUI.cs" />
     <Compile Include="FARPartGeometry\GeometryMesh.cs" />

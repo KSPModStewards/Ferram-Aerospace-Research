@@ -53,6 +53,15 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             return PerformanceEnvelopeCalculator.RangeKm(c);
         }
 
+        /// <summary>One radio-style metric toggle: returns <paramref name="metric" /> if it was just
+        /// selected, else the unchanged <paramref name="want" />. Shared by the editor and flight metric
+        /// rows so they cannot drift.</summary>
+        public static Metric MetricToggle(Metric want, Metric metric, string label, float width)
+        {
+            bool on = GUILayout.Toggle(ColorMetric == metric, label, GUILayout.Width(width));
+            return on && ColorMetric != metric ? metric : want;
+        }
+
         private HeatmapResult _result;
 
         /// <summary>Engine-type label of the bound result, or empty for a single-type craft.</summary>
@@ -144,12 +153,12 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
             if (!c.Trimmed || c.Suppressed)
                 return Color.black; // no trim here, or hidden by cleanup (isolated dot / disconnected)
-            if (c.Overheats)
-                // Thrust is there, the engine cannot take the heat. Off-white rather than pure white
-                // so the white current-cell box still reads against it.
-                return new Color(0.867f, 0.867f, 0.867f);
             if (!c.Feasible)
-                return new Color(0.5f, 0.5f, 0.5f); // grey — drag exceeds available thrust
+                // A heat wall (an engine at its temperature limit, and even the thermally-capped thrust
+                // cannot hold this speed) reads off-white; a plain thrust shortfall reads grey.
+                return c.Overheats
+                           ? new Color(0.867f, 0.867f, 0.867f)
+                           : new Color(0.5f, 0.5f, 0.5f);
 
             // Feasible but with no cruise-endurance figure by nature — nothing to burn, or idle thrust
             // exceeds drag: a distinct teal rather than a point on the porkchop ramp.
@@ -187,6 +196,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             // dimmed so the handoff region reads as distinct from full-combined-power cells.
             if (c.ReducedEngines)
                 feasible = new Color(feasible.r * 0.775f, feasible.g * 0.775f, feasible.b * 0.775f);
+
+            // Thermally limited: flyable, but an engine is held at a reduced thrust limiter here to stay
+            // under temperature. Warm-tint the porkchop colour so the heat-limited band reads distinctly.
+            if (c.Overheats)
+                feasible = new Color(Mathf.Lerp(feasible.r, 1f, 0.25f), feasible.g * 0.8f, feasible.b * 0.7f);
 
             return feasible;
         }
@@ -345,32 +359,28 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                     sb.Append("\n\nHidden — isolated from the main envelope;\nshown for reference only.");
 
                 sb.AppendFormat(CultureInfo.InvariantCulture,
-                                "\n\nThrust avail : {0:F1} kN",
+                                "\n\nThrust avail : {0:F1} kN (sustainable)",
                                 c.ThrustAvailableN / 1000);
-
-                // When full throttle would overheat, the thrust the aircraft can actually sustain is lower —
-                // show it and the thrust-limiter setting (max safe throttle) that holds it.
-                if (c.ThermalLimitThrottle > 0 && c.ThermalLimitThrottle < 0.999)
-                    sb.AppendFormat(CultureInfo.InvariantCulture,
-                                    "\nSustainable  : {0:F1} kN @ {1:F0}% limiter (heat)",
-                                    c.ThermalLimitedThrustN / 1000,
-                                    c.ThermalLimitThrottle * 100);
-
                 sb.AppendFormat(CultureInfo.InvariantCulture, "\nDrag         : {0:F1} kN", c.DragN / 1000);
                 sb.AppendFormat(CultureInfo.InvariantCulture, "\nAoA          : {0:F1}°", c.Alpha);
                 sb.AppendFormat(CultureInfo.InvariantCulture, "\nL/D          : {0:F2}", c.LiftToDrag);
 
                 if (c.ThermalRatio > 0)
                     sb.AppendFormat(CultureInfo.InvariantCulture,
-                                    "\nEngine temp  : {0:F0}% of limit (at cruise throttle)",
-                                    c.ThermalRatio * 100);
+                                    "\nEngine temp  : {0:F0}% of limit at cruise{1}",
+                                    Math.Min(c.ThermalRatio, EditorEngineDeck.ThermalLimit) * 100,
+                                    c.ThermalRatio > EditorEngineDeck.ThermalLimit
+                                        ? string.Format(CultureInfo.InvariantCulture, " (capped from {0:F0}%)", c.ThermalRatio * 100)
+                                        : "");
 
+                // Overheats now means an engine is held at a reduced thrust limiter to stay under
+                // temperature: flyable-but-heat-limited when feasible, a genuine heat wall when not.
                 if (c.Overheats)
-                {
-                    sb.Append("\n\nTop-speed wall: the throttle needed to");
-                    sb.Append("\nhold this speed overheats the engine.");
-                }
-                else if (c.Feasible)
+                    sb.Append(c.Feasible
+                                  ? "\nHeat-limited : an engine runs a reduced thrust\nlimiter here to stay under temperature."
+                                  : "\n\nHeat wall: even at the thermal limit the\nengines cannot hold this speed.");
+
+                if (c.Feasible)
                     switch (c.Cruise)
                     {
                         case PerformanceEnvelopeCalculator.CruiseState.Ok:
@@ -400,7 +410,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                             sb.Append("\n\nCruise throttle did not converge.");
                             break;
                     }
-                else
+                else if (!c.Overheats)
                 {
                     sb.AppendFormat(CultureInfo.InvariantCulture,
                                     "\n\nDrag exceeds thrust by {0:F1} kN —",

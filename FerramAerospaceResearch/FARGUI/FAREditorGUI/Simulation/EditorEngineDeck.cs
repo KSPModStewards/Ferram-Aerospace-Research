@@ -65,6 +65,15 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             /// </summary>
             public double MaxThermalRatio;
 
+            /// <summary>
+            /// True if any engine was throttled back from the demand throttle to stay at/under its
+            /// temperature limit at this condition — i.e. the aircraft is flying on a reduced thrust
+            /// limiter here (thermal management), not the full commanded throttle. <see cref="Thrust" />
+            /// and <see cref="FuelFlow" /> are the sustainable (capped) values; MaxThermalRatio stays the
+            /// UNCAPPED hottest ratio so callers can still see how hot it would run wide open.
+            /// </summary>
+            public bool ThermalLimited;
+
             // Inlet bookkeeping, recorded so it can be diffed against SolverFlightSys's public
             // InletArea/EngineArea/AreaRatio/OverallTPR in flight. This is the part of the deck
             // reconstructed without a reference implementation to copy, so it is the part most
@@ -525,18 +534,33 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                     continue;
                 }
 
-                Vector3d engineThrust = ThrustDirection(m, e) * thrustN;
-
-                // Thermal ratio at THIS throttle. It is not folded into a shed/keep decision here:
-                // a ramjet's temperature (nozzle exit) falls with throttle, so whether it survives
-                // depends on the throttle it will actually cruise at — a full-throttle sample would
-                // wrongly wall off cells the aircraft flies through at part throttle. The caller
-                // decides feasibility at the cruise throttle instead. (A jet's temp is compressor
-                // exit, throttle-independent, so the same check still walls it correctly.)
                 double thermalRatio = SolverEnginesInterop.GetThermalRatio(m);
                 if (thermalRatio > sample.MaxThermalRatio)
-                    sample.MaxThermalRatio = thermalRatio;
+                    sample.MaxThermalRatio = thermalRatio; // uncapped hottest, for observability
 
+                // Per-engine thermal cap: if this engine exceeds its temperature limit at the demand
+                // throttle, back IT (not the whole aircraft) down to the throttle that sits at the limit
+                // and re-read — the aircraft flies here on a reduced thrust limiter, not by melting the
+                // engine, and engines with different heat limits back off by different amounts. Temperature
+                // rises ~linearly with throttle from the inlet stagnation temp (throttle 0), so one linear
+                // solve gives the limit throttle; this reproduces the limiter a heat-managing pilot sets.
+                if (thermalRatio > ThermalLimit)
+                {
+                    double maxTemp = SolverEnginesInterop.GetMaxEngineTemp(m);
+                    double thermal0 = maxTemp > 0 ? SolverEnginesInterop.GetTemperature(inletTherm) / maxTemp : 0;
+                    e.currentThrottle = (float)ThermalCapThrottle(e.currentThrottle, thermalRatio, thermal0);
+                    if (SolverEnginesInterop.UpdateSolver(m, ambientTherm, alt, forward * speed, mach, true, true, false) &&
+                        SolverEnginesInterop.TryGetSolverOutputs(m, out double tN2, out double ff2, out double _, out double _, out bool run2) &&
+                        FARMathUtil.IsFinite(tN2) && FARMathUtil.IsFinite(ff2))
+                    {
+                        thrustN = tN2;
+                        fuelFlow = ff2;
+                        running = run2;
+                        sample.ThermalLimited = true;
+                    }
+                }
+
+                Vector3d engineThrust = ThrustDirection(m, e) * thrustN;
                 thrustSum += engineThrust;
                 sample.FuelFlow += fuelFlow;
                 if (running)
@@ -881,13 +905,32 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                 if (!FARMathUtil.IsFinite(thrustN) || !FARMathUtil.IsFinite(fuelFlow))
                     continue;
 
-                thrustSum += _thrustDir[ei] * thrustN;
-                sample.FuelFlow += fuelFlow;
-
                 double thermalRatio = s.MaxEngineTemp > 0 ? engineTemp / s.MaxEngineTemp : 0;
                 if (thermalRatio > sample.MaxThermalRatio)
-                    sample.MaxThermalRatio = thermalRatio;
+                    sample.MaxThermalRatio = thermalRatio; // uncapped hottest, for observability
 
+                // Per-engine thermal cap (see the serial path): back this engine down to its temperature
+                // limit and re-drive, so a craft with different per-engine heat limits is modelled as flown
+                // with a per-engine thrust limiter rather than melting. env.InletPreT is the stagnation
+                // temperature the engine sees at throttle 0.
+                if (thermalRatio > ThermalLimit && s.MaxEngineTemp > 0)
+                {
+                    double thermal0 = env.InletPreT / s.MaxEngineTemp;
+                    double capThrottle = ThermalCapThrottle(currentThrottle, thermalRatio, thermal0);
+                    if (SolverEnginesInterop.DriveClonedSolver(clone, s, ambientTherm, inletTherm, areaRatio,
+                                                               env.Alt, vel, env.Mach, capThrottle,
+                                                               out double tN2, out double ff2, out double _, out bool run2) &&
+                        FARMathUtil.IsFinite(tN2) && FARMathUtil.IsFinite(ff2))
+                    {
+                        thrustN = tN2;
+                        fuelFlow = ff2;
+                        running = run2;
+                        sample.ThermalLimited = true;
+                    }
+                }
+
+                thrustSum += _thrustDir[ei] * thrustN;
+                sample.FuelFlow += fuelFlow;
                 if (running)
                     sample.RunningCount++;
             }
@@ -903,6 +946,19 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             sample.InletP = inletP;
             sample.InletT = env.InletPreT;
             return sample;
+        }
+
+        // Throttle at which an engine reaches its temperature limit, from a linear temp-vs-throttle model:
+        // temperature rises from thermal0 (throttle 0, inlet stagnation) to thermalRatio at the demand
+        // throttle. Called only when the engine is already over the limit. If the slope is too flat to
+        // solve, temperature is set by inlet stagnation and no throttle keeps it under limit, so the engine
+        // is shut (0) rather than run over temperature. Clamped to [0, throttle]. Shared by the serial and
+        // cloned-solver drive loops so the two heat-cap models cannot drift.
+        private static double ThermalCapThrottle(double throttle, double thermalRatio, double thermal0)
+        {
+            if (thermalRatio - thermal0 <= 1e-6)
+                return 0.0;
+            return FARMathUtil.Lerp(thermal0, thermalRatio, 0.0, throttle, ThermalLimit).Clamp(0.0, throttle);
         }
 
         /// <summary>

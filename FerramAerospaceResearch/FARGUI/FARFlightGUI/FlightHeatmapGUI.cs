@@ -54,10 +54,31 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
         private bool _showStability = true;
         private string _logMessage = "";
 
+        private Vessel _diskLoadTriedFor; // vessel the on-disk heatmap cache was last attempted for
 
         public void Display(Vessel vessel)
         {
             List<HeatmapResult> results = HeatmapResult.Cached;
+
+            // Nothing swept this session, or the in-memory sweep is for a different craft: try the on-disk
+            // cache for the vessel being flown, so a heatmap swept in an earlier session still shows. Gate on
+            // the vessel first so this whole probe (and its per-part Matches scan) runs once per vessel, not
+            // every frame (Display is per-frame).
+            if (vessel != null && !ReferenceEquals(_diskLoadTriedFor, vessel))
+            {
+                _diskLoadTriedFor = vessel;
+
+                if (results == null || results.Count == 0 || !results[0].Matches(vessel))
+                {
+                    List<HeatmapResult> loaded =
+                        HeatmapPersistence.Load(vessel.vesselName, HeatmapResult.CountPhysicalParts(vessel));
+                    if (loaded != null && loaded.Count > 0)
+                    {
+                        HeatmapResult.Cached = loaded;
+                        results = loaded;
+                    }
+                }
+            }
 
             if (results == null || results.Count == 0)
             {
@@ -232,10 +253,10 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
             GUILayout.Label(Localizer.Format("FARHeatmapsColorBy"), GUILayout.Width(60));
 
             HeatmapRenderer.Metric want = HeatmapRenderer.ColorMetric;
-            want = MetricToggle(want, HeatmapRenderer.Metric.Endurance, Localizer.Format("FARHeatmapsEndurance"), 90);
-            want = MetricToggle(want, HeatmapRenderer.Metric.Range, Localizer.Format("FARHeatmapsRange"), 80);
-            want = MetricToggle(want, HeatmapRenderer.Metric.Aoa, "AoA", 60);
-            want = MetricToggle(want, HeatmapRenderer.Metric.Throttle, "Throttle", 85);
+            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Endurance, Localizer.Format("FARHeatmapsEndurance"), 90);
+            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Range, Localizer.Format("FARHeatmapsRange"), 80);
+            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Aoa, "AoA", 60);
+            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Throttle, "Throttle", 85);
 
             if (want == HeatmapRenderer.ColorMetric)
                 return;
@@ -245,17 +266,6 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                 r.RepaintEnvelope();
         }
 
-        // One radio-style metric toggle: returns metric if it was just selected, else the current want.
-        private static HeatmapRenderer.Metric MetricToggle(
-            HeatmapRenderer.Metric want,
-            HeatmapRenderer.Metric metric,
-            string label,
-            float width
-        )
-        {
-            bool on = GUILayout.Toggle(HeatmapRenderer.ColorMetric == metric, label, GUILayout.Width(width));
-            return on && HeatmapRenderer.ColorMetric != metric ? metric : want;
-        }
 
         /// <summary>Rebuilds the renderer list when a new sweep set is cached.</summary>
         private void SyncRenderers(List<HeatmapResult> results)
@@ -543,7 +553,7 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
             else
             {
                 sb.AppendFormat(CultureInfo.InvariantCulture,
-                                "  Thrust avail {0:F2} kN (full throttle)   Drag {1:F2} kN\n",
+                                "  Thrust avail {0:F2} kN (sustainable, thermally capped)   Drag {1:F2} kN\n",
                                 c.ThrustAvailableN / 1000,
                                 c.DragN / 1000);
                 sb.AppendFormat(CultureInfo.InvariantCulture,
@@ -594,9 +604,15 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                                 c.Feasible,
                                 c.Cruise,
                                 c.Overheats);
+                // Predicted temp is the CAPPED running temp (an engine held at its limiter sits at the
+                // limit, not the uncapped ratio it would reach wide open, which is shown in parentheses).
+                double cappedRatio = Math.Min(c.ThermalRatio, EditorEngineDeck.ThermalLimit);
                 sb.AppendFormat(CultureInfo.InvariantCulture,
-                                "  Engine temp: predicted {0:F0}% of limit   flight {1:F0}% of limit\n",
-                                c.ThermalRatio * 100,
+                                "  Engine temp: predicted {0:F0}% of limit{1}   flight {2:F0}% of limit\n",
+                                cappedRatio * 100,
+                                c.ThermalRatio > EditorEngineDeck.ThermalLimit
+                                    ? string.Format(CultureInfo.InvariantCulture, " ({0:F0}% uncapped)", c.ThermalRatio * 100)
+                                    : "",
                                 FlightMaxTempRatio(vessel) * 100);
                 if (c.Cruise == PerformanceEnvelopeCalculator.CruiseState.Ok)
                     sb.AppendFormat(CultureInfo.InvariantCulture,

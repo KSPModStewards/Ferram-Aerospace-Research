@@ -395,6 +395,14 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             return temp / maxTemp;
         }
 
+        /// <summary>The engine's temperature limit (maxEngineTemp), K; 0 if unavailable.</summary>
+        public static double GetMaxEngineTemp(PartModule engine)
+        {
+            if (engineMaxTemp == null)
+                return 0;
+            return (double)engineMaxTemp.GetValue(engine);
+        }
+
         public static void UpdateInletEffects(PartModule engine, object inletTherm, double areaRatio, double tpr)
         {
             args3[0] = inletTherm;
@@ -681,10 +689,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         }
 
         /// <summary>
-        /// The solver throttle (0-1) the hardest-working running air-breather is actually at in flight —
-        /// i.e. currentThrottle AFTER the thrust limiter (squared, for AJE). This is what compares
-        /// apples-to-apples with the sim's solved ThrottleRequired; vessel.ctrlState.mainThrottle does not
-        /// when a thrust limiter is set. Flight only. Returns false if no such engine is running.
+        /// The thrust-weighted solver throttle (0-1) the running air-breathers are actually at in flight —
+        /// each engine's currentThrottle (AFTER the thrust limiter, squared for AJE) weighted by the thrust
+        /// it produces. Weighting by thrust (not the max) keeps the aggregate meaningful when a craft runs
+        /// DIFFERENT per-engine thrust limiters, so it compares apples-to-apples with the sim's solved
+        /// ThrottleRequired. Flight only. Returns false if no air-breather is producing positive thrust.
         /// </summary>
         public static bool TryGetFlightSolverThrottle(Vessel vessel, out double throttle)
         {
@@ -692,19 +701,23 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             if (vessel == null || vessel.parts == null || moduleEnginesSolverType == null)
                 return false;
 
-            double max = -1;
+            double weightSum = 0, throttleWeightSum = 0;
             foreach (Part p in vessel.parts)
                 foreach (PartModule pm in p.Modules)
                 {
                     if (!moduleEnginesSolverType.IsInstanceOfType(pm) || !(pm is ModuleEngines e))
                         continue;
-                    if (e.EngineIgnited && !e.flameout && e.currentThrottle > max)
-                        max = e.currentThrottle;
+                    if (!e.EngineIgnited || e.flameout)
+                        continue;
+
+                    double w = Math.Max(0, e.finalThrust); // only thrust-producing engines weight the mean
+                    weightSum += w;
+                    throttleWeightSum += w * e.currentThrottle;
                 }
 
-            if (max < 0)
+            if (weightSum <= 0)
                 return false;
-            throttle = max;
+            throttle = throttleWeightSum / weightSum;
             return true;
         }
 
