@@ -257,6 +257,7 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
             want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Range, Localizer.Format("FARHeatmapsRange"), 80);
             want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Aoa, "AoA", 60);
             want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Throttle, "Throttle", 85);
+            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Climb, "Climb", 60);
 
             if (want == HeatmapRenderer.ColorMetric)
                 return;
@@ -317,6 +318,11 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                 _displayResults[t].FillForMass(massKg);
                 _envRenderers[t].RepaintEnvelope();
             }
+
+            // The perf map's black/grey cells shift as the interpolated mass changes, so re-mask and repaint
+            // the stability map against the combined (or only) map at the new mass.
+            HeatmapResult.ApplyStabilityPerfMask(_displayResults);
+            _stabRenderer.RepaintStability();
         }
 
         private void HandleCellClick(Vessel vessel, HeatmapResult result, (int i, int j) cell)

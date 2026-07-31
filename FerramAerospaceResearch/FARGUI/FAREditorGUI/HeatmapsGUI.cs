@@ -493,6 +493,12 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 if (t < _envRenderers.Count)
                     _envRenderers[t].RepaintEnvelope();
             }
+
+            if (_includeStability)
+            {
+                HeatmapResult.ApplyStabilityPerfMask(_results); // perf black/grey moves with the mass sample
+                _stabRenderer.RepaintStability();
+            }
         }
 
         /// <summary>One map's placement in the row flow: an envelope renderer, or the stability map.</summary>
@@ -613,6 +619,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 _sweepGroups.Add(null); // loaded maps carry no engine-group info; a Run rebuilds it
             }
 
+            HeatmapResult.ApplyStabilityPerfMask(loaded); // black/grey stability from the perf map, before painting
             _stabRenderer.SetResult(loaded[0]);
             _results = loaded;
             HeatmapResult.Cached = loaded;
@@ -696,6 +703,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Range, Localizer.Format("FARHeatmapsRange"), 70);
             want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Aoa, "AoA", 60);
             want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Throttle, "Throttle", 85);
+            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Climb, "Climb", 60);
 
             if (want != HeatmapRenderer.ColorMetric)
             {
@@ -1016,8 +1024,38 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 }
             }
 
-            // Stability is engine-independent, so sweep it once into the shared grid.
+            // Stability is engine-independent, so sweep it once into the shared grid. The vehicle mass
+            // properties are identical for every cell, so compute them once up front (the old code re-ran
+            // two per-cell part loops for every cell).
+            StabilityDerivCalculator.VehicleProperties stabProps = default;
+            double[] stabDensity = null;
+            double[] stabSspeed = null;
+            double[] stabSos = null;
             if (includeStab)
+            {
+                // Vehicle mass properties and the per-row atmosphere are identical for every cell, so sample
+                // them once on the main thread (Unity transforms / Rigidbody tensors and FARAtmosphere /
+                // Planetarium are main-thread only). The parallel envelope worker then reads these plain
+                // values and computes each row's stability cells in the same pass.
+                stabProps = _simManager.StabDerivCalculator.ComputeVehicleProperties(flapSetting, spoilers);
+                stabDensity = new double[altAxis.Length];
+                stabSspeed = new double[altAxis.Length];
+                stabSos = new double[altAxis.Length];
+                for (int j = 0; j < altAxis.Length; j++)
+                {
+                    if (FARAtmosphere.GetPressure(body, new Vector3d(0, 0, altAxis[j]), ut) <= 0)
+                        continue;
+                    GasProperties gas = FARAtmosphere.GetGasProperties(body, new Vector3d(0, 0, altAxis[j]), ut);
+                    stabDensity[j] = gas.Density;
+                    stabSspeed[j] = gas.SpeedOfSound;
+                    stabSos[j] = SpeedOfSoundAt(body, altAxis[j]);
+                }
+            }
+
+            // Stand-alone stability pass — only when there is no envelope sweep to ride with (stability
+            // only) or multithreading is off. Otherwise the parallel envelope worker below fills each row's
+            // stability cells in the same pass.
+            if (includeStab && (_stabilityOnly || !_multithread))
                 for (int j = 0; j < altAxis.Length; j++)
                 {
                     if (_cancelRequested)
@@ -1033,23 +1071,16 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                         continue;
                     }
 
-                    double sos = SpeedOfSoundAt(body, alt);
-
                     for (int i = 0; i < machAxis.Length; i++)
                     {
-                        double mach = ColumnMach(machAxis[i], sos);
+                        double mach = ColumnMach(machAxis[i], stabSos[j]);
                         var cell = new HeatmapResult.StabilityCell();
                         try
                         {
                             StabilityDerivOutput output =
-                                _simManager.StabDerivCalculator.CalculateStabilityDerivs(body,
-                                                                                         alt,
-                                                                                         mach,
-                                                                                         flapSetting,
-                                                                                         spoilers,
-                                                                                         0,
-                                                                                         0,
-                                                                                         0);
+                                _simManager.StabDerivCalculator.CalculateStabilityDerivs(
+                                    stabProps, body, alt, mach, stabDensity[j], stabSspeed[j],
+                                    flapSetting, spoilers, 0, 0, 0);
                             CollectOutOfRange(output, cell);
                             cell.Score = cell.OutOfRange.Count;
                         }
@@ -1207,7 +1238,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
                                 if (!rowValid[j])
                                 {
-                                    System.Threading.Interlocked.Add(ref _cellsDone, nMach * mapCount * massCount);
+                                    System.Threading.Interlocked.Add(ref _cellsDone,
+                                        nMach * mapCount * massCount + (includeStab ? nMach : 0));
                                     System.Threading.Volatile.Write(ref rowDone[j], true);
                                     return;
                                 }
@@ -1263,6 +1295,37 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                         engineTicks[slot] += ts2 - ts1;
                                     }
                                 }
+
+                                // Stability rides along in the same worker (engine-independent): one cell
+                                // per Mach at this row, from the precomputed mass properties + atmosphere.
+                                // machCell[i, j] is ColumnMach at the same speed of sound the stand-alone
+                                // path uses, so the two agree cell-for-cell.
+                                if (includeStab)
+                                    for (int i = 0; i < nMach; i++)
+                                    {
+                                        if (_cancelRequested)
+                                            break;
+
+                                        double smach = machCell[i, j];
+                                        var scell = new HeatmapResult.StabilityCell();
+                                        try
+                                        {
+                                            StabilityDerivOutput soutput =
+                                                _simManager.StabDerivCalculator.CalculateStabilityDerivs(
+                                                    stabProps, body, altRow, smach, stabDensity[j], stabSspeed[j],
+                                                    flapSetting, spoilers, 0, 0, 0);
+                                            CollectOutOfRange(soutput, scell);
+                                            scell.Score = scell.OutOfRange.Count;
+                                        }
+                                        catch (Exception e)
+                                        {
+                                            CaptureParallelError($"parallel stability threw at i{i} j{j} (M {smach:F2}, alt {altRow:F0})", e);
+                                            scell.Score = -1;
+                                        }
+
+                                        _results[0].Stability[i, j] = scell;
+                                        System.Threading.Interlocked.Increment(ref _cellsDone);
+                                    }
 
                                 ferram4.SimThreadContext.ReleaseSlot();
                                 System.Threading.Volatile.Write(ref rowDone[j], true);
@@ -1394,7 +1457,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
                             if (!rowValid[j])
                             {
-                                _cellsDone += nMach * mapCount * massCount;
+                                _cellsDone += nMach * mapCount * massCount + (includeStab ? nMach : 0);
                                 continue;
                             }
 
@@ -1417,8 +1480,37 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                 }
                             }
 
+                            // Stability rides along this row (engine-independent), main thread.
+                            if (includeStab)
+                                for (int i = 0; i < nMach; i++)
+                                {
+                                    double smach = machCell[i, j];
+                                    var scell = new HeatmapResult.StabilityCell();
+                                    try
+                                    {
+                                        StabilityDerivOutput soutput =
+                                            _simManager.StabDerivCalculator.CalculateStabilityDerivs(
+                                                stabProps, body, altRow, smach, stabDensity[j], stabSspeed[j],
+                                                flapSetting, spoilers, 0, 0, 0);
+                                        CollectOutOfRange(soutput, scell);
+                                        scell.Score = scell.OutOfRange.Count;
+                                    }
+                                    catch (Exception e)
+                                    {
+                                        FARLogger.Exception(e, $"while evaluating stability cell M {smach}, alt {altRow}");
+                                        scell.Score = -1;
+                                    }
+
+                                    _results[0].Stability[i, j] = scell;
+                                    _stabRenderer.PaintStabilityCell(i, j);
+                                    _cellsDone++;
+                                }
+
                             for (int t = 0; t < mapCount; t++)
                                 _envRenderers[t].PaintEnvelopeRow(j);
+
+                            if (includeStab)
+                                _stabRenderer.ApplyStability();
 
                             yield return null;
                         }
@@ -1523,7 +1615,16 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             }
 
             // The post-passes left the wet sample displayed; honour the fuel slider if it isn't at full.
-            if (_fuelSample != MassSamples - 1)
+            // When it isn't, ApplyFuelSample re-masks and repaints stability against that sample, so mask
+            // here only when it won't (slider at full), and only when stability was swept.
+            bool fuelSliderAtFull = _fuelSample == MassSamples - 1;
+            if (_includeStability && fuelSliderAtFull)
+            {
+                HeatmapResult.ApplyStabilityPerfMask(_results); // black/grey stability where the perf map is
+                _stabRenderer.RepaintStability();
+            }
+
+            if (!fuelSliderAtFull)
                 ApplyFuelSample();
 
             // The coarse probe finished: reframe to the user's sweep at the discovered extent and run it
@@ -1700,6 +1801,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 _envRenderers.Add(renderer);
             }
 
+            HeatmapResult.ApplyStabilityPerfMask(_results); // black/grey stability from the perf map
             _stabRenderer.SetResult(_results[0]);
 
             // Renderers were built from each grid's stored (wet) Envelope; sync them to the fuel slider.
@@ -1886,6 +1988,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         /// </summary>
         private void PaintFinishedRows(bool[] rowValid, bool[] rowDone, bool[] rowPainted, int mapCount)
         {
+            bool anyStab = false;
             for (int j = 0; j < rowDone.Length; j++)
             {
                 if (rowPainted[j] || !System.Threading.Volatile.Read(ref rowDone[j]))
@@ -1897,7 +2000,19 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
                 for (int t = 0; t < mapCount; t++)
                     _envRenderers[t].PaintEnvelopeRow(j);
+
+                // Stability rides along in the same worker, so its cells for this row are ready too.
+                if (_includeStability)
+                {
+                    int nMach = _results[0].MachAxis.Length;
+                    for (int i = 0; i < nMach; i++)
+                        _stabRenderer.PaintStabilityCell(i, j);
+                    anyStab = true;
+                }
             }
+
+            if (anyStab)
+                _stabRenderer.ApplyStability();
         }
 
         /// <summary>
@@ -1952,8 +2067,14 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         /// (black) cells. They come from the non-repeatable near-stall trim (FAR's stall model carries
         /// hysteresis across calls, so Cl(alpha) is not a clean function near stall), which lets the
         /// AoA solve land a spurious low-speed trim while its neighbours fail. Such a cell can't be a
-        /// real cruise if you can't fly to it, so keep only the largest connected group of trimmed
-        /// cells (4-neighbour) and drop the rest.
+        /// real cruise if you can't fly to it, so keep only the connected group holding the most
+        /// FEASIBLE cells (4-neighbour) and drop the other trimmed groups.
+        ///
+        /// Ranked by feasible-cell count, not raw trimmed size: a strongly heat-limited engine (a
+        /// turbojet down low) trims a huge high-Mach region it can never sustain, which would outvote
+        /// the real, smaller cruise envelope and blank it entirely. The heat wall itself is a genuine
+        /// boundary, not a spurious island, so overheating cells are kept visible even when they form
+        /// their own component detached from the envelope.
         /// </summary>
         private static void RemoveDisconnectedIslands(
             PerformanceEnvelopeCalculator.CellResult[,] grid,
@@ -1969,7 +2090,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                     label[i, j] = grid[i, j].Trimmed && !grid[i, j].Suppressed ? 0 : -1;
 
             var stack = new List<(int i, int j)>();
-            int bestId = 0, bestSize = 0, nextId = 0;
+            int bestId = 0, bestFeasible = 0, nextId = 0;
 
             for (int si = 0; si < nMach; si++)
                 for (int sj = 0; sj < nAlt; sj++)
@@ -1978,7 +2099,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                         continue;
 
                     nextId++;
-                    int size = 0;
+                    int feasible = 0;
                     stack.Clear();
                     stack.Add((si, sj));
                     label[si, sj] = nextId;
@@ -1987,7 +2108,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                     {
                         (int i, int j) = stack[stack.Count - 1];
                         stack.RemoveAt(stack.Count - 1);
-                        size++;
+                        if (grid[i, j].Feasible)
+                            feasible++;
 
                         if (i > 0 && label[i - 1, j] == 0) { label[i - 1, j] = nextId; stack.Add((i - 1, j)); }
                         if (i < nMach - 1 && label[i + 1, j] == 0) { label[i + 1, j] = nextId; stack.Add((i + 1, j)); }
@@ -1995,21 +2117,25 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                         if (j < nAlt - 1 && label[i, j + 1] == 0) { label[i, j + 1] = nextId; stack.Add((i, j + 1)); }
                     }
 
-                    if (size > bestSize)
+                    if (feasible > bestFeasible)
                     {
-                        bestSize = size;
+                        bestFeasible = feasible;
                         bestId = nextId;
                     }
                 }
 
-            if (bestId == 0)
-                return; // nothing trimmed
+            if (bestFeasible == 0)
+                return; // no feasible envelope to isolate — leave the trimmed cells as they are
 
             for (int i = 0; i < nMach; i++)
                 for (int j = 0; j < nAlt; j++)
                     if (label[i, j] > 0 && label[i, j] != bestId)
                     {
                         PerformanceEnvelopeCalculator.CellResult c = grid[i, j];
+                        if (c.Overheats && !c.Feasible)
+                            continue;          // keep the heat wall (infeasible + overheating), a real boundary —
+                                               // but a FEASIBLE heat-limited cell here is still a disconnected
+                                               // island, so let it be suppressed like any other.
                         c.Suppressed = true;   // hide + drop from the flyable envelope...
                         c.Feasible = false;    // ...but keep Trimmed and the drag/thrust it measured
                         grid[i, j] = c;

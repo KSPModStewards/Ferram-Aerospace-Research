@@ -75,6 +75,9 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         public double MaxAlphaDeg;
         public double MaxThrottle;
 
+        /// <summary>Best climb rate (m/s) among feasible cells; the climb colour ramp scales to it.</summary>
+        public double MaxClimbRateMPerS;
+
         public double CeilingM = double.NaN;
         public double BestEnduranceHours = double.NaN;
         public double BestRangeKm = double.NaN;
@@ -101,8 +104,50 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         public class StabilityCell
         {
             public int Score;
+
+            /// <summary>Derived post-calc from the performance map: 0 none, 1 perf-black (no trim / off the
+            /// flyable envelope), 2 perf-grey (drag exceeds thrust). Not persisted — recomputed by
+            /// <see cref="ApplyStabilityPerfMask" /> whenever the displayed perf sample changes.</summary>
+            public int PerfMask;
+
             public readonly List<(string name, double value, int expectedSign)> OutOfRange =
                 new List<(string name, double value, int expectedSign)>();
+        }
+
+        /// <summary>
+        /// Post-calc stability masking: black or grey each shared stability cell wherever the combined
+        /// (or, for a single engine type, the only) performance map blacks or greys it — those cells are
+        /// off the flyable envelope, so a stability reading there is noise. Reads the currently displayed
+        /// perf sample, so re-run when the fuel/mass sample changes. No-op without a stability grid or
+        /// matching envelope.
+        /// </summary>
+        public static void ApplyStabilityPerfMask(List<HeatmapResult> results)
+        {
+            if (results == null || results.Count == 0)
+                return;
+
+            HeatmapResult combined = results[results.Count - 1]; // combined is swept last; single-type => only map
+            StabilityCell[,] stab = results[0].Stability;
+            PerformanceEnvelopeCalculator.CellResult[,] env = combined.Envelope;
+            if (stab == null || env == null ||
+                env.GetLength(0) != stab.GetLength(0) || env.GetLength(1) != stab.GetLength(1))
+                return;
+
+            for (int i = 0; i < stab.GetLength(0); i++)
+                for (int j = 0; j < stab.GetLength(1); j++)
+                {
+                    StabilityCell c = stab[i, j];
+                    if (c == null)
+                        continue;
+
+                    PerformanceEnvelopeCalculator.CellResult p = env[i, j];
+                    if (!p.Trimmed || p.Suppressed)
+                        c.PerfMask = 1;                    // perf blacks it (no trim / off the envelope)
+                    else if (!p.Feasible)
+                        c.PerfMask = 2;                    // outside level flight: drag exceeds thrust, or a heat wall
+                    else
+                        c.PerfMask = 0;
+                }
         }
 
         /// <summary>
@@ -146,6 +191,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             MaxRangeKm = 0;
             MaxAlphaDeg = 0;
             MaxThrottle = 0;
+            MaxClimbRateMPerS = 0;
 
             for (int j = 0; j < AltAxis.Length; j++)
                 for (int i = 0; i < MachAxis.Length; i++)
@@ -163,6 +209,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                         MaxAlphaDeg = c.Alpha;
                     if (Finite(c.ThrottleRequired) && c.ThrottleRequired > MaxThrottle)
                         MaxThrottle = c.ThrottleRequired;
+                    if (Finite(c.ClimbRateMPerS) && c.ClimbRateMPerS > MaxClimbRateMPerS)
+                        MaxClimbRateMPerS = c.ClimbRateMPerS;
 
                     if (!Finite(c.EnduranceHours))
                         continue;
@@ -283,6 +331,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                 LiftToDrag = Lerp(a.LiftToDrag, b.LiftToDrag, f),
                 ThrustAvailableN = Lerp(a.ThrustAvailableN, b.ThrustAvailableN, f),
                 ExcessThrustN = Lerp(a.ExcessThrustN, b.ExcessThrustN, f),
+                // Climb rate is exact at each swept sample (its own mass and effective gravity); between
+                // samples it is blended like the other continuous fields rather than re-derived, which
+                // would need the flight condition's effective-g here. Adjacent samples are close, so the
+                // error is small.
+                ClimbRateMPerS = Lerp(a.ClimbRateMPerS, b.ClimbRateMPerS, f),
                 ThermalRatio = Lerp(a.ThermalRatio, b.ThermalRatio, f),
                 ThrottleRequired = LerpFinite(a.ThrottleRequired, b.ThrottleRequired, f),
                 // Fuel flow of 0 means the sample never solved a cruise (infeasible/overheating), so it
