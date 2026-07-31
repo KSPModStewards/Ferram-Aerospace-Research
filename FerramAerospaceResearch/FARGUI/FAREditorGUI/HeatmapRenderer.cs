@@ -31,14 +31,19 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
     {
         private const int MaxScore = 11;
 
-        /// <summary>Which quantity the colour ramp encodes. Range/Endurance colour high=best (cool end);
-        /// AoA/Throttle colour low=best (cool end), since a lower AoA or throttle is the better cell.</summary>
+        // Stability cells outside the performance envelope keep their hue but are darkened to this
+        // fraction, so the reading stays visible yet clearly reads as unflyable.
+        private const float OutsideEnvelopeDim = 0.6f;
+
+        /// <summary>Which quantity the colour ramp encodes. Range/Endurance/Climb colour high=best (cool
+        /// end); AoA/Throttle colour low=best (cool end), since a lower AoA or throttle is the better cell.</summary>
         public enum Metric
         {
             Endurance,
             Range,
             Aoa,
-            Throttle
+            Throttle,
+            Climb
         }
 
         /// <summary>
@@ -161,9 +166,12 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                            : new Color(0.5f, 0.5f, 0.5f);
 
             // Feasible but with no cruise-endurance figure by nature — nothing to burn, or idle thrust
-            // exceeds drag: a distinct teal rather than a point on the porkchop ramp.
-            if (c.Cruise == PerformanceEnvelopeCalculator.CruiseState.NoBurnableFuel ||
-                c.Cruise == PerformanceEnvelopeCalculator.CruiseState.IdleExceedsDrag)
+            // exceeds drag: a distinct teal rather than a point on the porkchop ramp. The climb map is the
+            // exception — these cells have a real climb rate (an idle-exceeds-drag cell climbs hard), so
+            // let them fall through and colour by it.
+            if (ColorMetric != Metric.Climb &&
+                (c.Cruise == PerformanceEnvelopeCalculator.CruiseState.NoBurnableFuel ||
+                 c.Cruise == PerformanceEnvelopeCalculator.CruiseState.IdleExceedsDrag))
                 return new Color(0.35f, 0.6f, 0.65f);
 
             double value, max;
@@ -178,6 +186,9 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                     break;
                 case Metric.Throttle:
                     value = c.ThrottleRequired; max = _result.MaxThrottle; lowerIsBetter = true;
+                    break;
+                case Metric.Climb:
+                    value = c.ClimbRateMPerS; max = _result.MaxClimbRateMPerS; lowerIsBetter = false;
                     break;
                 default:
                     value = c.EnduranceHours; max = _result.MaxEnduranceHours; lowerIsBetter = false;
@@ -211,9 +222,17 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             if (c == null || c.Score < 0)
                 return new Color(0.5f, 0.2f, 0.6f); // errored — distinct from any score colour
 
-            return Color.Lerp(new Color(0.15f, 0.8f, 0.25f),
-                              new Color(0.85f, 0.15f, 0.15f),
-                              Mathf.Clamp01((float)c.Score / MaxScore));
+            // Same porkchop ramp as the performance maps, fewer-out-of-range-is-better: a clean cell (score 0)
+            // reads cool (indigo), the worst (most derivatives out of range) reads warm (red).
+            Color color = Porkchop(1f - Mathf.Clamp01((float)c.Score / MaxScore));
+
+            // Outside the level-flight envelope (the perf map blacks or greys it) the craft can still fly
+            // here transiently — just not hold level flight — so keep the stability hue but darken it rather
+            // than hide the reading.
+            if (c.PerfMask != 0)
+                color = new Color(color.r * OutsideEnvelopeDim, color.g * OutsideEnvelopeDim, color.b * OutsideEnvelopeDim);
+
+            return color;
         }
 
         /// <summary>Repaints a single envelope row in place, for a sweep still in progress.</summary>
@@ -231,6 +250,17 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             if (_stabTex == null)
                 return;
             _stabTex.SetPixel(i, HeatmapAxes.TexRow(j), StabilityColor(i, j));
+        }
+
+        /// <summary>Repaints the whole stability texture, e.g. after the perf mask is recomputed.</summary>
+        public void RepaintStability()
+        {
+            if (_stabTex == null)
+                return;
+            for (int j = 0; j < _result.AltAxis.Length; j++)
+                for (int i = 0; i < _result.MachAxis.Length; i++)
+                    _stabTex.SetPixel(i, HeatmapAxes.TexRow(j), StabilityColor(i, j));
+            _stabTex.Apply();
         }
 
         public void ApplyStability()
@@ -364,6 +394,9 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 sb.AppendFormat(CultureInfo.InvariantCulture, "\nDrag         : {0:F1} kN", c.DragN / 1000);
                 sb.AppendFormat(CultureInfo.InvariantCulture, "\nAoA          : {0:F1}°", c.Alpha);
                 sb.AppendFormat(CultureInfo.InvariantCulture, "\nL/D          : {0:F2}", c.LiftToDrag);
+                sb.AppendFormat(CultureInfo.InvariantCulture,
+                                "\nClimb rate   : {0:+0;-0} m/s (max, at speed)",
+                                c.ClimbRateMPerS);
 
                 if (c.ThermalRatio > 0)
                     sb.AppendFormat(CultureInfo.InvariantCulture,

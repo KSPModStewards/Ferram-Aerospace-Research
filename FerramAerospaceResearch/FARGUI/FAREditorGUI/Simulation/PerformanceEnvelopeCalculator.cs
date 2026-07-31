@@ -195,6 +195,15 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             /// <summary>Positive when the vehicle can accelerate or climb here, N (against sustainable thrust).</summary>
             public double ExcessThrustN;
 
+            /// <summary>
+            /// Best steady rate of climb at CONSTANT true airspeed, m/s — specific excess power, V*(T-D)/W,
+            /// at full (thermally capped) thrust. This is V/S with no speed traded: the excess thrust climbs
+            /// the weight at angle gamma where sin(gamma) = (T-D)/W. Capped at V (sin(gamma) <= 1): where the
+            /// excess would need a steeper-than-vertical climb, the surplus accelerates instead of climbing.
+            /// Negative on a walled cell — the best sustained vertical speed is downward.
+            /// </summary>
+            public double ClimbRateMPerS;
+
             /// <summary>Throttle holding T = D, or NaN if drag cannot be matched.</summary>
             public double ThrottleRequired;
 
@@ -843,6 +852,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             cell.ThrustAvailableN = Vector3d.Dot(maxSample.Thrust, maxVelDir);
             cell.ExcessThrustN = cell.ThrustAvailableN - dragAtMax;
 
+            // Steady climb rate at constant speed: V * sin(gamma), sin(gamma) = (T-D)/W clamped to [-1, 1].
+            // Uses the full-throttle feasibility trim (thrust already carries part of the weight, so dragAtMax
+            // is the reduced-lift drag of a climb), so this is the best sustained V/S with no speed traded.
+            cell.ClimbRateMPerS = ctx.SpeedMPerS * FARMathUtil.Clamp(cell.ExcessThrustN / weightN, -1, 1);
+
             // maxSample is already thermally capped: each engine is held at its own temperature limit
             // (a heat-managing pilot's per-engine thrust limiter), so ThrustAvailableN is the SUSTAINABLE
             // max, not a melting full-throttle figure. A cell whose thermally-limited thrust cannot reach
@@ -1002,7 +1016,12 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             fuelFlow = lastFlow;
             thermalAtThrottle = lastThermal;
             totalDragN = dragN + RamDrag(throttle);
-            return fuelFlow > 0 ? CruiseState.Ok : CruiseState.Unsolved;
+            // Brent already converged on a real T = D point (a genuine solver failure returned above), so a
+            // zero fuel flow here just means the cruise throttle rounded to near-idle: thrust hugely exceeds
+            // drag, so the engine holds this speed on almost nothing. That is flyable — just with no
+            // meaningful endurance figure — not a failure. Walling it hides a strong engine's whole map
+            // (a turbojet down low, where it out-thrusts drag by 100+ kN).
+            return fuelFlow > 0 ? CruiseState.Ok : CruiseState.IdleExceedsDrag;
         }
 
         /// <summary>
