@@ -110,6 +110,15 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             /// <summary>An AoA holding L = W was found.</summary>
             public bool Trimmed;
 
+            /// <summary>
+            /// Not individually computed — assumed a heat wall. The sweep scans each row low-to-high Mach
+            /// and, once several cells hit the heat wall, fills the rest of the high-Mach tail as heat wall
+            /// rather than solving them, since stagnation heat only rises further out. Rendered like the
+            /// class it was assigned; the tooltip flags it as assumed so its zeroed numbers are not read as
+            /// measured. (The low-Mach stall lead-in is cheap, so it is always solved, never extrapolated.)
+            /// </summary>
+            public bool Extrapolated;
+
             public CruiseState Cruise;
 
             /// <summary>Level flight is sustainable — thrust matches drag and the engine survives.</summary>

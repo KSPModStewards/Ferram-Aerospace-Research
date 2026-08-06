@@ -62,12 +62,15 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
         /// <summary>
         /// Draws tick labels down the left (altitude, km) and along the bottom (Mach), plus the Mach
-        /// axis title.
+        /// axis title. Only the visible cell window [<paramref name="i0" />..<paramref name="i1" />] x
+        /// [<paramref name="j0" />..<paramref name="j1" />] is labelled, so a zoomed view relabels to
+        /// the range it shows.
         ///
         /// Ticks sit at cell centres rather than edges: each cell is a sample at a point, not a
         /// bucket spanning a range, so its value belongs to the axis value in its middle.
         /// </summary>
-        public static void Draw(Rect map, double[] machAxis, double[] altAxis, bool speedAxis = false)
+        public static void Draw(Rect map, double[] machAxis, double[] altAxis, bool speedAxis,
+                                int i0, int i1, int j0, int j1)
         {
             if (machAxis == null || altAxis == null)
                 return;
@@ -83,26 +86,28 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             var xTickStyle = new GUIStyle(tickStyle) {alignment = TextAnchor.UpperCenter};
             var titleStyle = new GUIStyle(tickStyle) {alignment = TextAnchor.MiddleCenter, fontSize = 11};
 
-            float cellH = map.height / altAxis.Length;
-            float cellW = map.width / machAxis.Length;
+            int nAltV = j1 - j0 + 1;
+            int nMachV = i1 - i0 + 1;
+            float cellH = map.height / nAltV;
+            float cellW = map.width / nMachV;
 
             // Thin labels out when cells get small, so they never overlap.
             int altStep = Mathf.Max(1, Mathf.CeilToInt(14f / cellH));
             int machStep = Mathf.Max(1, Mathf.CeilToInt(34f / cellW));
 
-            for (int j = 0; j < altAxis.Length; j += altStep)
+            for (int j = j0; j <= j1; j += altStep)
             {
-                // Altitude increases up the screen, so index 0 sits on the bottom row.
-                float y = map.yMax - (j + 0.5f) * cellH;
+                // Altitude increases up the screen, so the lowest visible index sits on the bottom row.
+                float y = map.yMax - (j - j0 + 0.5f) * cellH;
                 GUI.Label(new Rect(map.x - YAxisWidth, y - 7, YAxisWidth - 6, 14),
                           (altAxis[j] / 1000).ToString("F1", CultureInfo.InvariantCulture),
                           tickStyle);
             }
 
             string tickFormat = speedAxis ? "F0" : "F2";
-            for (int i = 0; i < machAxis.Length; i += machStep)
+            for (int i = i0; i <= i1; i += machStep)
             {
-                float x = map.x + (i + 0.5f) * cellW;
+                float x = map.x + (i - i0 + 0.5f) * cellW;
                 GUI.Label(new Rect(x - 20, map.yMax + 2, 40, XAxisHeight),
                           machAxis[i].ToString(tickFormat, CultureInfo.InvariantCulture),
                           xTickStyle);
@@ -121,15 +126,20 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         /// Outlines one grid cell. The same axis convention as HitTest: Mach increases left to
         /// right, altitude bottom to top, so cell j sits (nAlt-1-j) rows down from the top.
         /// </summary>
-        public static void DrawCellBorder(Rect map, double[] machAxis, double[] altAxis, (int i, int j) cell, Color color)
+        public static void DrawCellBorder(Rect map, double[] machAxis, double[] altAxis, (int i, int j) cell, Color color,
+                                          int i0, int i1, int j0, int j1)
         {
             if (machAxis == null || altAxis == null)
                 return;
 
-            float cellW = map.width / machAxis.Length;
-            float cellH = map.height / altAxis.Length;
-            float x = map.x + cell.i * cellW;
-            float y = map.y + (altAxis.Length - 1 - cell.j) * cellH;
+            // Off the visible window (zoomed past it) — nothing to outline.
+            if (cell.i < i0 || cell.i > i1 || cell.j < j0 || cell.j > j1)
+                return;
+
+            float cellW = map.width / (i1 - i0 + 1);
+            float cellH = map.height / (j1 - j0 + 1);
+            float x = map.x + (cell.i - i0) * cellW;
+            float y = map.y + (j1 - cell.j) * cellH; // highest visible altitude sits at the top
             var r = new Rect(x, y, cellW, cellH);
 
             const float t = 2f;
@@ -144,36 +154,57 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
         /// <summary>
         /// Cell under the cursor, or null if it is outside the map. Inverts screen y, which runs
-        /// down, against altitude, which runs up.
+        /// down, against altitude, which runs up. Maps within the visible cell window so a zoomed
+        /// view hit-tests against the cells it actually shows.
         /// </summary>
-        public static (int i, int j)? HitTest(Rect map, double[] machAxis, double[] altAxis)
+        public static (int i, int j)? HitTest(Rect map, double[] machAxis, double[] altAxis,
+                                              int i0, int i1, int j0, int j1)
         {
             if (machAxis == null || altAxis == null)
                 return null;
 
-            Vector2 mouse = Event.current.mousePosition;
-            if (!map.Contains(mouse))
+            if (!map.Contains(Event.current.mousePosition))
                 return null;
 
-            int i = Mathf.Clamp((int)((mouse.x - map.x) / map.width * machAxis.Length), 0, machAxis.Length - 1);
-            int j = Mathf.Clamp(altAxis.Length - 1 - (int)((mouse.y - map.y) / map.height * altAxis.Length),
-                                0,
-                                altAxis.Length - 1);
-            return (i, j);
+            return CellAt(map, Event.current.mousePosition, i0, i1, j0, j1);
         }
 
         /// <summary>
-        /// True if the map was left-clicked this event. Consumes the event so the click does not
-        /// also fall through to the window beneath.
+        /// The cell a screen point falls on, mapped within the visible window and clamped to it. Unlike
+        /// <see cref="HitTest" /> the point is clamped rather than rejected when just outside the map, so
+        /// a drag that runs off the edge still resolves to the nearest edge cell.
         /// </summary>
-        public static bool ClickedIn(Rect map)
+        public static (int i, int j) CellAt(Rect map, Vector2 p, int i0, int i1, int j0, int j1)
         {
-            Event e = Event.current;
-            if (e == null || e.type != EventType.MouseDown || e.button != 0 || !map.Contains(e.mousePosition))
-                return false;
+            int nMachV = i1 - i0 + 1;
+            int nAltV = j1 - j0 + 1;
+            float fx = Mathf.Clamp01((p.x - map.x) / map.width);
+            float fy = Mathf.Clamp01((p.y - map.y) / map.height);
+            int iv = Mathf.Clamp((int)(fx * nMachV), 0, nMachV - 1);
+            int jv = Mathf.Clamp(nAltV - 1 - (int)(fy * nAltV), 0, nAltV - 1);
+            return (i0 + iv, j0 + jv);
+        }
 
-            e.Use();
-            return true;
+        /// <summary>Draws a translucent selection box (fill + border) between two screen points, clamped
+        /// to the map — the live rubber-band for a drag-to-zoom gesture.</summary>
+        public static void DrawSelectionBox(Rect map, Vector2 a, Vector2 b)
+        {
+            float x0 = Mathf.Clamp(Mathf.Min(a.x, b.x), map.x, map.xMax);
+            float x1 = Mathf.Clamp(Mathf.Max(a.x, b.x), map.x, map.xMax);
+            float y0 = Mathf.Clamp(Mathf.Min(a.y, b.y), map.y, map.yMax);
+            float y1 = Mathf.Clamp(Mathf.Max(a.y, b.y), map.y, map.yMax);
+            var box = new Rect(x0, y0, x1 - x0, y1 - y0);
+
+            Color prev = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, 0.20f);
+            GUI.DrawTexture(box, Texture2D.whiteTexture);
+            GUI.color = new Color(1f, 1f, 1f, 0.85f);
+            const float t = 1f;
+            GUI.DrawTexture(new Rect(box.x, box.y, box.width, t), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(box.x, box.yMax - t, box.width, t), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(box.x, box.y, t, box.height), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(box.xMax - t, box.y, t, box.height), Texture2D.whiteTexture);
+            GUI.color = prev;
         }
 
         /// <summary>Middle-button click inside the map — a hidden diagnostic gesture (dumps the cell).</summary>

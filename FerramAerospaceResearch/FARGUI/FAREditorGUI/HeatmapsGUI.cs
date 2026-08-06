@@ -131,27 +131,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         // sweep runs the engine-independent stability map only. Set per sweep in StartSweep.
         private bool _stabilityOnly;
 
-        // Completed-sweep history so the user can flip back through previous generations and compare
-        // (e.g. serial vs multithreaded, or before/after a design tweak). Only the map data is kept per
-        // generation — the textures are rebuilt on demand when a generation is shown, so N generations
-        // cost N sets of result grids, not N sets of GPU textures.
-        private readonly List<Generation> _history = new List<Generation>();
+        // Browsable history = the current vessel's cached .farheat files on disk. Every sweep saves its own
+        // file (see HeatmapPersistence.Save), so the nav flips through this craft's past heatmaps to compare
+        // before/after a tweak; Clear deletes them all. Loaded on demand when an entry is shown.
+        private List<HeatmapPersistence.CacheEntry> _cachedSweeps = new List<HeatmapPersistence.CacheEntry>();
         private int _viewIndex = -1;
-        private int _genCounter;
-        private const int MaxHistory = 12;
-
-        /// <summary>One completed sweep kept for the history navigator: the map data and a label.</summary>
-        private sealed class Generation
-        {
-            public readonly List<HeatmapResult> Results;
-            public readonly string Label;
-
-            public Generation(List<HeatmapResult> results, string label)
-            {
-                Results = results;
-                Label = label;
-            }
-        }
         private Coroutine _sweep;
 
         // The running parallel worker task (Phase A trim, or the merged trim+engine sweep), held so a
@@ -168,6 +152,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         // not thread-safe and crashes the process natively when called off the main thread.
         private int _parallelErrorCount;
         private Exception _firstParallelException;
+
+        // Cells filled by extrapolation rather than solved (the outward-from-middle tail short-circuit).
+        // Interlocked across the parallel row workers; logged from the main thread after the join.
+        private int _extrapolatedCount;
         private int _cellsDone;
         private int _cellsTotal;
         private string _statusMessage = "";
@@ -341,6 +329,14 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 _lastVoxQueued = true; // arm: recalc once the current/next voxelization completes
             GUILayout.Space(14);
             _multithread = GUILayout.Toggle(_multithread, "Multithread", GUILayout.Width(110));
+            GUILayout.Space(14);
+            // Cleanup is a live display filter, not a sweep step: off shows the raw grid (spurious near-stall
+            // islands and grey specks), and toggling it re-derives the display with no re-sweep. The swept
+            // grids and the on-disk cache stay raw either way.
+            bool prevCleanup = HeatmapResult.CleanupDisplay;
+            HeatmapResult.CleanupDisplay = GUILayout.Toggle(prevCleanup, "Cleanup", GUILayout.Width(90));
+            if (HeatmapResult.CleanupDisplay != prevCleanup && !IsSweepRunning && _results != null && _results.Count > 0)
+                ApplyFuelSample(); // re-derive the shown grid from the raw samples
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
 
@@ -391,6 +387,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
             DrawFuelSlider();
             DrawHistoryNav();
+            HeatmapRenderer.DrawZoomControls();
 
             // Up to two maps fit across the 650 px window. With the combined map that makes three,
             // so wrap into rows of two.
@@ -476,20 +473,20 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         }
 
         /// <summary>
-        /// Points every envelope map at the selected fuel sample and repaints. The stored per-mass grids
-        /// are exact (no interpolation), so this just re-references and rescales the colour ramp.
+        /// Derives every envelope map's displayed grid from the selected fuel sample and repaints. The
+        /// stored per-mass grids are exact (no interpolation) and raw; this points each map's Envelope at a
+        /// cleanup-filtered copy (or the raw sample, per <see cref="HeatmapResult.CleanupDisplay" />),
+        /// rescales the colour ramp and re-masks stability. The single place the display is (re)built —
+        /// called on sweep finish, fuel-slider moves, the Cleanup toggle and history navigation.
         /// </summary>
         private void ApplyFuelSample()
         {
             for (int t = 0; t < _results.Count; t++)
             {
                 HeatmapResult r = _results[t];
-                if (!r.HasMassSamples)
+                if (r.EnvelopeSamples == null || r.EnvelopeSamples.Length == 0)
                     continue;
-                int idx = Mathf.Clamp(_fuelSample, 0, r.EnvelopeSamples.Length - 1);
-                r.Envelope = r.EnvelopeSamples[idx];
-                r.MassKg = r.SampleMassesKg[idx];
-                r.Recompute();
+                r.SetDisplaySample(r.HasMassSamples ? _fuelSample : 0); // clamps internally; cleans per CleanupDisplay
                 if (t < _envRenderers.Count)
                     _envRenderers[t].RepaintEnvelope();
             }
@@ -598,32 +595,70 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             if (parts == 0)
                 return;
 
-            // Already displaying this craft's map (swept or loaded this session): keep it.
-            if (_results != null && _results.Count > 0 && _results[0].CraftName == name && _results[0].PartCount == parts)
-                return;
+            RefreshCachedSweeps(name);
 
-            List<HeatmapResult> loaded = HeatmapPersistence.Load(name, parts);
-            if (loaded == null || loaded.Count == 0)
+            // Already displaying this craft's map (swept or loaded this session): keep it, just sync the nav.
+            if (_results != null && _results.Count > 0 && _results[0].CraftName == name && _results[0].PartCount == parts)
             {
-                if (_results != null && _results.Count > 0)
-                    DiscardResults();
+                _viewIndex = _cachedSweeps.Count == 0 ? -1 : NewestIndexFor(parts);
                 return;
             }
 
+            if (_cachedSweeps.Count == 0)
+            {
+                if (_results != null && _results.Count > 0)
+                    DiscardResults();
+                _viewIndex = -1;
+                return;
+            }
+
+            // Show the newest cached sweep for this craft — preferring the current part count, else the
+            // newest snapshot from another edit (its part count is shown in the nav).
+            ShowGeneration(NewestIndexFor(parts));
+            _statusMessage = "Loaded cached heatmap for " + name + " — Run to re-sweep.";
+        }
+
+        /// <summary>The newest cached-sweep index for a part count, or the newest overall if none match.</summary>
+        private int NewestIndexFor(int parts)
+        {
+            for (int i = _cachedSweeps.Count - 1; i >= 0; i--)
+                if (_cachedSweeps[i].PartCount == parts)
+                    return i;
+            return _cachedSweeps.Count - 1;
+        }
+
+        private void RefreshCachedSweeps(string craftName)
+        {
+            _cachedSweeps = HeatmapPersistence.ListForVessel(craftName);
+            if (_viewIndex >= _cachedSweeps.Count)
+                _viewIndex = _cachedSweeps.Count - 1;
+        }
+
+        private string CurrentCraftName()
+        {
+            ShipConstruct ship = EditorLogic.fetch != null ? EditorLogic.fetch.ship : null;
+            if (ship != null && !string.IsNullOrEmpty(ship.shipName))
+                return ship.shipName;
+            return _results != null && _results.Count > 0 ? _results[0].CraftName : "";
+        }
+
+        /// <summary>Points the tab at a loaded result set: rebuilds the renderers and derives the display.</summary>
+        private void DisplayResults(List<HeatmapResult> loaded)
+        {
             DiscardResults();
+            _results = loaded;
             foreach (HeatmapResult r in loaded)
             {
+                // The cache is raw; derive the shown grid (cleaned per CleanupDisplay) before the texture builds.
+                r.SetDisplaySample(r.HasMassSamples ? _fuelSample : 0);
                 var rend = new HeatmapRenderer();
                 rend.SetResult(r);
                 _envRenderers.Add(rend);
                 _sweepGroups.Add(null); // loaded maps carry no engine-group info; a Run rebuilds it
             }
 
-            HeatmapResult.ApplyStabilityPerfMask(loaded); // black/grey stability from the perf map, before painting
             _stabRenderer.SetResult(loaded[0]);
-            _results = loaded;
-            HeatmapResult.Cached = loaded;
-            _statusMessage = "Loaded cached heatmap for " + name + " — Run to re-sweep.";
+            ApplyFuelSample(); // re-derive display + colour rescale + stability mask + repaint
         }
 
         /// <summary>Releases the displayed maps' textures and drops the results.</summary>
@@ -708,9 +743,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             if (want != HeatmapRenderer.ColorMetric)
             {
                 HeatmapRenderer.ColorMetric = want;
-                if (!IsSweepRunning)
-                    foreach (HeatmapRenderer r in _envRenderers)
-                        r.RepaintEnvelope();
+                HeatmapRenderer.InvalidateColors(); // each map recolours on its next draw
             }
         }
 
@@ -1124,6 +1157,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             int nMach = machAxis.Length;
             int nAlt = altAxis.Length;
 
+            _extrapolatedCount = 0;
+
             if (_multithread)
             {
                 // Parallel sweep. When the interop can drive per-worker engine solver clones, the trim
@@ -1249,18 +1284,17 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                 ferram4.SimThreadContext.AcquireSlot();
                                 int slot = ferram4.SimThreadContext.Slot;
                                 double altRow = altAxis[j];
-                                for (int i = 0; i < nMach; i++)
-                                {
-                                    // Bail promptly on cancel (a design change mid-sweep) rather than
-                                    // finishing the whole row — keeps auto-recalc responsive.
-                                    if (_cancelRequested)
-                                        break;
 
-                                    double mach = machCell[i, j];
-                                    for (int k = 0; k < massCount; k++)
+                                // Sweep the row outward from the middle, short-circuiting each (engine, fuel)
+                                // stream's walled tail independently (see SweepRowGranular).
+                                int rowFilled = SweepRowGranular(nMach, massCount, mapCount,
+                                    (i, k, skipMap, mapKinds) =>
                                     {
-                                        PerformanceEnvelopeCalculator.AeroContext ctx;
+                                        double mach = machCell[i, j];
+                                        double speed = mach * gasCell[i, j].SpeedOfSound;
+
                                         long ts0 = System.Diagnostics.Stopwatch.GetTimestamp();
+                                        PerformanceEnvelopeCalculator.AeroContext ctx;
                                         try
                                         {
                                             ctx = calc.BeginCellPrecomputed(body, altRow, mach, flapSetting, spoilers,
@@ -1270,20 +1304,23 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                         catch (Exception e)
                                         {
                                             CaptureParallelError($"parallel trim threw at i{i} j{j} k{k} (M {mach:F2}, alt {altRow:F0})", e);
-
                                             System.Threading.Interlocked.Add(ref _cellsDone, mapCount);
-                                            continue;
+                                            for (int t = 0; t < mapCount; t++)
+                                                mapKinds[t] = ColumnKind.Grey; // errored cell is noise — resets the streak, keep solving
+                                            return new MassEval { Trimmed = true, Filled = 0 };
                                         }
 
                                         long ts1 = System.Diagnostics.Stopwatch.GetTimestamp();
 
                                         // The feasibility trim reads the sim's per-thread viscous condition.
                                         calc.SetAeroCondition(aeroCondCell[i, j]);
+                                        int filled;
                                         try
                                         {
-                                            EvaluateCellEnginesParallel(calc, ctx, envGrid[i, j],
-                                                                        groupCtx, compressorlessCtx, slot,
-                                                                        massProps[k], i, j, k, mapCount);
+                                            filled = EvaluateCellEnginesParallel(calc, ctx, envGrid[i, j],
+                                                                                 groupCtx, compressorlessCtx, slot,
+                                                                                 massProps[k], i, j, k, mapCount,
+                                                                                 skipMap, mapKinds, mach, speed);
                                         }
                                         finally
                                         {
@@ -1293,8 +1330,15 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                         long ts2 = System.Diagnostics.Stopwatch.GetTimestamp();
                                         trimTicks[slot] += ts1 - ts0;
                                         engineTicks[slot] += ts2 - ts1;
-                                    }
-                                }
+
+                                        return new MassEval { Trimmed = ctx.Trimmed, Filled = filled };
+                                    },
+                                    (i, k) =>
+                                        FillMass(i, j, k, machCell[i, j], machCell[i, j] * gasCell[i, j].SpeedOfSound,
+                                                 mapCount));
+
+                                if (rowFilled > 0)
+                                    System.Threading.Interlocked.Add(ref _extrapolatedCount, rowFilled);
 
                                 // Stability rides along in the same worker (engine-independent): one cell
                                 // per Mach at this row, from the precomputed mass properties + atmosphere.
@@ -1381,7 +1425,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                         FARLogger.Info("Heatmap envelope timings: bootstrap " + bootstrapTimer.ElapsedMilliseconds +
                                        " ms, sweep " + sweepTimer.ElapsedMilliseconds + " ms (parallel); of which trim ~" +
                                        trimSum * 1000 / freq + " ms + engine ~" + engineSum * 1000 / freq +
-                                       " ms CPU-summed across " + parallelOptions.MaxDegreeOfParallelism + " threads.");
+                                       " ms CPU-summed across " + parallelOptions.MaxDegreeOfParallelism + " threads. Extrapolated " +
+                                       _extrapolatedCount + "/" + (nMach * nAlt * mapCount * massCount) + " cell-evals.");
                     }
                     else
                     {
@@ -1447,6 +1492,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                             FARLogger.Exception(task.Exception, "while running the parallel envelope trim");
 
                         var engineTimer = System.Diagnostics.Stopwatch.StartNew();
+
+                        // This fallback (parallel trim already done for the whole grid, serial engine pass)
+                        // does not short-circuit — the trims are already spent — so it never skips a map.
+                        var noSkipMain = new bool[mapCount];
+                        var mapKindsMain = new ColumnKind[mapCount];
                         for (int j = 0; j < nAlt; j++)
                         {
                             if (_cancelRequested)
@@ -1471,7 +1521,9 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                     try
                                     {
                                         EvaluateCellEngines(calc, ctxGrid[i, j, k], body, altRow, mach,
-                                                            massProps[k], i, j, k, mapCount);
+                                                            massProps[k], i, j, k, mapCount,
+                                                            noSkipMain, mapKindsMain,
+                                                            mach * gasCell[i, j].SpeedOfSound);
                                     }
                                     finally
                                     {
@@ -1519,7 +1571,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                         LogParallelErrors();
                         FARLogger.Info("Heatmap envelope timings: bootstrap " + bootstrapTimer.ElapsedMilliseconds +
                                        " ms, trim " + trimTimer.ElapsedMilliseconds + " ms (parallel), engine " +
-                                       engineTimer.ElapsedMilliseconds + " ms (serial).");
+                                       engineTimer.ElapsedMilliseconds + " ms (serial). Extrapolated " +
+                                       _extrapolatedCount + "/" + (nMach * nAlt * mapCount * massCount) + " cell-evals.");
                     }
                 }
                 finally
@@ -1551,29 +1604,35 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
                     double sos = SpeedOfSoundAt(body, alt);
 
-                    for (int i = 0; i < nMach; i++)
-                    {
-                        double mach = ColumnMach(machAxis[i], sos);
-
-                        for (int k = 0; k < massCount; k++)
+                    // Same outward-from-middle, per-(engine, fuel) tail short-circuit as the parallel path,
+                    // so a Multithread on/off comparison sees the same map.
+                    _extrapolatedCount += SweepRowGranular(nMach, massCount, mapCount,
+                        (i, k, skipMap, mapKinds) =>
                         {
+                            double mach = ColumnMach(machAxis[i], sos);
                             PerformanceEnvelopeCalculator.VehicleProperties props = massProps[k];
 
                             // BeginCell sets the AeroCondition; it must be inside the try so EndCell still
                             // clears it if BeginCell (the trim solve) throws — a leaked AeroCondition
                             // silently corrupts the stability/static tabs that expect it null.
                             PerformanceEnvelopeCalculator.AeroContext ctx = default;
+                            int filled;
                             try
                             {
                                 ctx = calc.BeginCell(body, alt, mach, flapSetting, spoilers, props);
-                                EvaluateCellEngines(calc, ctx, body, alt, mach, props, i, j, k, mapCount);
+                                filled = EvaluateCellEngines(calc, ctx, body, alt, mach, props, i, j, k, mapCount,
+                                                             skipMap, mapKinds, mach * sos);
                             }
                             finally
                             {
                                 calc.EndCell();
                             }
-                        }
-                    }
+
+                            return new MassEval { Trimmed = ctx.Trimmed, Filled = filled };
+                        },
+                        (i, k) =>
+                            FillMass(i, j, k, ColumnMach(machAxis[i], sos), ColumnMach(machAxis[i], sos) * sos,
+                                     mapCount));
 
                     // The displayed grid is the wet sample (Envelope references EnvelopeSamples[last]).
                     for (int t = 0; t < mapCount; t++)
@@ -1583,7 +1642,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 }
 
                 serialTimer.Stop();
-                FARLogger.Info("Heatmap envelope timings: " + serialTimer.ElapsedMilliseconds + " ms (serial).");
+                FARLogger.Info("Heatmap envelope timings: " + serialTimer.ElapsedMilliseconds + " ms (serial). Extrapolated " +
+                               _extrapolatedCount + "/" + (nMach * nAlt * mapCount * massCount) + " cell-evals.");
             }
 
             if (FinalizeSweep())
@@ -1600,32 +1660,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         /// </summary>
         private bool FinalizeSweep()
         {
-            int nMach = _results[0].MachAxis.Length;
-            int nAlt = _results[0].AltAxis.Length;
-
-            for (int t = 0; t < _results.Count; t++)
-            {
-                foreach (PerformanceEnvelopeCalculator.CellResult[,] grid in _results[t].EnvelopeSamples)
-                {
-                    CleanIsolatedGreyDots(grid, nMach, nAlt);
-                    RemoveDisconnectedIslands(grid, nMach, nAlt);
-                }
-                _results[t].Recompute();
-                _envRenderers[t].RepaintEnvelope(); // endurance colours scale to each map's own best cell
-            }
-
-            // The post-passes left the wet sample displayed; honour the fuel slider if it isn't at full.
-            // When it isn't, ApplyFuelSample re-masks and repaints stability against that sample, so mask
-            // here only when it won't (slider at full), and only when stability was swept.
-            bool fuelSliderAtFull = _fuelSample == MassSamples - 1;
-            if (_includeStability && fuelSliderAtFull)
-            {
-                HeatmapResult.ApplyStabilityPerfMask(_results); // black/grey stability where the perf map is
-                _stabRenderer.RepaintStability();
-            }
-
-            if (!fuelSliderAtFull)
-                ApplyFuelSample();
+            // Cleanup is a reversible display filter now (see HeatmapResult.SetDisplaySample): the swept
+            // samples stay raw, so the cache saved below is raw and the Cleanup toggle re-derives without a
+            // re-sweep. Derive each map's shown grid — cleaned or not — at the current fuel sample, which
+            // also rescales the colour ramp, recomputes the summary and re-masks the stability map.
+            ApplyFuelSample();
 
             // The coarse probe finished: reframe to the user's sweep at the discovered extent and run it
             // for real. The probe grid is discarded — not cached, not added to the history.
@@ -1639,9 +1678,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             }
 
             HeatmapResult.Cached = _results;
-            HeatmapPersistence.Save(_results); // survive a restart, reload for this craft in flight/editor
+            HeatmapPersistence.Save(_results); // its own file — survives a restart and joins the vessel's history
             _deck.Restore();
-            AppendGeneration();
+            RefreshCachedSweeps(_results[0].CraftName);
+            _viewIndex = _cachedSweeps.Count - 1; // the sweep just saved is the newest entry
             _statusMessage = Localizer.Format("FAREnvelopeDone", _cellsDone.ToString(CultureInfo.InvariantCulture));
             FARLogger.Info("Heatmap sweep complete: " + _cellsDone + " cells across " + _results.Count + " map(s).");
             return false;
@@ -1754,74 +1794,40 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             _altMaxKm = _userAltMaxKm;
         }
 
-        /// <summary>Records the just-completed sweep in the history and selects it. Oldest drops off.</summary>
-        private void AppendGeneration()
-        {
-            _genCounter++;
-            _history.Add(new Generation(_results, BuildGenerationLabel()));
-            while (_history.Count > MaxHistory)
-                _history.RemoveAt(0);
-            _viewIndex = _history.Count - 1;
-        }
-
-        private string BuildGenerationLabel()
-        {
-            HeatmapResult r = _results[0];
-            int nMach = r.MachAxis?.Length ?? 0;
-            int nAlt = r.AltAxis?.Length ?? 0;
-            return string.Format(CultureInfo.InvariantCulture,
-                                 "#{0} · {1}×{2} · {3} · {4}",
-                                 _genCounter,
-                                 nMach,
-                                 nAlt,
-                                 _multithread ? "MT" : "serial",
-                                 DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture));
-        }
-
-        /// <summary>
-        /// Shows a stored generation: repoints the current data and rebuilds the renderer textures from
-        /// it. Cheap enough for a button press; not called per frame.
-        /// </summary>
+        /// <summary>Loads and shows a cached sweep from the vessel's on-disk history. A stale/unreadable
+        /// file is dropped from the list rather than shown.</summary>
         private void ShowGeneration(int index)
         {
-            if (index < 0 || index >= _history.Count)
+            if (index < 0 || index >= _cachedSweeps.Count)
                 return;
 
-            _viewIndex = index;
-            _results = _history[index].Results;
-
-            foreach (HeatmapRenderer r in _envRenderers)
-                r.Cleanup();
-            _envRenderers.Clear();
-
-            foreach (HeatmapResult res in _results)
+            List<HeatmapResult> loaded = HeatmapPersistence.LoadPath(_cachedSweeps[index].Path);
+            if (loaded == null || loaded.Count == 0)
             {
-                var renderer = new HeatmapRenderer();
-                renderer.SetResult(res);
-                _envRenderers.Add(renderer);
+                RefreshCachedSweeps(CurrentCraftName()); // file gone/incompatible — resync
+                return;
             }
 
-            HeatmapResult.ApplyStabilityPerfMask(_results); // black/grey stability from the perf map
-            _stabRenderer.SetResult(_results[0]);
-
-            // Renderers were built from each grid's stored (wet) Envelope; sync them to the fuel slider.
-            if (_fuelSample != MassSamples - 1)
-                ApplyFuelSample();
+            _viewIndex = index;
+            DisplayResults(loaded);
         }
 
+        /// <summary>Deletes every cached sweep for the current vessel; the shown map stays until navigated.</summary>
         private void ClearHistory()
         {
-            _history.Clear();
+            int removed = HeatmapPersistence.DeleteForVessel(CurrentCraftName());
+            _cachedSweeps = new List<HeatmapPersistence.CacheEntry>();
             _viewIndex = -1;
+            _statusMessage = "Cleared " + removed + " cached sweep" + (removed == 1 ? "" : "s") + ".";
         }
 
         /// <summary>
-        /// Prev/Next navigator across the sweep history, with the selected generation's label and a
-        /// clear button. Hidden while a sweep is running (the maps are being painted live then).
+        /// Prev/Next navigator across the vessel's cached sweeps (its .farheat files), with the selected
+        /// sweep's time and part count and a Clear button. Hidden while a sweep is running.
         /// </summary>
         private void DrawHistoryNav()
         {
-            if (IsSweepRunning || _history.Count == 0 || _viewIndex < 0)
+            if (IsSweepRunning || _cachedSweeps.Count == 0 || _viewIndex < 0 || _viewIndex >= _cachedSweeps.Count)
                 return;
 
             GUILayout.BeginHorizontal();
@@ -1831,16 +1837,18 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 ShowGeneration(_viewIndex - 1);
             GUI.enabled = true;
 
-            string tag = _viewIndex == _history.Count - 1 ? "" : "   (history)";
+            HeatmapPersistence.CacheEntry e = _cachedSweeps[_viewIndex];
+            string tag = _viewIndex == _cachedSweeps.Count - 1 ? "  (latest)" : "  (older)";
             GUILayout.Label(string.Format(CultureInfo.InvariantCulture,
-                                          "Gen {0}/{1}:  {2}{3}",
+                                          "Sweep {0}/{1}:  {2} · {3} parts{4}",
                                           _viewIndex + 1,
-                                          _history.Count,
-                                          _history[_viewIndex].Label,
+                                          _cachedSweeps.Count,
+                                          e.Time.ToString("MMM d HH:mm:ss", CultureInfo.InvariantCulture),
+                                          e.PartCount,
                                           tag),
                             GUILayout.Width(470));
 
-            GUI.enabled = _viewIndex < _history.Count - 1;
+            GUI.enabled = _viewIndex < _cachedSweeps.Count - 1;
             if (GUILayout.Button("►", GUILayout.Width(28)))
                 ShowGeneration(_viewIndex + 1);
             GUI.enabled = true;
@@ -1852,12 +1860,161 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             GUILayout.EndHorizontal();
         }
 
+        // Consecutive heat-walled cells to see before assuming the rest of a row's high-Mach tail is
+        // walled too. A few, not one, because the trim/thermal solve is a little noisy near the boundary.
+        private const int ExtrapolateAfter = 3;
+
+        private enum ColumnKind { Stall, Grey, Feasible, HeatWall }
+
+        private struct MassEval
+        {
+            public bool Trimmed;  // false => stall (no AoA trims), engine-independent
+            public int Filled;    // maps this call synthesised (per-engine heat-wall skips)
+        }
+
+        /// <summary>
+        /// Sweeps a row's Mach columns low-to-high, short-circuiting the high-Mach heat-wall tail per
+        /// stream — independently for every (engine map, fuel mass).
+        ///
+        /// The heat wall is monotonic in Mach (stagnation heat only rises), so once a stream walls it stays
+        /// walled and the rest of its row can be filled. It is per-mass AND per-map (a turbojet walls far
+        /// earlier than a ramjet), so each map is skipped on its own; the shared trim keeps running until
+        /// every map for that mass has walled, then it too is dropped. The low-Mach stall lead-in is not
+        /// short-circuited — a stalled cell skips the costly trim solve, so it is cheap to scan, and
+        /// scanning straight through keeps a user Mach range from ever re-scanning the costly heat wall.
+        ///
+        /// <paramref name="evalMass" /> trims one mass and evaluates its still-live maps (filling the ones
+        /// flagged in its skip mask), reporting per-map verdicts and whether it trimmed.
+        /// <paramref name="fillMass" /> synthesises every map for a fully-skipped mass. Returns the number
+        /// of cells filled. Bails on cancel.
+        /// </summary>
+        private int SweepRowGranular(int nMach, int massCount, int mapCount,
+                                     Func<int, int, bool[], ColumnKind[], MassEval> evalMass,
+                                     Func<int, int, int> fillMass)
+        {
+            int filled = 0;
+            var mapKinds = new ColumnKind[mapCount];
+
+            // Per-(mass, map) heat-wall short-circuit; drop a mass's trim once every map for it has walled.
+            // seenFeasible arms the skip: the real heat wall is always PAST the flyable band, so a heat wall
+            // seen before this stream has ever flown is a spurious early artifact, not the tail — ignore it.
+            var skipMap = new bool[massCount][];
+            var heatRun = new int[massCount][];
+            var seenFeasible = new bool[massCount][];
+            var skipTrim = new bool[massCount];
+            for (int k = 0; k < massCount; k++)
+            {
+                skipMap[k] = new bool[mapCount];
+                heatRun[k] = new int[mapCount];
+                seenFeasible[k] = new bool[mapCount];
+            }
+
+            // Straight low-to-high Mach, not out from the middle. A stalled cell (low Mach) fails the pitch
+            // probes and skips the expensive trim solve, so it is ~30x cheaper than a flyable/walled cell —
+            // cheap enough to just scan. The costly tail is the high-Mach heat wall, and scanning straight
+            // through reaches it exactly once from below, so a user Mach range that leaves the flyable band
+            // anywhere (even entirely inside the wall) never re-scans that wall the way a middle start could.
+            for (int i = 0; i < nMach; i++)
+            {
+                if (_cancelRequested)
+                    return filled;
+                for (int k = 0; k < massCount; k++)
+                {
+                    if (skipTrim[k])
+                    {
+                        filled += fillMass(i, k);
+                        continue;
+                    }
+
+                    MassEval me = evalMass(i, k, skipMap[k], mapKinds);
+                    filled += me.Filled;
+                    if (!me.Trimmed)
+                    {
+                        // Stall (the low-Mach lead-in, or a transonic pocket): kept as a real cell — cheap —
+                        // and it resets the wall streak so a later real heat wall still needs its full run.
+                        for (int t = 0; t < mapCount; t++)
+                            heatRun[k][t] = 0;
+                        continue;
+                    }
+
+                    int walled = 0;
+                    for (int t = 0; t < mapCount; t++)
+                    {
+                        if (skipMap[k][t])
+                        {
+                            walled++;
+                            continue;
+                        }
+                        switch (mapKinds[t])
+                        {
+                            case ColumnKind.Feasible:
+                                seenFeasible[k][t] = true;
+                                heatRun[k][t] = 0;
+                                break;
+                            case ColumnKind.HeatWall when seenFeasible[k][t]:
+                                skipMap[k][t] = ++heatRun[k][t] >= ExtrapolateAfter;
+                                break;
+                            default: // Grey, Stall, or a heat wall before the band ever flew (artifact)
+                                heatRun[k][t] = 0;
+                                break;
+                        }
+                        if (skipMap[k][t])
+                            walled++;
+                    }
+                    if (walled == mapCount)
+                        skipTrim[k] = true;
+                }
+            }
+
+            return filled;
+        }
+
+        private static ColumnKind ClassifyCell(in PerformanceEnvelopeCalculator.CellResult c)
+        {
+            if (!c.Trimmed)
+                return ColumnKind.Stall;
+            if (c.Feasible)
+                return ColumnKind.Feasible;
+            if (c.Overheats)
+                return ColumnKind.HeatWall;
+            return ColumnKind.Grey; // trimmed but thrust-short
+        }
+
+        /// <summary>Synthesises one skipped cell (map t, mass k) as a trimmed-but-walled heat-wall cell,
+        /// keeping Mach/speed for the axis and tooltip and flagging it
+        /// <see cref="PerformanceEnvelopeCalculator.CellResult.Extrapolated" />. The short-circuit only ever
+        /// fills the heat-wall tail (the cheap stall lead-in is always solved), so there is no stall variant.</summary>
+        private void FillCell(int t, int k, int i, int j, double mach, double speed)
+        {
+            _results[t].EnvelopeSamples[k][i, j] = new PerformanceEnvelopeCalculator.CellResult
+            {
+                Mach = mach,
+                SpeedMPerS = speed,
+                Trimmed = true,   // a heat wall is a trimmed-but-infeasible cell
+                Feasible = false,
+                Overheats = true,
+                Extrapolated = true,
+                ThrottleRequired = double.NaN,
+                EnduranceHours = double.NaN
+            };
+            System.Threading.Interlocked.Increment(ref _cellsDone);
+        }
+
+        /// <summary>Fills every map for a fully-skipped mass at one column; returns the count (mapCount).</summary>
+        private int FillMass(int i, int j, int k, double mach, double speed, int mapCount)
+        {
+            for (int t = 0; t < mapCount; t++)
+                FillCell(t, k, i, j, mach, speed);
+            return mapCount;
+        }
+
         /// <summary>
         /// The engine-dependent half of a cell: evaluate every engine-type map (and the combined map,
         /// with its turbojet-shedding fallback) against the already-solved cruise aerodynamics, storing
         /// each result. Runs on the main thread — the engine deck mutates AJE state and reads Unity.
         /// </summary>
-        private void EvaluateCellEngines(
+
+        private int EvaluateCellEngines(
             PerformanceEnvelopeCalculator calc,
             PerformanceEnvelopeCalculator.AeroContext ctx,
             CelestialBody body,
@@ -1867,11 +2024,23 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             int i,
             int j,
             int k,
-            int mapCount
+            int mapCount,
+            bool[] skipMap,
+            ColumnKind[] mapKinds,
+            double speed
         )
         {
+            int filled = 0;
             for (int t = 0; t < mapCount; t++)
             {
+                if (skipMap[t])
+                {
+                    FillCell(t, k, i, j, mach, speed); // this engine already heat-walled going up
+                    mapKinds[t] = ColumnKind.HeatWall;
+                    filled++;
+                    continue;
+                }
+
                 bool isCombined = _sweepGroups[t] == null;
                 _deck.SetActiveGroup(_sweepGroups[t]); // null => combined (all engines)
 
@@ -1902,8 +2071,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 }
 
                 _results[t].EnvelopeSamples[k][i, j] = cell;
+                mapKinds[t] = ClassifyCell(cell);
                 _cellsDone++;
             }
+
+            return filled;
         }
 
         /// <summary>
@@ -1912,7 +2084,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         /// its own (i, j, k) cells, so distinct rows never collide; <see cref="_cellsDone" /> is bumped
         /// atomically. Runs under the parallel Phase B.
         /// </summary>
-        private void EvaluateCellEnginesParallel(
+        private int EvaluateCellEnginesParallel(
             PerformanceEnvelopeCalculator calc,
             PerformanceEnvelopeCalculator.AeroContext ctx,
             in EditorEngineDeck.CellEnv env,
@@ -1923,11 +2095,24 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             int i,
             int j,
             int k,
-            int mapCount
+            int mapCount,
+            bool[] skipMap,
+            ColumnKind[] mapKinds,
+            double mach,
+            double speed
         )
         {
+            int filled = 0;
             for (int t = 0; t < mapCount; t++)
             {
+                if (skipMap[t])
+                {
+                    FillCell(t, k, i, j, mach, speed); // this engine already heat-walled going up
+                    mapKinds[t] = ColumnKind.HeatWall;
+                    filled++;
+                    continue;
+                }
+
                 bool isCombined = _sweepGroups[t] == null;
 
                 PerformanceEnvelopeCalculator.CellResult cell;
@@ -1953,8 +2138,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 }
 
                 _results[t].EnvelopeSamples[k][i, j] = cell;
+                mapKinds[t] = ClassifyCell(cell);
                 System.Threading.Interlocked.Increment(ref _cellsDone);
             }
+
+            return filled;
         }
 
         /// <summary>
@@ -2013,133 +2201,6 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
             if (anyStab)
                 _stabRenderer.ApplyStability();
-        }
-
-        /// <summary>
-        /// Blacks out grey specks and blobs — cells the trim solved but the engines cannot sustain
-        /// (rendered grey), stranded away from the real flyable envelope. These are spurious high-AoA
-        /// "trims" the root-find finds past the stall; grey that only borders black or other grey is
-        /// not a real flyable island, so it reads as an artifact. A grey cell is kept only if it
-        /// touches a "real" cell — one that is feasible or on the thermal wall (light grey), both
-        /// genuine boundaries. Decided on a snapshot of the original cells so the removal does not
-        /// cascade through a connected grey region in one pass.
-        /// </summary>
-        private static void CleanIsolatedGreyDots(
-            PerformanceEnvelopeCalculator.CellResult[,] grid,
-            int nMach,
-            int nAlt
-        )
-        {
-            // "Real" = a cell that anchors a grey neighbour as legitimate: it holds level flight
-            // (feasible) or melts trying to (overheats). Everything else — black (no trim) or plain
-            // grey (thrust-limited) — does not anchor.
-            var real = new bool[nMach, nAlt];
-            for (int i = 0; i < nMach; i++)
-                for (int j = 0; j < nAlt; j++)
-                {
-                    PerformanceEnvelopeCalculator.CellResult c = grid[i, j];
-                    real[i, j] = c.Trimmed && (c.Feasible || c.Overheats);
-                }
-
-            for (int i = 0; i < nMach; i++)
-                for (int j = 0; j < nAlt; j++)
-                {
-                    PerformanceEnvelopeCalculator.CellResult c = grid[i, j];
-                    if (!c.Trimmed || c.Feasible || c.Overheats)
-                        continue;
-
-                    // Keep the grey cell only if some orthogonal neighbour is real; otherwise it is
-                    // surrounded by black and/or grey, so hide it. Off-grid neighbours are not real.
-                    bool anyRealNeighbour = (i > 0 && real[i - 1, j]) ||
-                                            (i < nMach - 1 && real[i + 1, j]) ||
-                                            (j > 0 && real[i, j - 1]) ||
-                                            (j < nAlt - 1 && real[i, j + 1]);
-                    if (anyRealNeighbour)
-                        continue;
-
-                    c.Suppressed = true; // hide it (renderer blacks it), but keep its drag/thrust data
-                    grid[i, j] = c;
-                }
-        }
-
-        /// <summary>
-        /// Blanks feasible "islands" — trimmed cells cut off from the main envelope by untrimmable
-        /// (black) cells. They come from the non-repeatable near-stall trim (FAR's stall model carries
-        /// hysteresis across calls, so Cl(alpha) is not a clean function near stall), which lets the
-        /// AoA solve land a spurious low-speed trim while its neighbours fail. Such a cell can't be a
-        /// real cruise if you can't fly to it, so keep only the connected group holding the most
-        /// FEASIBLE cells (4-neighbour) and drop the other trimmed groups.
-        ///
-        /// Ranked by feasible-cell count, not raw trimmed size: a strongly heat-limited engine (a
-        /// turbojet down low) trims a huge high-Mach region it can never sustain, which would outvote
-        /// the real, smaller cruise envelope and blank it entirely. The heat wall itself is a genuine
-        /// boundary, not a spurious island, so overheating cells are kept visible even when they form
-        /// their own component detached from the envelope.
-        /// </summary>
-        private static void RemoveDisconnectedIslands(
-            PerformanceEnvelopeCalculator.CellResult[,] grid,
-            int nMach,
-            int nAlt
-        )
-        {
-            // 0 = trimmed but unlabelled, -1 = untrimmable (black), >0 = component id. A cell already
-            // suppressed (an isolated grey dot from the pass above) does not connect the envelope.
-            var label = new int[nMach, nAlt];
-            for (int i = 0; i < nMach; i++)
-                for (int j = 0; j < nAlt; j++)
-                    label[i, j] = grid[i, j].Trimmed && !grid[i, j].Suppressed ? 0 : -1;
-
-            var stack = new List<(int i, int j)>();
-            int bestId = 0, bestFeasible = 0, nextId = 0;
-
-            for (int si = 0; si < nMach; si++)
-                for (int sj = 0; sj < nAlt; sj++)
-                {
-                    if (label[si, sj] != 0)
-                        continue;
-
-                    nextId++;
-                    int feasible = 0;
-                    stack.Clear();
-                    stack.Add((si, sj));
-                    label[si, sj] = nextId;
-
-                    while (stack.Count > 0)
-                    {
-                        (int i, int j) = stack[stack.Count - 1];
-                        stack.RemoveAt(stack.Count - 1);
-                        if (grid[i, j].Feasible)
-                            feasible++;
-
-                        if (i > 0 && label[i - 1, j] == 0) { label[i - 1, j] = nextId; stack.Add((i - 1, j)); }
-                        if (i < nMach - 1 && label[i + 1, j] == 0) { label[i + 1, j] = nextId; stack.Add((i + 1, j)); }
-                        if (j > 0 && label[i, j - 1] == 0) { label[i, j - 1] = nextId; stack.Add((i, j - 1)); }
-                        if (j < nAlt - 1 && label[i, j + 1] == 0) { label[i, j + 1] = nextId; stack.Add((i, j + 1)); }
-                    }
-
-                    if (feasible > bestFeasible)
-                    {
-                        bestFeasible = feasible;
-                        bestId = nextId;
-                    }
-                }
-
-            if (bestFeasible == 0)
-                return; // no feasible envelope to isolate — leave the trimmed cells as they are
-
-            for (int i = 0; i < nMach; i++)
-                for (int j = 0; j < nAlt; j++)
-                    if (label[i, j] > 0 && label[i, j] != bestId)
-                    {
-                        PerformanceEnvelopeCalculator.CellResult c = grid[i, j];
-                        if (c.Overheats && !c.Feasible)
-                            continue;          // keep the heat wall (infeasible + overheating), a real boundary —
-                                               // but a FEASIBLE heat-limited cell here is still a disconnected
-                                               // island, so let it be suppressed like any other.
-                        c.Suppressed = true;   // hide + drop from the flyable envelope...
-                        c.Feasible = false;    // ...but keep Trimmed and the drag/thrust it measured
-                        grid[i, j] = c;
-                    }
         }
 
         private void Cancelled()

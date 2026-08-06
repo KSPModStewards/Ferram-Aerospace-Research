@@ -122,6 +122,8 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
 
+            HeatmapRenderer.DrawZoomControls();
+
             if (AtmosphereAutopilotInterop.Available)
                 GUILayout.Label(Localizer.Format("FARFlightHeatmapClickHint"), FlightGUI.boxStyle);
 
@@ -263,8 +265,7 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                 return;
 
             HeatmapRenderer.ColorMetric = want;
-            foreach (HeatmapRenderer r in _envRenderers)
-                r.RepaintEnvelope();
+            HeatmapRenderer.InvalidateColors(); // each map recolours on its next draw
         }
 
 
@@ -284,6 +285,13 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
             foreach (HeatmapResult result in results)
             {
                 HeatmapResult disp = result.HasMassSamples ? result.FlightView() : result;
+
+                // The cache is raw now, so derive the shown grid (cleaned per CleanupDisplay). A mass-sampled
+                // map is refreshed every frame by the mass interpolation (which cleans); a single-mass map is
+                // not, so clean its display once here.
+                if (!disp.HasMassSamples)
+                    disp.SetDisplaySample(0);
+
                 _displayResults.Add(disp);
 
                 var r = new HeatmapRenderer();
