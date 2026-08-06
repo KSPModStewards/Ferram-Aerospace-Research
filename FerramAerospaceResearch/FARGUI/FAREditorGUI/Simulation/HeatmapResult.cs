@@ -230,6 +230,31 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                 }
         }
 
+        /// <summary>When on, the displayed grid — and the summary <see cref="Recompute" /> derives from it —
+        /// has the cleanup passes applied, while the swept samples stay raw. So cleanup can be toggled
+        /// without re-sweeping, and the on-disk cache keeps the raw grid. Shared across the editor and
+        /// flight display, like the colour metric.</summary>
+        public static bool CleanupDisplay = true;
+
+        /// <summary>Points <see cref="Envelope" /> at mass sample <paramref name="idx" /> for display —
+        /// a cleanup-filtered copy when <see cref="CleanupDisplay" /> is on, the raw sample otherwise — and
+        /// recomputes the summary. The samples are never mutated, so the choice stays reversible.</summary>
+        public void SetDisplaySample(int idx)
+        {
+            if (EnvelopeSamples == null || EnvelopeSamples.Length == 0 || MachAxis == null || AltAxis == null)
+                return;
+            if (idx < 0)
+                idx = 0;
+            if (idx > EnvelopeSamples.Length - 1)
+                idx = EnvelopeSamples.Length - 1;
+
+            PerformanceEnvelopeCalculator.CellResult[,] sample = EnvelopeSamples[idx];
+            Envelope = CleanupDisplay ? CleanCopy(sample, MachAxis.Length, AltAxis.Length) : sample;
+            if (SampleMassesKg != null && idx < SampleMassesKg.Length)
+                MassKg = SampleMassesKg[idx];
+            Recompute();
+        }
+
         /// <summary>
         /// Fills <see cref="Envelope" /> by interpolating the mass samples to <paramref name="massKg" />,
         /// then recomputes the summary. Continuous quantities (drag, excess thrust, thermal, fuel flow)
@@ -265,6 +290,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             for (int j = 0; j < AltAxis.Length; j++)
                 for (int i = 0; i < MachAxis.Length; i++)
                     Envelope[i, j] = InterpCell(a[i, j], b[i, j], f, m);
+
+            // Envelope is a private display buffer here (see FlightView), refilled each call, so cleaning it
+            // in place is safe — the raw samples it interpolates are untouched.
+            if (CleanupDisplay)
+                CleanGrid(Envelope, MachAxis.Length, AltAxis.Length);
 
             MassKg = massKg;
             Recompute();
@@ -445,6 +475,261 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                 if (!FARAeroUtil.IsNonphysical(p))
                     parts++;
             return parts;
+        }
+
+        // --- Display cleanup ------------------------------------------------------------------------
+        // Post-sweep tidy passes, applied to the DISPLAYED grid only (never the raw samples), so they are
+        // reversible and the on-disk cache stays raw. Moved here from the editor GUI so the flight display
+        // applies the identical passes.
+
+        /// <summary>The cleanup passes over a grid, in place: heal solver-artifact grey specks inside the
+        /// envelope, then drop stranded specks and disconnected islands.</summary>
+        internal static void CleanGrid(PerformanceEnvelopeCalculator.CellResult[,] grid, int nMach, int nAlt)
+        {
+            HealInteriorGrey(grid, nMach, nAlt);
+            CleanIsolatedSpecks(grid, nMach, nAlt);
+            RemoveDisconnectedIslands(grid, nMach, nAlt);
+        }
+
+        /// <summary>A porkchop-coloured cruise cell: feasible with a real cruise-throttle solution.</summary>
+        private static bool IsCruise(in PerformanceEnvelopeCalculator.CellResult c)
+        {
+            return c.Feasible && !c.Suppressed && c.Cruise == PerformanceEnvelopeCalculator.CruiseState.Ok;
+        }
+
+        // Widest run of infeasible cells between two cruise cells the heal will fill. 1 == only a lone
+        // speck; a wider run is left alone in case it is a real feature (e.g. a transonic drag-rise pinch).
+        private const int MaxHealGap = 1;
+
+        /// <summary>
+        /// Heals a lone grey speck stranded INSIDE the cruise envelope. A single grey cell (trimmed,
+        /// infeasible, not overheating) directly between two cruise cells in the same row is a trim/throttle
+        /// root-find that landed on a spiked-drag branch, not a real thrust shortfall. Replace it with the
+        /// two bracketing cruise cells interpolated at its column (keeping its own Mach/speed) so it colours
+        /// like the envelope it sits in. Only single-cell gaps are healed (see <see cref="MaxHealGap" />) so
+        /// a genuine multi-cell infeasible band is never papered over.
+        ///
+        /// Reads from a snapshot of the row, not the grid it is writing: otherwise the search for the
+        /// bracketing cruise cell would find a cell just healed this pass, chaining each fill onto the last
+        /// instead of interpolating cleanly between the two original endpoints.
+        /// </summary>
+        private static void HealInteriorGrey(PerformanceEnvelopeCalculator.CellResult[,] grid, int nMach, int nAlt)
+        {
+            var row = new PerformanceEnvelopeCalculator.CellResult[nMach];
+            for (int j = 0; j < nAlt; j++)
+            {
+                int first = -1, last = -1;
+                for (int i = 0; i < nMach; i++)
+                {
+                    row[i] = grid[i, j]; // value snapshot of the untouched row
+                    if (IsCruise(row[i]))
+                    {
+                        if (first < 0)
+                            first = i;
+                        last = i;
+                    }
+                }
+                if (first < 0)
+                    continue;
+
+                for (int i = first + 1; i < last; i++)
+                {
+                    PerformanceEnvelopeCalculator.CellResult c = row[i];
+                    if (IsCruise(c) || c.Suppressed || !c.Trimmed || c.Feasible || c.Overheats)
+                        continue; // only plain grey (thrust-short) cells inside the span
+
+                    int l = i - 1;
+                    while (l > first && !IsCruise(row[l]))
+                        l--;
+                    int r = i + 1;
+                    while (r < last && !IsCruise(row[r]))
+                        r++;
+
+                    // Only heal a lone grey cell wedged between two cruise cells. A WIDER infeasible run
+                    // between cruise cells may be a real feature (e.g. a transonic drag-rise pinch that the
+                    // craft genuinely cannot hold level through), so leave it as swept rather than paper over it.
+                    if (r - l - 1 > MaxHealGap)
+                        continue;
+
+                    double f = (double)(i - l) / (r - l);
+                    grid[i, j] = LerpCruise(row[l], row[r], f, c.Mach, c.SpeedMPerS);
+                }
+            }
+        }
+
+        /// <summary>A cruise cell interpolated between two same-row cruise cells at fraction
+        /// <paramref name="f" />, carrying its own <paramref name="mach" />/<paramref name="speed" />.</summary>
+        private static PerformanceEnvelopeCalculator.CellResult LerpCruise(
+            in PerformanceEnvelopeCalculator.CellResult a,
+            in PerformanceEnvelopeCalculator.CellResult b,
+            double f, double mach, double speed)
+        {
+            // Adopt the nearer endpoint's render tints so the healed cell matches its band: the renderer
+            // warm-tints heat-limited (Overheats) cells and dims reduced-engine cells, and a cell missing
+            // those tints reads as a cooler/brighter speck even when its number is right.
+            PerformanceEnvelopeCalculator.CellResult tintFrom = f < 0.5 ? a : b;
+            return new PerformanceEnvelopeCalculator.CellResult
+            {
+                Mach = mach,
+                SpeedMPerS = speed,
+                Trimmed = true,
+                Feasible = true,
+                Cruise = PerformanceEnvelopeCalculator.CruiseState.Ok,
+                Overheats = tintFrom.Overheats,
+                ReducedEngines = tintFrom.ReducedEngines,
+                Alpha = Lerp(a.Alpha, b.Alpha, f),
+                DragN = Lerp(a.DragN, b.DragN, f),
+                WingDragN = Lerp(a.WingDragN, b.WingDragN, f),
+                BodyDragN = Lerp(a.BodyDragN, b.BodyDragN, f),
+                RamDragN = Lerp(a.RamDragN, b.RamDragN, f),
+                WingLiftN = Lerp(a.WingLiftN, b.WingLiftN, f),
+                BodyLiftN = Lerp(a.BodyLiftN, b.BodyLiftN, f),
+                LiftToDrag = Lerp(a.LiftToDrag, b.LiftToDrag, f),
+                ThrustAvailableN = Lerp(a.ThrustAvailableN, b.ThrustAvailableN, f),
+                ExcessThrustN = Lerp(a.ExcessThrustN, b.ExcessThrustN, f),
+                ThrottleRequired = LerpFinite(a.ThrottleRequired, b.ThrottleRequired, f),
+                FuelFlowKgPerS = Lerp(a.FuelFlowKgPerS, b.FuelFlowKgPerS, f),
+                EnduranceHours = LerpFinite(a.EnduranceHours, b.EnduranceHours, f),
+                ThermalRatio = Lerp(a.ThermalRatio, b.ThermalRatio, f),
+                ClimbRateMPerS = Lerp(a.ClimbRateMPerS, b.ClimbRateMPerS, f)
+            };
+        }
+
+        /// <summary>A cleaned value-copy of a grid; the source (a raw sample) is left untouched.</summary>
+        internal static PerformanceEnvelopeCalculator.CellResult[,] CleanCopy(
+            PerformanceEnvelopeCalculator.CellResult[,] src, int nMach, int nAlt)
+        {
+            var copy = (PerformanceEnvelopeCalculator.CellResult[,])src.Clone(); // CellResult is a struct -> value copy
+            CleanGrid(copy, nMach, nAlt);
+            return copy;
+        }
+
+        /// <summary>
+        /// Blacks out isolated specks — trimmed-but-infeasible cells stranded away from the flyable
+        /// envelope. These are spurious near-stall "trims" the root-find lands past the stall: grey
+        /// (thrust-short) or, when that spurious trim also overheats, an off-white heat-wall dot sitting
+        /// in the black region. Either is an artifact if it only borders black/other artifacts. A cell is
+        /// kept only if some orthogonal neighbour is "real" — feasible, or part of a heat-wall band (so a
+        /// genuine thermal ceiling, whose cells anchor each other, survives; a lone heat-wall dot does
+        /// not). Decided on a snapshot so the removal does not cascade through a region in one pass.
+        /// </summary>
+        private static void CleanIsolatedSpecks(
+            PerformanceEnvelopeCalculator.CellResult[,] grid,
+            int nMach,
+            int nAlt
+        )
+        {
+            // "Real" = a cell that anchors an infeasible neighbour as legitimate: it holds level flight
+            // (feasible) or melts trying to (overheats). Black (no trim) and plain grey do not anchor.
+            var real = new bool[nMach, nAlt];
+            for (int i = 0; i < nMach; i++)
+                for (int j = 0; j < nAlt; j++)
+                {
+                    PerformanceEnvelopeCalculator.CellResult c = grid[i, j];
+                    real[i, j] = c.Trimmed && (c.Feasible || c.Overheats);
+                }
+
+            for (int i = 0; i < nMach; i++)
+                for (int j = 0; j < nAlt; j++)
+                {
+                    PerformanceEnvelopeCalculator.CellResult c = grid[i, j];
+                    if (!c.Trimmed || c.Feasible)
+                        continue; // process trimmed-infeasible cells: grey, and heat-wall (overheating)
+
+                    // Keep it only if some orthogonal neighbour is real; otherwise it is surrounded by
+                    // black and/or other artifacts, so hide it. Off-grid neighbours are not real. A
+                    // heat-wall BAND survives (its cells are each other's real neighbours); a lone
+                    // heat-wall dot in the black does not.
+                    bool anyRealNeighbour = (i > 0 && real[i - 1, j]) ||
+                                            (i < nMach - 1 && real[i + 1, j]) ||
+                                            (j > 0 && real[i, j - 1]) ||
+                                            (j < nAlt - 1 && real[i, j + 1]);
+                    if (anyRealNeighbour)
+                        continue;
+
+                    c.Suppressed = true; // hide it (renderer blacks it), but keep its drag/thrust data
+                    grid[i, j] = c;
+                }
+        }
+
+        /// <summary>
+        /// Blanks feasible "islands" — trimmed cells cut off from the main envelope by untrimmable
+        /// (black) cells. They come from the non-repeatable near-stall trim (FAR's stall model carries
+        /// hysteresis across calls, so Cl(alpha) is not a clean function near stall), which lets the
+        /// AoA solve land a spurious low-speed trim while its neighbours fail. Such a cell can't be a
+        /// real cruise if you can't fly to it, so keep only the connected group holding the most
+        /// FEASIBLE cells (4-neighbour) and drop the other trimmed groups.
+        ///
+        /// Ranked by feasible-cell count, not raw trimmed size: a strongly heat-limited engine (a
+        /// turbojet down low) trims a huge high-Mach region it can never sustain, which would outvote
+        /// the real, smaller cruise envelope and blank it entirely. The heat wall itself is a genuine
+        /// boundary, not a spurious island, so overheating cells are kept visible even when they form
+        /// their own component detached from the envelope.
+        /// </summary>
+        private static void RemoveDisconnectedIslands(
+            PerformanceEnvelopeCalculator.CellResult[,] grid,
+            int nMach,
+            int nAlt
+        )
+        {
+            // 0 = trimmed but unlabelled, -1 = untrimmable (black), >0 = component id. A cell already
+            // suppressed (an isolated grey dot from the pass above) does not connect the envelope.
+            var label = new int[nMach, nAlt];
+            for (int i = 0; i < nMach; i++)
+                for (int j = 0; j < nAlt; j++)
+                    label[i, j] = grid[i, j].Trimmed && !grid[i, j].Suppressed ? 0 : -1;
+
+            var stack = new List<(int i, int j)>();
+            int bestId = 0, bestFeasible = 0, nextId = 0;
+
+            for (int si = 0; si < nMach; si++)
+                for (int sj = 0; sj < nAlt; sj++)
+                {
+                    if (label[si, sj] != 0)
+                        continue;
+
+                    nextId++;
+                    int feasible = 0;
+                    stack.Clear();
+                    stack.Add((si, sj));
+                    label[si, sj] = nextId;
+
+                    while (stack.Count > 0)
+                    {
+                        (int i, int j) = stack[stack.Count - 1];
+                        stack.RemoveAt(stack.Count - 1);
+                        if (grid[i, j].Feasible)
+                            feasible++;
+
+                        if (i > 0 && label[i - 1, j] == 0) { label[i - 1, j] = nextId; stack.Add((i - 1, j)); }
+                        if (i < nMach - 1 && label[i + 1, j] == 0) { label[i + 1, j] = nextId; stack.Add((i + 1, j)); }
+                        if (j > 0 && label[i, j - 1] == 0) { label[i, j - 1] = nextId; stack.Add((i, j - 1)); }
+                        if (j < nAlt - 1 && label[i, j + 1] == 0) { label[i, j + 1] = nextId; stack.Add((i, j + 1)); }
+                    }
+
+                    if (feasible > bestFeasible)
+                    {
+                        bestFeasible = feasible;
+                        bestId = nextId;
+                    }
+                }
+
+            if (bestFeasible == 0)
+                return; // no feasible envelope to isolate — leave the trimmed cells as they are
+
+            for (int i = 0; i < nMach; i++)
+                for (int j = 0; j < nAlt; j++)
+                    if (label[i, j] > 0 && label[i, j] != bestId)
+                    {
+                        PerformanceEnvelopeCalculator.CellResult c = grid[i, j];
+                        if (c.Overheats && !c.Feasible)
+                            continue;          // keep the heat wall (infeasible + overheating), a real boundary —
+                                               // but a FEASIBLE heat-limited cell here is still a disconnected
+                                               // island, so let it be suppressed like any other.
+                        c.Suppressed = true;   // hide + drop from the flyable envelope...
+                        c.Feasible = false;    // ...but keep Trimmed and the drag/thrust it measured
+                        grid[i, j] = c;
+                    }
         }
     }
 }

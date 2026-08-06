@@ -67,6 +67,97 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             return on && ColorMetric != metric ? metric : want;
         }
 
+        // --- Zoom -------------------------------------------------------------------------------------
+        // A visible cell window shared across every map (all share the same axes, so they zoom together)
+        // and both scenes, like ColorMetric. Held in cell-index space and reset whenever the grid it was
+        // set against changes size. Any change bumps _colorEpoch; each renderer recolours + repaints its
+        // own texture the next frame it draws, so a zoom on one map recolours them all without the
+        // renderers needing to know about each other.
+
+        internal struct ZoomWindow
+        {
+            public int IMin, IMax, JMin, JMax;
+        }
+
+        /// <summary>When on, a zoomed view re-spreads the colour ramp across the visible cells' own
+        /// min..max (full contrast within the window) instead of the whole-map scale.</summary>
+        public static bool RescaleColorsToView = true;
+
+        private static ZoomWindow _zoom;
+        private static bool _zoomActive;
+        private static int _zoomMach = -1, _zoomAlt = -1; // grid dims _zoom is valid for
+        private static int _colorEpoch;                   // bumped on any zoom / metric / rescale change
+
+        public static bool ZoomActive => _zoomActive;
+
+        /// <summary>Bumps the colour epoch so every renderer recolours on its next draw. Call after a
+        /// metric or rescale-toggle change.</summary>
+        public static void InvalidateColors()
+        {
+            _colorEpoch++;
+        }
+
+        public static void ResetZoom()
+        {
+            if (!_zoomActive)
+                return;
+            _zoomActive = false;
+            InvalidateColors();
+        }
+
+        /// <summary>The zoom control row, shared by the editor and flight tabs so they cannot drift: the
+        /// recolour-to-view toggle, a Reset button (live only while zoomed), and a drag hint.</summary>
+        public static void DrawZoomControls()
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Zoom:", GUILayout.Width(60));
+
+            bool prev = RescaleColorsToView;
+            RescaleColorsToView = GUILayout.Toggle(prev, "Recolor to view", GUILayout.Width(120));
+            if (RescaleColorsToView != prev)
+                InvalidateColors();
+
+            bool prevEnabled = GUI.enabled;
+            GUI.enabled = prevEnabled && _zoomActive;
+            if (GUILayout.Button("Reset", GUILayout.Width(60)))
+                ResetZoom();
+            GUI.enabled = prevEnabled;
+
+            GUILayout.Label(_zoomActive ? "" : "drag a box on a map to zoom", GUILayout.Width(190));
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+        }
+
+        // Drag-to-zoom state. The owner is the renderer the drag started on; only it draws the rubber-band
+        // and applies the window on release, so a drag that runs across a neighbouring map is unambiguous.
+        private static HeatmapRenderer _dragOwner;
+        private static Vector2 _dragStartMouse;
+        private static Vector2 _dragCurMouse;
+        private const float DragThresholdPx = 4f; // below this it is a click, not a box
+
+        private void VisibleBounds(out int i0, out int i1, out int j0, out int j1)
+        {
+            int nM = _result.MachAxis.Length, nA = _result.AltAxis.Length;
+            if (_zoomActive && _zoomMach == nM && _zoomAlt == nA)
+            {
+                i0 = Mathf.Clamp(_zoom.IMin, 0, nM - 1);
+                i1 = Mathf.Clamp(_zoom.IMax, i0, nM - 1);
+                j0 = Mathf.Clamp(_zoom.JMin, 0, nA - 1);
+                j1 = Mathf.Clamp(_zoom.JMax, j0, nA - 1);
+                return;
+            }
+            i0 = 0; i1 = nM - 1; j0 = 0; j1 = nA - 1;
+        }
+
+        private static void SetZoom(int i0, int i1, int j0, int j1, int nM, int nA)
+        {
+            _zoom = new ZoomWindow { IMin = i0, IMax = i1, JMin = j0, JMax = j1 };
+            _zoomMach = nM;
+            _zoomAlt = nA;
+            _zoomActive = !(i0 <= 0 && j0 <= 0 && i1 >= nM - 1 && j1 >= nA - 1); // a full box is just "no zoom"
+            InvalidateColors();
+        }
+
         private HeatmapResult _result;
 
         /// <summary>Engine-type label of the bound result, or empty for a single-type craft.</summary>
@@ -91,6 +182,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             if (result?.MachAxis == null || result.AltAxis == null)
                 return;
 
+            ResetZoom(); // a freshly bound sweep starts un-zoomed
+
             int w = result.MachAxis.Length;
             int h = result.AltAxis.Length;
 
@@ -113,6 +206,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             if (hasEnvelope)
                 _envTex.Apply();
             _stabTex.Apply();
+            _paintedEpoch = _colorEpoch; // freshly painted at the current epoch
         }
 
         private static Texture2D NewTexture(int w, int h)
@@ -144,18 +238,48 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             new Color(0.48f, 0.35f, 0.95f)  // indigo
         };
 
-        private static Color Porkchop(float t)
+        // The stability ramp drops the indigo top stop: on that map it read too close to the blue below
+        // it to tell a clean cell from a nearly-clean one, so clean tops out at blue.
+        private static readonly Color[] StabilityStops =
+        {
+            new Color(0.85f, 0.10f, 0.10f), // red
+            new Color(0.95f, 0.55f, 0.10f), // orange
+            new Color(0.95f, 0.90f, 0.15f), // yellow
+            new Color(0.20f, 0.80f, 0.25f), // green
+            new Color(0.15f, 0.45f, 0.90f)  // blue
+        };
+
+        private static Color Ramp(Color[] stops, float t)
         {
             t = Mathf.Clamp01(t);
-            float scaled = t * (PorkchopStops.Length - 1);
-            int lo = Mathf.Min((int)scaled, PorkchopStops.Length - 2);
-            return Color.Lerp(PorkchopStops[lo], PorkchopStops[lo + 1], scaled - lo);
+            float scaled = t * (stops.Length - 1);
+            int lo = Mathf.Min((int)scaled, stops.Length - 2);
+            return Color.Lerp(stops[lo], stops[lo + 1], scaled - lo);
         }
 
-        public Color EnvelopeColor(int i, int j)
+        private static Color Porkchop(float t)
         {
-            PerformanceEnvelopeCalculator.CellResult c = _result.Envelope[i, j];
+            return Ramp(PorkchopStops, t);
+        }
 
+        /// <summary>True if a cell is coloured on the porkchop ramp (a feasible cruise with a metric
+        /// value), rather than a fixed swatch (black/grey/heat-wall/teal). Shared by the colour path and
+        /// the view-range scan so the two cannot disagree about which cells count.</summary>
+        private bool IsRampColored(in PerformanceEnvelopeCalculator.CellResult c)
+        {
+            if (!c.Trimmed || c.Suppressed || !c.Feasible)
+                return false;
+            // No-cruise-endurance cells (nothing to burn, or idle exceeds drag) are a fixed teal on every
+            // map but the climb map, where their real climb rate puts them on the ramp.
+            if (ColorMetric != Metric.Climb &&
+                (c.Cruise == PerformanceEnvelopeCalculator.CruiseState.NoBurnableFuel ||
+                 c.Cruise == PerformanceEnvelopeCalculator.CruiseState.IdleExceedsDrag))
+                return false;
+            return true;
+        }
+
+        private static Color NonRampColor(in PerformanceEnvelopeCalculator.CellResult c)
+        {
             if (!c.Trimmed || c.Suppressed)
                 return Color.black; // no trim here, or hidden by cleanup (isolated dot / disconnected)
             if (!c.Feasible)
@@ -164,43 +288,53 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 return c.Overheats
                            ? new Color(0.867f, 0.867f, 0.867f)
                            : new Color(0.5f, 0.5f, 0.5f);
+            return new Color(0.35f, 0.6f, 0.65f); // feasible but no cruise-endurance figure: teal
+        }
 
-            // Feasible but with no cruise-endurance figure by nature — nothing to burn, or idle thrust
-            // exceeds drag: a distinct teal rather than a point on the porkchop ramp. The climb map is the
-            // exception — these cells have a real climb rate (an idle-exceeds-drag cell climbs hard), so
-            // let them fall through and colour by it.
-            if (ColorMetric != Metric.Climb &&
-                (c.Cruise == PerformanceEnvelopeCalculator.CruiseState.NoBurnableFuel ||
-                 c.Cruise == PerformanceEnvelopeCalculator.CruiseState.IdleExceedsDrag))
-                return new Color(0.35f, 0.6f, 0.65f);
-
-            double value, max;
-            bool lowerIsBetter;
+        /// <summary>The value the current metric colours by, plus whether low is the better (cooler) end.</summary>
+        private void MetricValue(in PerformanceEnvelopeCalculator.CellResult c, out double value, out bool lowerIsBetter)
+        {
             switch (ColorMetric)
             {
-                case Metric.Range:
-                    value = RangeKm(c); max = _result.MaxRangeKm; lowerIsBetter = false;
-                    break;
-                case Metric.Aoa:
-                    value = c.Alpha; max = _result.MaxAlphaDeg; lowerIsBetter = true;
-                    break;
-                case Metric.Throttle:
-                    value = c.ThrottleRequired; max = _result.MaxThrottle; lowerIsBetter = true;
-                    break;
-                case Metric.Climb:
-                    value = c.ClimbRateMPerS; max = _result.MaxClimbRateMPerS; lowerIsBetter = false;
-                    break;
-                default:
-                    value = c.EnduranceHours; max = _result.MaxEnduranceHours; lowerIsBetter = false;
-                    break;
+                case Metric.Range: value = RangeKm(c); lowerIsBetter = false; break;
+                case Metric.Aoa: value = c.Alpha; lowerIsBetter = true; break;
+                case Metric.Throttle: value = c.ThrottleRequired; lowerIsBetter = true; break;
+                case Metric.Climb: value = c.ClimbRateMPerS; lowerIsBetter = false; break;
+                default: value = c.EnduranceHours; lowerIsBetter = false; break;
             }
+        }
 
-            // Normalise to 0..1 of the map's own best cell. A cell whose value is unresolved (e.g. a
-            // near-empty cruise with Breguet endurance → 0) sits at the low-performance end rather than
-            // blanking to teal. For AoA/throttle low is best, so invert onto the cool end of the ramp.
-            float n = !FARMathUtil.IsFinite(value) || max <= 0
+        /// <summary>Whole-map best for the current metric — the top of the ramp when not rescaling to view.</summary>
+        private double MetricWholeMax()
+        {
+            switch (ColorMetric)
+            {
+                case Metric.Range: return _result.MaxRangeKm;
+                case Metric.Aoa: return _result.MaxAlphaDeg;
+                case Metric.Throttle: return _result.MaxThrottle;
+                case Metric.Climb: return _result.MaxClimbRateMPerS;
+                default: return _result.MaxEnduranceHours;
+            }
+        }
+
+        public Color EnvelopeColor(int i, int j)
+        {
+            PerformanceEnvelopeCalculator.CellResult c = _result.Envelope[i, j];
+            if (!IsRampColored(c))
+                return NonRampColor(c);
+
+            MetricValue(c, out double value, out bool lowerIsBetter);
+
+            // Normalise onto the ramp. Zoomed with rescale on, the window's own min..max is re-spread for
+            // full local contrast; otherwise the floor is 0 and the top is the map's best cell. A cell
+            // whose value is unresolved (e.g. a near-empty cruise, Breguet -> 0) sits at the low end. For
+            // AoA/throttle low is best, so invert onto the cool end.
+            bool rescale = RescaleColorsToView && _zoomActive;
+            double lo = rescale ? _viewMin : 0;
+            double hi = rescale ? _viewMax : MetricWholeMax();
+            float n = !FARMathUtil.IsFinite(value) || hi <= lo
                           ? (lowerIsBetter ? 1f : 0f)
-                          : Mathf.Clamp01((float)(value / max));
+                          : Mathf.Clamp01((float)((value - lo) / (hi - lo)));
             Color feasible = Porkchop(lowerIsBetter ? 1f - n : n);
 
             // Combined-map cells flown on ramjet power alone (turbojets shed to avoid melting) are
@@ -216,15 +350,62 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             return feasible;
         }
 
+        // Current metric's value range across the visible window's ramp-coloured cells, for the rescale.
+        private double _viewMin, _viewMax;
+        private int _paintedEpoch = -1;
+
+        /// <summary>Recomputes the visible-window value range for the current metric, over the same cells
+        /// EnvelopeColor ramps. Only meaningful while rescaling a zoomed view.</summary>
+        private void ComputeViewRange()
+        {
+            _viewMin = 0;
+            _viewMax = 0;
+            if (_result?.Envelope == null)
+                return;
+
+            VisibleBounds(out int i0, out int i1, out int j0, out int j1);
+            bool any = false;
+            double lo = double.PositiveInfinity, hi = double.NegativeInfinity;
+            for (int j = j0; j <= j1; j++)
+                for (int i = i0; i <= i1; i++)
+                {
+                    PerformanceEnvelopeCalculator.CellResult c = _result.Envelope[i, j];
+                    if (!IsRampColored(c))
+                        continue;
+                    MetricValue(c, out double v, out bool _);
+                    if (!FARMathUtil.IsFinite(v))
+                        continue;
+                    if (v < lo) lo = v;
+                    if (v > hi) hi = v;
+                    any = true;
+                }
+
+            if (any)
+            {
+                _viewMin = lo;
+                _viewMax = hi;
+            }
+        }
+
+        /// <summary>Recolours the envelope texture if the shared colour epoch (zoom / metric / rescale)
+        /// has moved since it was last painted. Cheap and idempotent; called each frame before drawing.</summary>
+        private void SyncColors()
+        {
+            if (_paintedEpoch == _colorEpoch || _envTex == null)
+                return;
+            _paintedEpoch = _colorEpoch;
+            RepaintEnvelope(); // recomputes the view range itself when zoomed + rescaling
+        }
+
         private Color StabilityColor(int i, int j)
         {
             HeatmapResult.StabilityCell c = _result.Stability?[i, j];
             if (c == null || c.Score < 0)
                 return new Color(0.5f, 0.2f, 0.6f); // errored — distinct from any score colour
 
-            // Same porkchop ramp as the performance maps, fewer-out-of-range-is-better: a clean cell (score 0)
-            // reads cool (indigo), the worst (most derivatives out of range) reads warm (red).
-            Color color = Porkchop(1f - Mathf.Clamp01((float)c.Score / MaxScore));
+            // The performance porkchop ramp minus its indigo top stop, fewer-out-of-range-is-better: a
+            // clean cell (score 0) reads cool (blue), the worst (most derivatives out of range) reads red.
+            Color color = Ramp(StabilityStops, 1f - Mathf.Clamp01((float)c.Score / MaxScore));
 
             // Outside the level-flight envelope (the perf map blacks or greys it) the craft can still fly
             // here transiently — just not hold level flight — so keep the stability hue but darken it rather
@@ -269,11 +450,15 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 _stabTex.Apply();
         }
 
-        /// <summary>Full repaint — needed once the sweep ends, since endurance colours scale to its best cell.</summary>
+        /// <summary>Full repaint — needed once the sweep ends (colours scale to the best cell) and after
+        /// the fuel slider / mass interpolation moves. Refreshes the visible-window range first when
+        /// rescaling a zoomed view, so every repaint path keeps the ramp in step with the shown cells.</summary>
         public void RepaintEnvelope()
         {
             if (_envTex == null)
                 return;
+            if (RescaleColorsToView && _zoomActive)
+                ComputeViewRange();
             for (int j = 0; j < _result.AltAxis.Length; j++)
                 for (int i = 0; i < _result.MachAxis.Length; i++)
                     _envTex.SetPixel(i, HeatmapAxes.TexRow(j), EnvelopeColor(i, j));
@@ -295,6 +480,68 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         /// already headed the column (e.g. side-by-side maps whose titles sit in a separate text
         /// row above), so the maps themselves stay the same height and line up.
         /// </summary>
+        /// <summary>Texture UV rect for the visible cell window. Texture y is the altitude index and UV v
+        /// runs bottom-up, so the lowest visible altitude sits at v0 and draws at the bottom of the rect.</summary>
+        private Rect TexCoords(int i0, int i1, int j0, int j1)
+        {
+            int nM = _result.MachAxis.Length, nA = _result.AltAxis.Length;
+            return new Rect((float)i0 / nM, (float)j0 / nA, (float)(i1 - i0 + 1) / nM, (float)(j1 - j0 + 1) / nA);
+        }
+
+        /// <summary>
+        /// Handles the drag-to-zoom gesture on <paramref name="map" />: press starts a box, release sets
+        /// the shared zoom window to the dragged cell range (a full-map box just clears the zoom). A press
+        /// and release with no real drag is a click — the cell is returned so the caller can act on it.
+        /// </summary>
+        private (int i, int j)? HandleBoxZoom(Rect map)
+        {
+            Event e = Event.current;
+            if (e == null)
+                return null;
+
+            int nM = _result.MachAxis.Length, nA = _result.AltAxis.Length;
+            VisibleBounds(out int i0, out int i1, out int j0, out int j1);
+
+            if (e.type == EventType.MouseDown && e.button == 0 && map.Contains(e.mousePosition))
+            {
+                _dragOwner = this;
+                _dragStartMouse = e.mousePosition;
+                _dragCurMouse = e.mousePosition;
+                e.Use();
+                return null;
+            }
+
+            if (_dragOwner != this)
+                return null;
+
+            if (e.type == EventType.MouseDrag && e.button == 0)
+            {
+                _dragCurMouse = e.mousePosition;
+                e.Use();
+            }
+            else if (e.type == EventType.MouseUp && e.button == 0)
+            {
+                _dragCurMouse = e.mousePosition;
+                _dragOwner = null;
+                e.Use();
+
+                if ((_dragCurMouse - _dragStartMouse).magnitude < DragThresholdPx)
+                    return HeatmapAxes.CellAt(map, _dragStartMouse, i0, i1, j0, j1); // a click, not a box
+
+                (int i, int j) a = HeatmapAxes.CellAt(map, _dragStartMouse, i0, i1, j0, j1);
+                (int i, int j) b = HeatmapAxes.CellAt(map, _dragCurMouse, i0, i1, j0, j1);
+                int zi0 = Mathf.Min(a.i, b.i), zi1 = Mathf.Max(a.i, b.i);
+                int zj0 = Mathf.Min(a.j, b.j), zj1 = Mathf.Max(a.j, b.j);
+
+                // Keep at least a 2x2 window so a nearly-still drag does not collapse to one cell.
+                if (zi1 == zi0) { if (zi1 < nM - 1) zi1++; else if (zi0 > 0) zi0--; }
+                if (zj1 == zj0) { if (zj1 < nA - 1) zj1++; else if (zj0 > 0) zj0--; }
+                SetZoom(zi0, zi1, zj0, zj1, nM, nA);
+            }
+
+            return null;
+        }
+
         public void DrawEnvelopeMap(float mapWidth, float mapHeight, (int i, int j)? highlight = null, bool showLabel = true)
         {
             _hoverEnv = null;
@@ -303,26 +550,30 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             if (_envTex == null)
                 return;
 
+            SyncColors(); // recolour if zoom / metric / rescale moved since last frame
+
             if (showLabel)
                 GUILayout.Label(!string.IsNullOrEmpty(_result.EngineTypeLabel)
                                     ? _result.EngineTypeLabel
                                     : Localizer.Format("FARHeatmapsEnvLabel"));
 
             Rect map = HeatmapAxes.ReserveRect(_envTex, mapWidth, mapHeight);
-            GUI.DrawTexture(map, _envTex, ScaleMode.StretchToFill, false);
-            HeatmapAxes.Draw(map, _result.MachAxis, _result.AltAxis, _result.SpeedAxisMode);
+            VisibleBounds(out int i0, out int i1, out int j0, out int j1);
+            GUI.DrawTextureWithTexCoords(map, _envTex, TexCoords(i0, i1, j0, j1));
+            HeatmapAxes.Draw(map, _result.MachAxis, _result.AltAxis, _result.SpeedAxisMode, i0, i1, j0, j1);
             if (highlight != null)
-                HeatmapAxes.DrawCellBorder(map, _result.MachAxis, _result.AltAxis, highlight.Value, Color.white);
+                HeatmapAxes.DrawCellBorder(map, _result.MachAxis, _result.AltAxis, highlight.Value, Color.white, i0, i1, j0, j1);
 
-            _hoverEnv = HeatmapAxes.HitTest(map, _result.MachAxis, _result.AltAxis);
+            _hoverEnv = HeatmapAxes.HitTest(map, _result.MachAxis, _result.AltAxis, i0, i1, j0, j1);
 
-            if (_hoverEnv != null)
-            {
-                if (HeatmapAxes.ClickedIn(map))
-                    ClickedEnvelopeCell = _hoverEnv;
-                else if (HeatmapAxes.MiddleClickedIn(map))
-                    DiagClickedEnvelopeCell = _hoverEnv;
-            }
+            (int i, int j)? click = HandleBoxZoom(map);
+            if (click != null)
+                ClickedEnvelopeCell = click;
+            else if (_hoverEnv != null && HeatmapAxes.MiddleClickedIn(map))
+                DiagClickedEnvelopeCell = _hoverEnv;
+
+            if (_dragOwner == this)
+                HeatmapAxes.DrawSelectionBox(map, _dragStartMouse, _dragCurMouse);
         }
 
         /// <summary>
@@ -340,11 +591,18 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             if (showLabel)
                 GUILayout.Label(Localizer.Format("FARHeatmapsStabLabel"));
             Rect smap = HeatmapAxes.ReserveRect(_stabTex, mapWidth, mapHeight);
-            GUI.DrawTexture(smap, _stabTex, ScaleMode.StretchToFill, false);
-            HeatmapAxes.Draw(smap, _result.MachAxis, _result.AltAxis, _result.SpeedAxisMode);
+            VisibleBounds(out int i0, out int i1, out int j0, out int j1);
+            GUI.DrawTextureWithTexCoords(smap, _stabTex, TexCoords(i0, i1, j0, j1));
+            HeatmapAxes.Draw(smap, _result.MachAxis, _result.AltAxis, _result.SpeedAxisMode, i0, i1, j0, j1);
             if (highlight != null)
-                HeatmapAxes.DrawCellBorder(smap, _result.MachAxis, _result.AltAxis, highlight.Value, Color.white);
-            _hoverStab = HeatmapAxes.HitTest(smap, _result.MachAxis, _result.AltAxis);
+                HeatmapAxes.DrawCellBorder(smap, _result.MachAxis, _result.AltAxis, highlight.Value, Color.white, i0, i1, j0, j1);
+            _hoverStab = HeatmapAxes.HitTest(smap, _result.MachAxis, _result.AltAxis, i0, i1, j0, j1);
+
+            // Stability shares the zoom, so a drag here reframes every map too; its own colours are a fixed
+            // score ramp (not view-rescaled), so no recolour is needed — only the window changes.
+            HandleBoxZoom(smap);
+            if (_dragOwner == this)
+                HeatmapAxes.DrawSelectionBox(smap, _dragStartMouse, _dragCurMouse);
         }
 
         /// <summary>Call last, so tooltips draw over everything rather than behind it.</summary>
@@ -370,6 +628,15 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                             c.Mach,
                             c.SpeedMPerS,
                             _result.AltAxis[j] / 1000.0);
+
+            // Assumed, not solved: past several heat-walled cells in this row the sweep stopped computing
+            // the high-Mach tail and filled the rest as heat wall, so it carries no measured numbers.
+            if (c.Extrapolated)
+            {
+                sb.Append("\n\nHeat wall (assumed) — past several cells the\nengines could not hold, so this was not computed.");
+                AppendRowEnvelope(sb, j);
+                return sb.ToString();
+            }
 
             if (c.ReducedEngines)
             {

@@ -28,6 +28,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         private const uint Magic = 0x46415248;   // "FARH"
         private const int FormatVersion = 1;
 
+        // Cap on cached sweeps kept per vessel — plenty to compare against, but bounded so a long session
+        // (or auto-recalc firing on every re-voxelization) can't grow the cache without limit. Oldest go
+        // first; Clear still removes them all at once.
+        private const int MaxCachedPerVessel = 20;
+
         // Public instance fields of CellResult, in a stable (name-sorted) order. Reflected once so adding
         // a field to CellResult does not need a hand-edit here; the stored field count guards the format,
         // so an old cache written with a different set simply misses and the craft is re-swept.
@@ -50,26 +55,50 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             }
         }
 
-        private static string FileFor(string craftName, int partCount)
+        private static string Sanitize(string craftName)
         {
+            // Long cap so two distinct crafts don't collide onto one prefix — history is now browsed and
+            // bulk-deleted by this prefix, so a collision would mix and could wipe another craft's sweeps.
+            // Still well under the ~255-char filesystem limit once ".<parts>.<ticks>.farheat" is appended.
             var sb = new StringBuilder();
             foreach (char c in craftName ?? "")
                 sb.Append(char.IsLetterOrDigit(c) || c == '-' || c == '_' ? c : '_');
-            if (sb.Length > 64)
-                sb.Length = 64;
-            return Path.Combine(CacheDir, sb + "." + partCount + ".farheat");
+            if (sb.Length > 180)
+                sb.Length = 180;
+            return sb.ToString();
         }
 
-        /// <summary>Writes a finished sweep to the cache, keyed by results[0]'s craft name + part count.</summary>
-        public static void Save(List<HeatmapResult> results)
+        /// <summary>One on-disk sweep in a vessel's browsable history: file path, the part count it was
+        /// swept at, and when it was written.</summary>
+        public sealed class CacheEntry
+        {
+            public readonly string Path;
+            public readonly int PartCount;
+            public readonly DateTime Time;
+
+            public CacheEntry(string path, int partCount, DateTime time)
+            {
+                Path = path;
+                PartCount = partCount;
+                Time = time;
+            }
+        }
+
+        /// <summary>
+        /// Writes a finished sweep as its OWN cache file — never overwriting a prior sweep — so a vessel
+        /// keeps a browsable history of past heatmaps. Named "&lt;craft&gt;.&lt;parts&gt;.&lt;ticks&gt;.farheat".
+        /// Returns the path written, or null on failure.
+        /// </summary>
+        public static string Save(List<HeatmapResult> results)
         {
             if (results == null || results.Count == 0)
-                return;
+                return null;
 
             try
             {
                 Directory.CreateDirectory(CacheDir);
-                string path = FileFor(results[0].CraftName, results[0].PartCount);
+                string path = Path.Combine(CacheDir,
+                    Sanitize(results[0].CraftName) + "." + results[0].PartCount + "." + DateTime.Now.Ticks + ".farheat");
                 using (FileStream fs = File.Create(path))
                 using (var gz = new GZipStream(fs, CompressionMode.Compress))
                 using (var w = new BinaryWriter(gz))
@@ -86,23 +115,152 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                 }
 
                 FARLogger.Info("Heatmap cache written: " + path);
+                Prune(results[0].CraftName);
+                return path;
             }
             catch (Exception e)
             {
                 FARLogger.Exception(e, "while writing the heatmap cache");
+                return null;
             }
         }
 
-        /// <summary>
-        /// Loads the cached sweep for a craft (name + part count), or null on a miss — absent file, a
-        /// format/version change, a signature mismatch, or any read error. Derived summary values are
-        /// recomputed rather than stored, so a loaded result is self-consistent with the current build.
-        /// </summary>
-        public static List<HeatmapResult> Load(string craftName, int partCount)
+        /// <summary>Keeps only the newest <see cref="MaxCachedPerVessel" /> cached sweeps for a vessel,
+        /// deleting the oldest. Uses file times only (no header reads).</summary>
+        private static void Prune(string craftName)
         {
             try
             {
-                string path = FileFor(craftName, partCount);
+                if (!Directory.Exists(CacheDir))
+                    return;
+
+                string prefix = Sanitize(craftName);
+                var files = new List<string>();
+                foreach (string path in Directory.GetFiles(CacheDir, prefix + ".*.farheat"))
+                {
+                    string[] seg = Path.GetFileNameWithoutExtension(path).Split('.');
+                    if (seg.Length >= 2 && seg[0] == prefix && int.TryParse(seg[1], out int _))
+                        files.Add(path);
+                }
+                if (files.Count <= MaxCachedPerVessel)
+                    return;
+
+                files.Sort((a, b) => File.GetLastWriteTime(a).CompareTo(File.GetLastWriteTime(b))); // oldest first
+                for (int i = 0; i < files.Count - MaxCachedPerVessel; i++)
+                    try { File.Delete(files[i]); }
+                    catch (Exception ex) { FARLogger.Exception(ex, "while pruning a heatmap cache"); }
+            }
+            catch (Exception e)
+            {
+                FARLogger.Exception(e, "while pruning the heatmap cache");
+            }
+        }
+
+        /// <summary>Every cached sweep for a vessel (by craft name, any part count), oldest first.</summary>
+        public static List<CacheEntry> ListForVessel(string craftName)
+        {
+            var entries = new List<CacheEntry>();
+            try
+            {
+                if (!Directory.Exists(CacheDir))
+                    return entries;
+
+                string prefix = Sanitize(craftName);
+                foreach (string path in Directory.GetFiles(CacheDir, prefix + ".*.farheat"))
+                {
+                    // "<prefix>.<parts>[.<ticks>]" — the prefix has no dots, so segment 1 is the part count.
+                    string[] seg = Path.GetFileNameWithoutExtension(path).Split('.');
+                    if (seg.Length < 2 || seg[0] != prefix || !int.TryParse(seg[1], out int part))
+                        continue;
+                    if (!IsCompatible(path)) // skip an old-format file so the nav never lists a dead entry
+                        continue;
+                    entries.Add(new CacheEntry(path, part, File.GetLastWriteTime(path)));
+                }
+
+                entries.Sort((a, b) => a.Time.CompareTo(b.Time));
+            }
+            catch (Exception e)
+            {
+                FARLogger.Exception(e, "while listing heatmap caches");
+            }
+            return entries;
+        }
+
+        /// <summary>Cheap header check: reads only magic/version/field-count so the list can drop a file
+        /// written by an older build (different cell layout) without trying to fully load it.</summary>
+        private static bool IsCompatible(string path)
+        {
+            try
+            {
+                using (FileStream fs = File.OpenRead(path))
+                using (var gz = new GZipStream(fs, CompressionMode.Decompress))
+                using (var r = new BinaryReader(gz))
+                    return r.ReadUInt32() == Magic && r.ReadInt32() == FormatVersion && r.ReadInt32() == CellFields.Length;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Deletes every cached sweep for a vessel — including old-format files the nav hides.
+        /// Returns how many files were removed.</summary>
+        public static int DeleteForVessel(string craftName)
+        {
+            int removed = 0;
+            try
+            {
+                if (!Directory.Exists(CacheDir))
+                    return 0;
+
+                string prefix = Sanitize(craftName);
+                foreach (string path in Directory.GetFiles(CacheDir, prefix + ".*.farheat"))
+                {
+                    string[] seg = Path.GetFileNameWithoutExtension(path).Split('.');
+                    if (seg.Length < 2 || seg[0] != prefix || !int.TryParse(seg[1], out int _))
+                        continue;
+                    try
+                    {
+                        File.Delete(path);
+                        removed++;
+                    }
+                    catch (Exception ex)
+                    {
+                        FARLogger.Exception(ex, "while deleting a heatmap cache");
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                FARLogger.Exception(e, "while clearing heatmap caches");
+            }
+            return removed;
+        }
+
+        /// <summary>The newest valid cached sweep matching a craft's name AND part count, or null — used
+        /// to auto-display a craft's map on opening the editor / flight.</summary>
+        public static List<HeatmapResult> Load(string craftName, int partCount)
+        {
+            List<CacheEntry> all = ListForVessel(craftName);
+            for (int i = all.Count - 1; i >= 0; i--) // newest first
+                if (all[i].PartCount == partCount)
+                {
+                    List<HeatmapResult> r = LoadPath(all[i].Path);
+                    if (r != null)
+                        return r;
+                }
+            return null;
+        }
+
+        /// <summary>
+        /// Reads a specific cache file, validating only the format (not name/part) so a historical snapshot
+        /// from a different edit still loads. Null on a format/version mismatch or read error. Derived
+        /// summary values are recomputed on load, so the result stays self-consistent with the current build.
+        /// </summary>
+        public static List<HeatmapResult> LoadPath(string path)
+        {
+            try
+            {
                 if (!File.Exists(path))
                     return null;
 
@@ -113,10 +271,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                     if (r.ReadUInt32() != Magic || r.ReadInt32() != FormatVersion || r.ReadInt32() != CellFields.Length)
                         return null;
 
-                    string name = ReadString(r);
-                    int parts = r.ReadInt32();
-                    if (name != (craftName ?? "") || parts != partCount)
-                        return null;
+                    ReadString(r); // craft name (informational)
+                    r.ReadInt32(); // part count (informational)
 
                     int n = r.ReadInt32();
                     var list = new List<HeatmapResult>(n);
