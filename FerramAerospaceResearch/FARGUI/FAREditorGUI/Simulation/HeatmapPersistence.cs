@@ -237,6 +237,24 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             return removed;
         }
 
+        /// <summary>Deletes one cached sweep file (the currently-viewed history entry). True if removed.</summary>
+        public static bool DeletePath(string path)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                FARLogger.Exception(ex, "while deleting a heatmap cache");
+            }
+            return false;
+        }
+
         /// <summary>The newest valid cached sweep matching a craft's name AND part count, or null — used
         /// to auto-display a craft's map on opening the editor / flight.</summary>
         public static List<HeatmapResult> Load(string craftName, int partCount)

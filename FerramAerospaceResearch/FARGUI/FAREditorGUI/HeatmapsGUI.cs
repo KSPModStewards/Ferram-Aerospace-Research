@@ -53,8 +53,33 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             (23, -1, "Nr")
         };
 
-        private const float MapWidth = 470f;
-        private const float MapHeight = 190f;
+        private const float MapWidth = 680f;
+        // Map row height, sized each frame (MapHeightForRows) to fill the window down to WindowFloor.
+        private float _mapHeight = 200f;
+
+        /// <summary>Heatmaps-tab window height: fills the display below the window's ~1/6-from-top placement,
+        /// capped for very tall monitors. Shared with EditorGUI so the window height and the maps agree —
+        /// the maps are sized to exactly fill it, so the window neither leaves a gap nor overflows the
+        /// screen (a window taller than the screen runs off the bottom and flickers).</summary>
+        public static float WindowFloor()
+        {
+            // Leave a margin below the window so it never reaches the screen's bottom edge (the window is
+            // placed ~1/6 down and runs off / flickers there otherwise).
+            return Mathf.Clamp(Screen.height - 300f, 600f, 1200f);
+        }
+
+        /// <summary>Map height that makes the given number of map rows fill the window under the controls.</summary>
+        private static float MapHeightForRows(int rows)
+        {
+            if (rows < 1)
+                rows = 1;
+            const float ControlsOverhead = 334f; // title..zoom + notes + window chrome, above the map rows
+            const float PerRowText = 92f;         // engine label + 2 summary lines + x-axis + title, per row
+            // Size content to sit just UNDER the window floor, not exactly at it: at the floor the window
+            // auto-grows on sub-pixel content jitter and the bottom flickers. A small gap keeps it pinned.
+            const float BottomMargin = 60f;
+            return Mathf.Clamp((WindowFloor() - BottomMargin - ControlsOverhead) / rows - PerRowText, 170f, 380f);
+        }
 
         // Masses the envelope is swept at, from dry to wet, so the flight scene can interpolate the
         // map as fuel burns. Three (dry, mid, wet) keeps the quadratic weight→drag curve honest
@@ -105,7 +130,9 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
         // Which fuel load the envelope maps show: an index into EnvelopeSamples/SampleMassesKg, where
         // 0 is empty (dry) and MassSamples-1 is full. A slider picks it; defaults to full.
-        private int _fuelSample = MassSamples - 1;
+        // Fuel-slider position in sample-index space [0, MassSamples-1]. Continuous: the swept masses sit at
+        // the integer set points, and between them the displayed envelope is interpolated (like flight).
+        private float _fuelPos = MassSamples - 1;
 
         // Auto-fit: when a max is being auto-fit, a Run first runs a coarse 10x10 probe over a wide range
         // (max altitude up to half the atmosphere, speed up to the cap) to find how far the envelope
@@ -252,48 +279,69 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             CheckAutoRecalc();
             TryLoadCachedForEditor();
 
-            GUILayout.Label(Localizer.Format("FARHeatmapsTitle"));
-
+            // Title left; "Planet:" label + selector right-justified on the same line.
             GUILayout.BeginHorizontal();
-            GUILayout.Label(Localizer.Format("FAREditorStabDerivPlanet"));
-            _bodySettingDropdown.GUIDropDownDisplay();
-            GUILayout.Label(Localizer.Format("FAREditorStabDerivFlap"));
-            _flapSettingDropdown.GUIDropDownDisplay();
-            _spoilers = GUILayout.Toggle(_spoilers,
-                                         _spoilers
-                                             ? Localizer.Format("FAREditorStabDerivSDeploy")
-                                             : Localizer.Format("FAREditorStabDerivSRetract"),
-                                         GUILayout.Width(100));
+            GUILayout.Label(Localizer.Format("FARHeatmapsTitle"));
+            GUILayout.FlexibleSpace();
+            GUILayout.Label(Localizer.Format("FAREditorStabDerivPlanet"), GUILayout.ExpandWidth(false));
+            _bodySettingDropdown.GUIDropDownDisplay(GUILayout.Width(160));
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label(_speedInMS ? "Speed (m/s)" : Localizer.Format("FARStabHeatmapMachRange"),
-                            GUILayout.Width(90));
+            GUILayout.Label("Speed", GUILayout.Width(50));
             if (GUILayout.Button(_speedInMS ? "m/s" : "Mach", GUILayout.Width(46)))
                 ToggleSpeedUnit();
             _machMin = GUILayout.TextField(_machMin, GUILayout.Width(50));
             GUILayout.Label("→", GUILayout.Width(18));
             _machMax = GUILayout.TextField(_machMax, GUILayout.Width(50));
             GUILayout.Space(14);
-            GUILayout.Label(Localizer.Format("FARStabHeatmapAltRange"), GUILayout.Width(90));
+            GUILayout.Label(Localizer.Format("FARStabHeatmapAltRange"), GUILayout.Width(130));
             _altMinKm = GUILayout.TextField(_altMinKm, GUILayout.Width(50));
             GUILayout.Label("→", GUILayout.Width(18));
             _altMaxKm = GUILayout.TextField(_altMaxKm, GUILayout.Width(50));
-            GUILayout.EndHorizontal();
-
-            GUILayout.BeginHorizontal();
-            GUILayout.Label(Localizer.Format("FARStabHeatmapCells"), GUILayout.Width(110));
+            GUILayout.Space(14);
+            GUILayout.Label("Speed × Alt", GUILayout.Width(78));
             _nMach = GUILayout.TextField(_nMach, GUILayout.Width(40));
             GUILayout.Label("×", GUILayout.Width(18));
             _nAlt = GUILayout.TextField(_nAlt, GUILayout.Width(40));
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+
+            string inputError = RangeInputError();
+
+            // Sweep options plus Cleanup (a live display filter), all on one line.
+            GUILayout.BeginHorizontal();
+            bool prevAuto = _autoRecalc;
+            _autoRecalc = GUILayout.Toggle(_autoRecalc,
+                                           Localizer.Format("FARHeatmapsAutoRecalc"),
+                                           GUILayout.Width(220));
+            if (_autoRecalc && !prevAuto)
+                _lastVoxQueued = true; // arm: recalc once the current/next voxelization completes
+            GUILayout.Space(14);
+            _multithread = GUILayout.Toggle(_multithread, "Multithread", GUILayout.Width(125));
+            GUILayout.Space(14);
+            // Cleanup is a live display filter, not a sweep step: off shows the raw grid (spurious near-stall
+            // islands and grey specks), and toggling it re-derives the display with no re-sweep. The swept
+            // grids and the on-disk cache stay raw either way.
+            bool prevCleanup = HeatmapResult.CleanupDisplay;
+            HeatmapResult.CleanupDisplay = GUILayout.Toggle(prevCleanup, "Cleanup", GUILayout.Width(90));
+            if (HeatmapResult.CleanupDisplay != prevCleanup && !IsSweepRunning && _results != null && _results.Count > 0)
+                ApplyFuelSample(); // re-derive the shown grid from the raw samples
             GUILayout.Space(14);
             _includeStability = GUILayout.Toggle(_includeStability,
                                                  Localizer.Format("FARHeatmapsIncludeStab"),
                                                  GUILayout.Width(150));
             GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
 
-            string inputError = RangeInputError();
-
+            // Auto-fit toggles, with Run/Cancel to their right (left-justified). When auto-fit is on, a
+            // Run keeps appending altitude rows / speed columns and re-sweeping only the new band until
+            // the ceiling / top speed is fully enclosed.
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Auto-fit:", GUILayout.Width(60));
+            _autoMaxAlt = GUILayout.Toggle(_autoMaxAlt, "Max altitude", GUILayout.Width(120));
+            _autoMaxSpeed = GUILayout.Toggle(_autoMaxSpeed, _speedInMS ? "Max speed" : "Max Mach", GUILayout.Width(120));
+            GUILayout.Space(14);
             if (IsSweepRunning)
             {
                 if (GUILayout.Button(Localizer.Format("FARStabHeatmapCancel"),
@@ -303,8 +351,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             }
             else
             {
-                // Bad input can't sweep, so grey Run out — with the reason shown below it doesn't just
-                // fail silently.
+                // Bad input can't sweep, so grey Run out — with the reason shown alongside it doesn't
+                // just fail silently.
                 GUI.enabled = !EditorGUI.Instance.VoxelizationUpdateQueued && inputError == null;
                 if (GUILayout.Button(Localizer.Format("FARStabHeatmapRun"),
                                      GUILayout.Width(110),
@@ -313,42 +361,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 GUI.enabled = true;
             }
 
-            GUILayout.EndHorizontal();
-
-            GUILayout.BeginHorizontal();
-            DrawMetricToggle();
-            GUILayout.FlexibleSpace();
-            GUILayout.EndHorizontal();
-
-            GUILayout.BeginHorizontal();
-            bool prevAuto = _autoRecalc;
-            _autoRecalc = GUILayout.Toggle(_autoRecalc,
-                                           Localizer.Format("FARHeatmapsAutoRecalc"),
-                                           GUILayout.Width(200));
-            if (_autoRecalc && !prevAuto)
-                _lastVoxQueued = true; // arm: recalc once the current/next voxelization completes
+            // Status / progress / input-error, to the right of the Run button.
             GUILayout.Space(14);
-            _multithread = GUILayout.Toggle(_multithread, "Multithread", GUILayout.Width(110));
-            GUILayout.Space(14);
-            // Cleanup is a live display filter, not a sweep step: off shows the raw grid (spurious near-stall
-            // islands and grey specks), and toggling it re-derives the display with no re-sweep. The swept
-            // grids and the on-disk cache stay raw either way.
-            bool prevCleanup = HeatmapResult.CleanupDisplay;
-            HeatmapResult.CleanupDisplay = GUILayout.Toggle(prevCleanup, "Cleanup", GUILayout.Width(90));
-            if (HeatmapResult.CleanupDisplay != prevCleanup && !IsSweepRunning && _results != null && _results.Count > 0)
-                ApplyFuelSample(); // re-derive the shown grid from the raw samples
-            GUILayout.FlexibleSpace();
-            GUILayout.EndHorizontal();
-
-            // Auto-fit toggles: when on, a Run keeps appending altitude rows / speed columns and
-            // re-sweeping only the new band until the ceiling / top speed is fully enclosed.
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Auto-fit:", GUILayout.Width(60));
-            _autoMaxAlt = GUILayout.Toggle(_autoMaxAlt, "Max altitude", GUILayout.Width(120));
-            _autoMaxSpeed = GUILayout.Toggle(_autoMaxSpeed, _speedInMS ? "Max speed" : "Max Mach", GUILayout.Width(120));
-            GUILayout.FlexibleSpace();
-            GUILayout.EndHorizontal();
-
             if (IsSweepRunning)
                 GUILayout.Label(Localizer.Format("FARStabHeatmapProgress",
                                                  _cellsDone.ToString(CultureInfo.InvariantCulture),
@@ -363,9 +377,32 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             else if (!string.IsNullOrEmpty(_statusMessage))
                 GUILayout.Label(_statusMessage);
 
-            // Clipped-envelope notes: shown once here under the status line, aggregated across the
-            // engine-type maps — a note is no longer tied to any single map. Only after a sweep.
-            if (_results != null && _results.Count > 0 && !IsSweepRunning)
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+
+            if (_results == null || _results.Count == 0)
+                return;
+
+            GUILayout.Space(12); // separate the sweep setup above from the display controls below
+
+            DrawHistoryNav();
+
+            // Color-by sits with the zoom/recolour controls: both are display-only, changing how the
+            // finished maps are drawn without re-sweeping.
+            GUILayout.BeginHorizontal();
+            DrawMetricToggle();
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+
+            DrawZoomAndFuelRow(); // zoom controls with the fuel slider to their right — one row, not two
+
+            // Clipped-envelope notes, right below the zoom controls (aggregated across the engine-type maps).
+            // Two lines are ALWAYS reserved — blank when nothing is clipped — so a note appearing or
+            // disappearing as the fuel/zoom/inputs change does not re-fit the auto-sized window and flicker
+            // its bottom edge.
+            string ceilingNote = " ";
+            string topNote = " ";
+            if (!IsSweepRunning)
             {
                 bool anyCeilingClipped = false;
                 bool anyTopClipped = false;
@@ -377,22 +414,21 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 }
 
                 if (anyCeilingClipped)
-                    GUILayout.Label(Localizer.Format("FAREnvelopeCeilingClipped"));
+                    ceilingNote = "Ceiling clipped — raise the max altitude to see the true ceiling.";
                 if (anyTopClipped)
-                    GUILayout.Label(Localizer.Format("FAREnvelopeTopSpeedClipped"));
+                    topNote = "Top speed clipped — raise the max " + (_speedInMS ? "speed." : "Mach.");
             }
 
-            if (_results == null || _results.Count == 0)
-                return;
+            // No-wrap so each note is exactly one line (matching the blank placeholder), keeping this a
+            // constant two-line block whether or not anything is clipped — otherwise the wrapping note
+            // changed the window height and flickered the bottom.
+            GUILayout.Label(ceilingNote, SummaryStyle);
+            GUILayout.Label(topNote, SummaryStyle);
 
-            DrawFuelSlider();
-            DrawHistoryNav();
-            HeatmapRenderer.DrawZoomControls();
-
-            // Up to two maps fit across the 650 px window. With the combined map that makes three,
-            // so wrap into rows of two.
+            // Up to two maps fit across the window. With the combined map that makes three, so wrap
+            // into rows of two.
             bool multi = _results.Count >= 2;
-            float w = multi ? 250f : MapWidth;
+            float w = multi ? 335f : MapWidth;
             const int perRow = 2;
 
             // Ordered map cells: one per engine-type envelope, then the shared stability map. Adding
@@ -405,6 +441,15 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             if (stabInFlow)
                 cells.Add(new MapCell(_stabRenderer, true));
 
+            // Size the map rows to fill the window under the controls.
+            int rows = (cells.Count + perRow - 1) / perRow;
+            if (_includeStability && !stabInFlow)
+                rows++; // the standalone stability map sits on its own row below
+            _mapHeight = MapHeightForRows(rows);
+
+            // The maps sit in a sunken panel, matching the output area of the other editor tabs.
+            GUILayout.BeginVertical(PanelStyle);
+
             for (int start = 0; start < cells.Count; start += perRow)
             {
                 int end = Math.Min(start + perRow, cells.Count);
@@ -414,7 +459,9 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             // Single-type craft: the lone envelope map is full-width, so the stability map reads
             // better stacked beneath it than squeezed into a half-width column alongside.
             if (_includeStability && !stabInFlow)
-                _stabRenderer.DrawStabilityMap(MapWidth, MapHeight);
+                _stabRenderer.DrawStabilityMap(MapWidth, _mapHeight);
+
+            GUILayout.EndVertical();
 
             // Tooltips last, over everything. Only the hovered renderer has a live hover.
             foreach (HeatmapRenderer r in _envRenderers)
@@ -422,44 +469,68 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             _stabRenderer.DrawTooltips();
         }
 
+        // Within this fraction of a set point the slider snaps to that exact swept sample; farther in it
+        // interpolates between the two bracketing samples.
+        private const float FuelSnap = 0.02f;
+
         /// <summary>
-        /// Fuel-load slider: steps the envelope maps through the swept fuel samples (empty → full) so the
-        /// envelope can be read at each load. Only shown for envelope maps swept at several masses.
+        /// The zoom controls with the fuel slider to their right, on one row. The fuel slider is continuous
+        /// across the swept masses: at a set point it shows that exact swept grid, between them the
+        /// interpolated envelope for that load, so the map can be read at any fuel level outside flight.
+        /// The fuel part appears only for maps swept at several masses.
         /// </summary>
-        private void DrawFuelSlider()
+        private void DrawZoomAndFuelRow()
         {
-            HeatmapResult r = FirstSampledResult();
-            if (r == null)
-                return;
-
-            int n = r.SampleMassesKg.Length;
-
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Fuel:", GUILayout.Width(34));
-            GUI.enabled = !IsSweepRunning; // re-pointing Envelope mid-sweep would race the fill
-            int idx = Mathf.Clamp(Mathf.RoundToInt(GUILayout.HorizontalSlider(_fuelSample, 0, n - 1,
-                                                                              GUILayout.Width(120))),
-                                  0,
-                                  n - 1);
-            GUI.enabled = true;
-            GUILayout.Space(8);
-            GUILayout.Label(FuelSampleLabel(r, idx), GUILayout.Width(160));
+            HeatmapRenderer.DrawZoomControls(ownRow: false);
+
+            HeatmapResult r = FirstSampledResult();
+            if (r != null)
+            {
+                int n = r.SampleMassesKg.Length;
+                GUILayout.Space(16);
+                GUILayout.Label("Fuel:", GUILayout.Width(34));
+                GUI.enabled = !IsSweepRunning; // re-pointing Envelope mid-sweep would race the fill
+                float pos = Mathf.Clamp(GUILayout.HorizontalSlider(_fuelPos, 0, n - 1, GUILayout.Width(120)),
+                                        0, n - 1);
+                GUI.enabled = true;
+                GUILayout.Space(6);
+                GUILayout.Label(FuelPosLabel(r, pos), GUILayout.Width(140));
+
+                if (!Mathf.Approximately(pos, _fuelPos))
+                {
+                    _fuelPos = pos;
+                    ApplyFuelSample();
+                }
+            }
+
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
-
-            if (idx != _fuelSample)
-            {
-                _fuelSample = idx;
-                ApplyFuelSample();
-            }
         }
 
-        private static string FuelSampleLabel(HeatmapResult r, int idx)
+        private static string FuelPosLabel(HeatmapResult r, float pos)
         {
             int n = r.SampleMassesKg.Length;
-            string name = idx == 0 ? "empty" : idx == n - 1 ? "full" : "mid";
-            return string.Format(CultureInfo.InvariantCulture, "{0} — {1:0.00} t", name,
-                                 r.SampleMassesKg[idx] / 1000.0);
+            int lo = Mathf.Clamp(Mathf.FloorToInt(pos), 0, n - 1);
+            float frac = pos - lo;
+
+            if (frac <= FuelSnap || lo >= n - 1)
+                return FuelName(lo, n) + FuelMass(r.SampleMassesKg[lo]);
+            if (frac >= 1f - FuelSnap)
+                return FuelName(lo + 1, n) + FuelMass(r.SampleMassesKg[lo + 1]);
+
+            double mass = r.SampleMassesKg[lo] + (r.SampleMassesKg[lo + 1] - r.SampleMassesKg[lo]) * frac;
+            return "interp" + FuelMass(mass);
+        }
+
+        private static string FuelName(int idx, int n)
+        {
+            return idx == 0 ? "empty" : idx == n - 1 ? "full" : "mid";
+        }
+
+        private static string FuelMass(double massKg)
+        {
+            return string.Format(CultureInfo.InvariantCulture, " — {0:0.00} t", massKg / 1000.0);
         }
 
         private HeatmapResult FirstSampledResult()
@@ -486,7 +557,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 HeatmapResult r = _results[t];
                 if (r.EnvelopeSamples == null || r.EnvelopeSamples.Length == 0)
                     continue;
-                r.SetDisplaySample(r.HasMassSamples ? _fuelSample : 0); // clamps internally; cleans per CleanupDisplay
+                ApplyFuelPos(r);
                 if (t < _envRenderers.Count)
                     _envRenderers[t].RepaintEnvelope();
             }
@@ -495,6 +566,65 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             {
                 HeatmapResult.ApplyStabilityPerfMask(_results); // perf black/grey moves with the mass sample
                 _stabRenderer.RepaintStability();
+            }
+        }
+
+        /// <summary>Points one result's displayed grid at the fuel-slider position: an exact swept sample at
+        /// (or within <see cref="FuelSnap" /> of) a set point, else an interpolated preview between the two
+        /// bracketing samples. Both clean per <see cref="HeatmapResult.CleanupDisplay" /> and leave the raw
+        /// samples untouched.</summary>
+        private void ApplyFuelPos(HeatmapResult r)
+        {
+            if (!r.HasMassSamples)
+            {
+                r.SetDisplaySample(0);
+                return;
+            }
+
+            int n = r.SampleMassesKg.Length;
+            float pos = Mathf.Clamp(_fuelPos, 0, n - 1);
+            int lo = Mathf.FloorToInt(pos);
+            float frac = pos - lo;
+
+            if (frac <= FuelSnap || lo >= n - 1)
+                r.SetDisplaySample(lo);
+            else if (frac >= 1f - FuelSnap)
+                r.SetDisplaySample(lo + 1);
+            else
+            {
+                double mass = r.SampleMassesKg[lo] + (r.SampleMassesKg[lo + 1] - r.SampleMassesKg[lo]) * frac;
+                r.SetDisplayMass(mass);
+            }
+        }
+
+        // Sunken output panel (matching the Static/Stability tabs) and a no-wrap label for the per-map
+        // summary so a wide value clips rather than wrapping to a third line — keeping each map row a
+        // constant height, which stops the auto-sized window from re-fitting (and flickering) as the fuel
+        // slider / summary values move.
+        private static GUIStyle _panelStyle;
+        private static GUIStyle _summaryStyle;
+
+        private static GUIStyle PanelStyle
+        {
+            get
+            {
+                if (_panelStyle == null)
+                {
+                    _panelStyle = new GUIStyle(GUI.skin.box);
+                    _panelStyle.hover = _panelStyle.active = _panelStyle.normal; // no hover highlight
+                }
+
+                return _panelStyle;
+            }
+        }
+
+        private static GUIStyle SummaryStyle
+        {
+            get
+            {
+                if (_summaryStyle == null)
+                    _summaryStyle = new GUIStyle(GUI.skin.label) { wordWrap = false };
+                return _summaryStyle;
             }
         }
 
@@ -529,14 +659,17 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                     MapCell cell = cells[t];
                     if (cell.IsStability)
                     {
-                        GUILayout.Label(Localizer.Format("FARHeatmapsStabLabel"));
+                        GUILayout.Label(HeatmapRenderer.StabilityCaption);
                     }
                     else
                     {
                         if (multi)
                             GUILayout.Label(cell.Renderer.EngineTypeLabel);
                         // Clipped-envelope notes are aggregated once under the status line, not per map.
-                        GUILayout.Label(cell.Renderer.SummaryText(out bool _, out bool _2));
+                        // Each summary line is drawn no-wrap so a wide value clips instead of wrapping to a
+                        // third line, keeping this text block a constant height (no window re-fit / flicker).
+                        foreach (string line in cell.Renderer.SummaryText(out bool _, out bool _2).Split('\n'))
+                            GUILayout.Label(line, SummaryStyle);
                     }
 
                     GUILayout.EndVertical();
@@ -551,10 +684,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 GUILayout.BeginVertical(GUILayout.Width(col));
                 MapCell cell = cells[t];
                 if (cell.IsStability)
-                    cell.Renderer.DrawStabilityMap(w, MapHeight, null, false);
+                    cell.Renderer.DrawStabilityMap(w, _mapHeight, null, false);
                 else
                 {
-                    cell.Renderer.DrawEnvelopeMap(w, MapHeight, null, !multi);
+                    cell.Renderer.DrawEnvelopeMap(w, _mapHeight, null, !multi);
                     if (cell.Renderer.DiagClickedEnvelopeCell != null)
                         DumpCellDiagnostics(_envRenderers.IndexOf(cell.Renderer),
                                             cell.Renderer.DiagClickedEnvelopeCell.Value);
@@ -615,7 +748,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             // Show the newest cached sweep for this craft — preferring the current part count, else the
             // newest snapshot from another edit (its part count is shown in the nav).
             ShowGeneration(NewestIndexFor(parts));
-            _statusMessage = "Loaded cached heatmap for " + name + " — Run to re-sweep.";
+            _statusMessage = "Loaded cached heatmap for " + name + ".";
         }
 
         /// <summary>The newest cached-sweep index for a part count, or the newest overall if none match.</summary>
@@ -649,8 +782,12 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             _results = loaded;
             foreach (HeatmapResult r in loaded)
             {
-                // The cache is raw; derive the shown grid (cleaned per CleanupDisplay) before the texture builds.
-                r.SetDisplaySample(r.HasMassSamples ? _fuelSample : 0);
+                // The cache is raw; derive the shown grid (cleaned per CleanupDisplay) before the texture
+                // builds. A nearest set point is enough here — ApplyFuelSample below re-derives at the exact
+                // slider position (interpolating when between set points).
+                r.SetDisplaySample(r.HasMassSamples
+                                       ? Mathf.Clamp(Mathf.RoundToInt(_fuelPos), 0, r.SampleMassesKg.Length - 1)
+                                       : 0);
                 var rend = new HeatmapRenderer();
                 rend.SetResult(r);
                 _envRenderers.Add(rend);
@@ -731,14 +868,14 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         /// </summary>
         private void DrawMetricToggle()
         {
-            GUILayout.Label(Localizer.Format("FARHeatmapsColorBy"), GUILayout.Width(60));
+            GUILayout.Label(Localizer.Format("FARHeatmapsColorBy"), GUILayout.Width(70));
 
             HeatmapRenderer.Metric want = HeatmapRenderer.ColorMetric;
-            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Endurance, Localizer.Format("FARHeatmapsEndurance"), 90);
-            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Range, Localizer.Format("FARHeatmapsRange"), 70);
-            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Aoa, "AoA", 60);
-            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Throttle, "Throttle", 85);
-            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Climb, "Climb", 60);
+            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Endurance, Localizer.Format("FARHeatmapsEndurance"), 105);
+            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Range, Localizer.Format("FARHeatmapsRange"), 75);
+            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Aoa, "AoA", 68);
+            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Throttle, "Throttle", 92);
+            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Climb, "Climb", 70);
 
             if (want != HeatmapRenderer.ColorMetric)
             {
@@ -1821,6 +1958,27 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             _statusMessage = "Cleared " + removed + " cached sweep" + (removed == 1 ? "" : "s") + ".";
         }
 
+        /// <summary>Deletes just the currently-viewed sweep's file, then shows the neighbouring entry (or
+        /// leaves the map shown if none remain).</summary>
+        private void RemoveCurrentSweep()
+        {
+            if (_viewIndex < 0 || _viewIndex >= _cachedSweeps.Count)
+                return;
+
+            HeatmapPersistence.DeletePath(_cachedSweeps[_viewIndex].Path);
+            _cachedSweeps.RemoveAt(_viewIndex);
+
+            if (_cachedSweeps.Count == 0)
+            {
+                _viewIndex = -1;
+                _statusMessage = "Removed sweep; none cached for this craft now.";
+                return;
+            }
+
+            ShowGeneration(Math.Min(_viewIndex, _cachedSweeps.Count - 1));
+            _statusMessage = "Removed sweep.";
+        }
+
         /// <summary>
         /// Prev/Next navigator across the vessel's cached sweeps (its .farheat files), with the selected
         /// sweep's time and part count and a Clear button. Hidden while a sweep is running.
@@ -1846,17 +2004,21 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                           e.Time.ToString("MMM d HH:mm:ss", CultureInfo.InvariantCulture),
                                           e.PartCount,
                                           tag),
-                            GUILayout.Width(470));
+                            GUILayout.Width(340));
 
             GUI.enabled = _viewIndex < _cachedSweeps.Count - 1;
             if (GUILayout.Button("►", GUILayout.Width(28)))
                 ShowGeneration(_viewIndex + 1);
             GUI.enabled = true;
 
-            GUILayout.FlexibleSpace();
-            if (GUILayout.Button("Clear", GUILayout.Width(55)))
+            GUILayout.Space(14);
+            if (GUILayout.Button("Clear History", GUILayout.Width(100)))
                 ClearHistory();
+            GUILayout.Space(6);
+            if (GUILayout.Button("Remove", GUILayout.Width(75)))
+                RemoveCurrentSweep();
 
+            GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
         }
 
@@ -1954,7 +2116,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                             case ColumnKind.HeatWall when seenFeasible[k][t]:
                                 skipMap[k][t] = ++heatRun[k][t] >= ExtrapolateAfter;
                                 break;
-                            default: // Grey, Stall, or a heat wall before the band ever flew (artifact)
+                            default: // Grey, Stall, or a heat wall BEFORE the band ever flew. The last is not
+                                // safe to short-circuit: a ramjet overheats at low speed (poor inlet airflow,
+                                // little cooling) with a FEASIBLE band above it, so an early heat wall is not
+                                // necessarily the monotonic high-Mach tail. Only arm once a feasible cell has
+                                // been seen, i.e. we are truly past the flyable band.
                                 heatRun[k][t] = 0;
                                 break;
                         }
@@ -2049,19 +2215,25 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 {
                     cell = calc.EvaluateWithAero(ctx, body, alt, mach, _deck, props);
 
-                    // Combined map: running every engine here would melt the turbojets, so the honest
-                    // result is the aircraft on ram power alone. Use it whether or not it sustains level
-                    // flight — you would shed the melting turbojets regardless. Keeping the ram result
-                    // even when it is infeasible also keeps the top-speed edge continuous: the cell just
-                    // past the ramjet's reach then carries ram's negative excess thrust, so the
-                    // thrust=drag crossing interpolates instead of snapping to the grid.
-                    if (isCombined && cell.Overheats && _deck.CanShedToCompressorless)
+                    // Combined map: where the turbojets overheat or fall thrust-short (past their Mach
+                    // they make negative thrust — a net drag), a pilot idles them and flies on ram power.
+                    // Decide the shed by which set actually makes more excess thrust, NOT by the overheat
+                    // flag alone: a turbojet can be a net drag without being flagged thermally limited, and
+                    // gating on Overheats then leaves isolated grey specks where the flag happens to be off
+                    // while its neighbours shed. Comparing excess is smooth cell-to-cell and still keeps the
+                    // top-speed edge continuous (past the ramjet's reach ram's negative excess still wins
+                    // over the turbojet-dragged sum, so the thrust=drag crossing interpolates).
+                    if (isCombined && cell.Trimmed && _deck.CanShedToCompressorless &&
+                        (cell.Overheats || !cell.Feasible))
                     {
                         _deck.SetActiveCompressorless();
                         PerformanceEnvelopeCalculator.CellResult ram =
                             calc.EvaluateWithAero(ctx, body, alt, mach, _deck, props);
-                        ram.ReducedEngines = true;
-                        cell = ram;
+                        if (ram.Trimmed && ram.ExcessThrustN > cell.ExcessThrustN)
+                        {
+                            ram.ReducedEngines = true;
+                            cell = ram;
+                        }
                     }
                 }
                 catch (Exception e)
@@ -2120,14 +2292,19 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 {
                     cell = calc.EvaluateWithAeroParallel(ctx, _deck, env, groupCtx[t], slot, props);
 
-                    // Combined map: where running every engine would melt the turbojets, shed them and
-                    // fly on the compressor-less engines alone (dimmed). Same fallback the serial path uses.
-                    if (isCombined && cell.Overheats && compressorlessCtx != null)
+                    // Combined map: shed the turbojets to compressor-less power wherever they overheat or
+                    // fall thrust-short, keeping whichever set makes more excess thrust. Decided by thrust,
+                    // not the noisy overheat flag, so no isolated grey specks. Same rule as the serial path.
+                    if (isCombined && cell.Trimmed && compressorlessCtx != null &&
+                        (cell.Overheats || !cell.Feasible))
                     {
                         PerformanceEnvelopeCalculator.CellResult ram =
                             calc.EvaluateWithAeroParallel(ctx, _deck, env, compressorlessCtx, slot, props);
-                        ram.ReducedEngines = true;
-                        cell = ram;
+                        if (ram.Trimmed && ram.ExcessThrustN > cell.ExcessThrustN)
+                        {
+                            ram.ReducedEngines = true;
+                            cell = ram;
+                        }
                     }
                 }
                 catch (Exception e)

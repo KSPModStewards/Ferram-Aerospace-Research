@@ -54,6 +54,13 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
         private bool _showStability = true;
         private string _logMessage = "";
 
+        // When on, the shared zoom window follows the aircraft each frame, keeping the current-condition
+        // white square centred (see HeatmapRenderer.CenterZoomOn).
+        private bool _centerOnCurrent;
+
+        // The prediction-vs-actual log button is hidden for now; flip to re-expose it.
+        private readonly bool _showPredictionLogButton = false;
+
         private Vessel _diskLoadTriedFor; // vessel the on-disk heatmap cache was last attempted for
 
         public void Display(Vessel vessel)
@@ -124,24 +131,40 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
 
             HeatmapRenderer.DrawZoomControls();
 
-            if (AtmosphereAutopilotInterop.Available)
-                GUILayout.Label(Localizer.Format("FARFlightHeatmapClickHint"), FlightGUI.boxStyle);
-
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button(Localizer.Format("FARFlightHeatmapLogBtn"), GUILayout.Height(24)))
-                // This runs inside a GUI render: anything escaping tears down the window for the
-                // frame. A diagnostic must never be able to break the thing it is diagnosing.
-                try
-                {
-                    _logMessage = LogPredictionCheck(vessel, predMap);
-                }
-                catch (Exception e)
-                {
-                    FARLogger.Exception(e, "while logging the heatmap prediction check");
-                    _logMessage = "Prediction check failed — see KSP.log.";
-                }
-
+            _centerOnCurrent = GUILayout.Toggle(_centerOnCurrent,
+                                                "Center on current speed/altitude",
+                                                GUILayout.Width(240));
+            GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
+
+            if (AtmosphereAutopilotInterop.Available)
+            {
+                Color prevColor = GUI.contentColor;
+                GUI.contentColor = new Color(0.5f, 1f, 0.5f); // plain green hint, not a boxed callout
+                GUILayout.Label("Hint: Click a cell to send its speed and altitude to AtmosphereAutopilot " +
+                                "as cruise targets (does not arm cruise).");
+                GUI.contentColor = prevColor;
+            }
+
+            if (_showPredictionLogButton)
+            {
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button(Localizer.Format("FARFlightHeatmapLogBtn"), GUILayout.Height(24)))
+                    // This runs inside a GUI render: anything escaping tears down the window for the
+                    // frame. A diagnostic must never be able to break the thing it is diagnosing.
+                    try
+                    {
+                        _logMessage = LogPredictionCheck(vessel, predMap);
+                    }
+                    catch (Exception e)
+                    {
+                        FARLogger.Exception(e, "while logging the heatmap prediction check");
+                        _logMessage = "Prediction check failed — see KSP.log.";
+                    }
+
+                GUILayout.EndHorizontal();
+            }
 
             if (!string.IsNullOrEmpty(_logMessage))
                 GUILayout.Label(_logMessage);
@@ -149,6 +172,13 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
             DrawCurrentState(vessel, predMap);
 
             (int i, int j)? here = CurrentCell(vessel, predMap);
+
+            // Follow the aircraft: re-centre the shared zoom window on the current-condition cell. No-op
+            // when the window is already there, so calling it every frame doesn't thrash the colour ramp.
+            if (_centerOnCurrent && here != null)
+                HeatmapRenderer.CenterZoomOn(here.Value.i, here.Value.j,
+                                             predMap.MachAxis.Length, predMap.AltAxis.Length);
+
             bool multi = results.Count >= 2;
             float w = multi ? MultiMapWidth : MapWidth;
             const int perRow = 2;
@@ -210,7 +240,7 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                 MapCell cell = cells[t];
                 if (cell.IsStability)
                 {
-                    GUILayout.Label(Localizer.Format("FARHeatmapsStabLabel"));
+                    GUILayout.Label(HeatmapRenderer.StabilityCaption);
                 }
                 else
                 {
@@ -252,14 +282,14 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
         /// only. Mirrors the editor tab (HeatmapsGUI.DrawMetricToggle) — the two must not drift.</summary>
         private void DrawMetricToggle()
         {
-            GUILayout.Label(Localizer.Format("FARHeatmapsColorBy"), GUILayout.Width(60));
+            GUILayout.Label(Localizer.Format("FARHeatmapsColorBy"), GUILayout.Width(70));
 
             HeatmapRenderer.Metric want = HeatmapRenderer.ColorMetric;
-            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Endurance, Localizer.Format("FARHeatmapsEndurance"), 90);
-            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Range, Localizer.Format("FARHeatmapsRange"), 80);
-            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Aoa, "AoA", 60);
-            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Throttle, "Throttle", 85);
-            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Climb, "Climb", 60);
+            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Endurance, Localizer.Format("FARHeatmapsEndurance"), 105);
+            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Range, Localizer.Format("FARHeatmapsRange"), 75);
+            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Aoa, "AoA", 68);
+            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Throttle, "Throttle", 92);
+            want = HeatmapRenderer.MetricToggle(want, HeatmapRenderer.Metric.Climb, "Climb", 70);
 
             if (want == HeatmapRenderer.ColorMetric)
                 return;

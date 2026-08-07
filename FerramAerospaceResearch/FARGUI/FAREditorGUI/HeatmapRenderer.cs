@@ -12,6 +12,7 @@ Renders a completed heatmap sweep. Shared by the editor tab and the flight reado
  */
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation;
@@ -30,6 +31,31 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
     internal class HeatmapRenderer
     {
         private const int MaxScore = 11;
+
+        // Stability-map caption: title on its own line, then the colour key. Built as a literal (not the
+        // one-line FARHeatmapsStabLabel loc template) so the newline and the corrected blue/red wording
+        // survive a DLL-only deploy. Shared by the editor and flight tabs so the two cannot drift.
+        public const string StabilityCaption =
+            "Stability derivatives\nBlue = no derivatives unstable, Red = all unstable" +
+            "\nDimmed = outside the level-flight envelope";
+
+        // Per-derivative explanations shown in the stability tooltip's out-of-range list — the same
+        // FAREditor*Exp strings the Stability tab uses (present in FAR's base Localization.cfg, so they
+        // resolve without deploying the cfg). Keyed by the short name CheckedDerivs stores on each cell.
+        private static readonly Dictionary<string, string> StabDerivExpKeys = new Dictionary<string, string>
+        {
+            { "Zw", "FAREditorZwExp" },
+            { "Zu", "FAREditorZuExp" },
+            { "Mw", "FAREditorMwExp" },
+            { "Mq", "FAREditorMqExp" },
+            { "MΔe", "FAREditorMDeltaeExp" },
+            { "Yβ", "FAREditorYβExp" },
+            { "Lβ", "FAREditorLβExp" },
+            { "Lp", "FAREditorLpExp" },
+            { "Lr", "FAREditorLrExp" },
+            { "Nβ", "FAREditorNβExp" },
+            { "Nr", "FAREditorNrExp" }
+        };
 
         // Stability cells outside the performance envelope keep their hue but are darkened to this
         // fraction, so the reading stays visible yet clearly reads as unflyable.
@@ -105,27 +131,34 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             InvalidateColors();
         }
 
-        /// <summary>The zoom control row, shared by the editor and flight tabs so they cannot drift: the
-        /// recolour-to-view toggle, a Reset button (live only while zoomed), and a drag hint.</summary>
-        public static void DrawZoomControls()
+        /// <summary>The zoom controls, shared by the editor and flight tabs so they cannot drift: the
+        /// recolour-to-view toggle, a Reset button (live only while zoomed), and a drag hint. With
+        /// <paramref name="ownRow" /> false the caller supplies the horizontal group (and the trailing
+        /// flexible space), so more can share the row — the editor puts the fuel slider to the right.</summary>
+        public static void DrawZoomControls(bool ownRow = true)
         {
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Zoom:", GUILayout.Width(60));
+            if (ownRow)
+                GUILayout.BeginHorizontal();
+            GUILayout.Label("Zoom:", GUILayout.Width(50));
 
             bool prev = RescaleColorsToView;
-            RescaleColorsToView = GUILayout.Toggle(prev, "Recolor to view", GUILayout.Width(120));
+            RescaleColorsToView = GUILayout.Toggle(prev, "Recolor to view", GUILayout.Width(150));
             if (RescaleColorsToView != prev)
                 InvalidateColors();
 
             bool prevEnabled = GUI.enabled;
             GUI.enabled = prevEnabled && _zoomActive;
-            if (GUILayout.Button("Reset", GUILayout.Width(60)))
+            if (GUILayout.Button("Reset", GUILayout.Width(55)))
                 ResetZoom();
             GUI.enabled = prevEnabled;
 
-            GUILayout.Label(_zoomActive ? "" : "drag a box on a map to zoom", GUILayout.Width(190));
-            GUILayout.FlexibleSpace();
-            GUILayout.EndHorizontal();
+            GUILayout.Label(_zoomActive ? "" : "drag a box to zoom", GUILayout.Width(140));
+
+            if (ownRow)
+            {
+                GUILayout.FlexibleSpace();
+                GUILayout.EndHorizontal();
+            }
         }
 
         // Drag-to-zoom state. The owner is the renderer the drag started on; only it draws the rubber-band
@@ -156,6 +189,43 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             _zoomAlt = nA;
             _zoomActive = !(i0 <= 0 && j0 <= 0 && i1 >= nM - 1 && j1 >= nA - 1); // a full box is just "no zoom"
             InvalidateColors();
+        }
+
+        /// <summary>
+        /// Recentres the shared zoom window on cell (ci, cj), keeping the current window's span (or a
+        /// default quarter-grid span when not yet zoomed) and shifting it to stay in bounds. A no-op when
+        /// the window is already positioned there, so the flight tab can call it every frame to follow the
+        /// aircraft without re-invalidating every map's colours each frame.
+        /// </summary>
+        public static void CenterZoomOn(int ci, int cj, int nM, int nA)
+        {
+            if (nM <= 0 || nA <= 0)
+                return;
+
+            int halfI, halfJ;
+            if (_zoomActive && _zoomMach == nM && _zoomAlt == nA)
+            {
+                halfI = (_zoom.IMax - _zoom.IMin) / 2;
+                halfJ = (_zoom.JMax - _zoom.JMin) / 2;
+            }
+            else
+            {
+                halfI = Math.Max(1, nM / 4);
+                halfJ = Math.Max(1, nA / 4);
+            }
+
+            int spanI = 2 * halfI;
+            int spanJ = 2 * halfJ;
+            int i0 = Mathf.Clamp(ci - halfI, 0, Math.Max(0, nM - 1 - spanI));
+            int i1 = Math.Min(i0 + spanI, nM - 1);
+            int j0 = Mathf.Clamp(cj - halfJ, 0, Math.Max(0, nA - 1 - spanJ));
+            int j1 = Math.Min(j0 + spanJ, nA - 1);
+
+            if (_zoomActive && _zoomMach == nM && _zoomAlt == nA &&
+                _zoom.IMin == i0 && _zoom.IMax == i1 && _zoom.JMin == j0 && _zoom.JMax == j1)
+                return; // already centred here — don't re-invalidate colours
+
+            SetZoom(i0, i1, j0, j1, nM, nA);
         }
 
         private HeatmapResult _result;
@@ -317,6 +387,20 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             }
         }
 
+        /// <summary>
+        /// Maps a raw metric value into the space the colour ramp is normalised over. Endurance and range
+        /// span orders of magnitude and collapse toward zero at the feasibility edge, which linear
+        /// normalisation crams into a razor-thin, numerically-noisy warm strip (the salt-and-pepper edge);
+        /// log-compressing them spreads the warm->cool gradient smoothly across several cells. AoA, throttle
+        /// and climb are bounded (climb can be negative), so they stay linear.
+        /// </summary>
+        private static double RampSpace(double value)
+        {
+            if (ColorMetric == Metric.Endurance || ColorMetric == Metric.Range)
+                return value > 0 ? Math.Log(1.0 + value) : 0.0;
+            return value;
+        }
+
         public Color EnvelopeColor(int i, int j)
         {
             PerformanceEnvelopeCalculator.CellResult c = _result.Envelope[i, j];
@@ -329,12 +413,18 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             // full local contrast; otherwise the floor is 0 and the top is the map's best cell. A cell
             // whose value is unresolved (e.g. a near-empty cruise, Breguet -> 0) sits at the low end. For
             // AoA/throttle low is best, so invert onto the cool end.
-            bool rescale = RescaleColorsToView && _zoomActive;
-            double lo = rescale ? _viewMin : 0;
-            double hi = rescale ? _viewMax : MetricWholeMax();
+            // Normalise over the robust value range computed for the shown cells (the whole map, or the
+            // visible window when zoomed + rescaling). Using the data's own min..max rather than a fixed 0
+            // floor keeps the ramp spread across the real spread of values, so an all-high map (endurance
+            // especially, once log-compressed) doesn't read uniformly blue. Before the range is computed
+            // (initial paint / a mid-sweep progressive row) fall back to 0..whole-map max.
+            bool haveRange = _viewMax > _viewMin;
+            double lo = RampSpace(haveRange ? _viewMin : 0);
+            double hi = RampSpace(haveRange ? _viewMax : MetricWholeMax());
+            double v = RampSpace(value);
             float n = !FARMathUtil.IsFinite(value) || hi <= lo
                           ? (lowerIsBetter ? 1f : 0f)
-                          : Mathf.Clamp01((float)((value - lo) / (hi - lo)));
+                          : Mathf.Clamp01((float)((v - lo) / (hi - lo)));
             Color feasible = Porkchop(lowerIsBetter ? 1f - n : n);
 
             // Combined-map cells flown on ramjet power alone (turbojets shed to avoid melting) are
@@ -353,6 +443,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         // Current metric's value range across the visible window's ramp-coloured cells, for the rescale.
         private double _viewMin, _viewMax;
         private int _paintedEpoch = -1;
+        private readonly List<double> _viewSamples = new List<double>(); // reused scratch for the percentile range
 
         /// <summary>Recomputes the visible-window value range for the current metric, over the same cells
         /// EnvelopeColor ramps. Only meaningful while rescaling a zoomed view.</summary>
@@ -363,28 +454,66 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             if (_result?.Envelope == null)
                 return;
 
-            VisibleBounds(out int i0, out int i1, out int j0, out int j1);
-            bool any = false;
-            double lo = double.PositiveInfinity, hi = double.NegativeInfinity;
+            // Robust 5th..95th percentile range over the ramp-coloured cells: near the feasibility edge a
+            // handful of near-zero cells would otherwise stretch the ramp and blow out the contrast. Over
+            // the visible window when zoomed + rescaling (local contrast), else the whole map.
+            int nM = _result.MachAxis.Length, nA = _result.AltAxis.Length;
+            if (RescaleColorsToView && _zoomActive)
+            {
+                // Zoomed local contrast: the visible window of the live (current-fuel) grid.
+                VisibleBounds(out int i0, out int i1, out int j0, out int j1);
+                CollectViewSamples(_result.Envelope, i0, i1, j0, j1);
+            }
+            else
+            {
+                // Whole map at the current fuel level — each level scales to its own data range so it keeps
+                // full contrast (anchoring the scale to the wet sample instead made a near-empty map read
+                // uniformly red, since every cell's endurance is tiny against the full-fuel range).
+                CollectViewSamples(_result.Envelope, 0, nM - 1, 0, nA - 1);
+            }
+
+            if (_viewSamples.Count == 0)
+                return;
+
+            _viewSamples.Sort();
+            _viewMin = Percentile(_viewSamples, 0.05);
+            _viewMax = Percentile(_viewSamples, 0.95);
+
+            // Degenerate window (few cells, or all-equal after clipping): fall back to raw min..max so the
+            // ramp still spans something.
+            if (_viewMax <= _viewMin)
+            {
+                _viewMin = _viewSamples[0];
+                _viewMax = _viewSamples[_viewSamples.Count - 1];
+            }
+        }
+
+        /// <summary>Fills <see cref="_viewSamples" /> with the current metric's finite values over the
+        /// ramp-coloured cells of <paramref name="grid" /> in [i0..i1] x [j0..j1].</summary>
+        private void CollectViewSamples(PerformanceEnvelopeCalculator.CellResult[,] grid, int i0, int i1, int j0, int j1)
+        {
+            _viewSamples.Clear();
             for (int j = j0; j <= j1; j++)
                 for (int i = i0; i <= i1; i++)
                 {
-                    PerformanceEnvelopeCalculator.CellResult c = _result.Envelope[i, j];
+                    PerformanceEnvelopeCalculator.CellResult c = grid[i, j];
                     if (!IsRampColored(c))
                         continue;
                     MetricValue(c, out double v, out bool _);
-                    if (!FARMathUtil.IsFinite(v))
-                        continue;
-                    if (v < lo) lo = v;
-                    if (v > hi) hi = v;
-                    any = true;
+                    if (FARMathUtil.IsFinite(v))
+                        _viewSamples.Add(v);
                 }
+        }
 
-            if (any)
-            {
-                _viewMin = lo;
-                _viewMax = hi;
-            }
+        /// <summary>Linear-interpolated percentile of an already-sorted list (p in [0,1]).</summary>
+        private static double Percentile(List<double> sorted, double p)
+        {
+            if (sorted.Count == 1)
+                return sorted[0];
+            double idx = p * (sorted.Count - 1);
+            int lo = (int)idx;
+            int hi = Math.Min(lo + 1, sorted.Count - 1);
+            return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
         }
 
         /// <summary>Recolours the envelope texture if the shared colour epoch (zoom / metric / rescale)
@@ -457,8 +586,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         {
             if (_envTex == null)
                 return;
-            if (RescaleColorsToView && _zoomActive)
-                ComputeViewRange();
+            ComputeViewRange(); // whole-map (or windowed) robust range, so the ramp always spans the data
             for (int j = 0; j < _result.AltAxis.Length; j++)
                 for (int i = 0; i < _result.MachAxis.Length; i++)
                     _envTex.SetPixel(i, HeatmapAxes.TexRow(j), EnvelopeColor(i, j));
@@ -589,7 +717,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 return;
 
             if (showLabel)
-                GUILayout.Label(Localizer.Format("FARHeatmapsStabLabel"));
+                GUILayout.Label(StabilityCaption);
             Rect smap = HeatmapAxes.ReserveRect(_stabTex, mapWidth, mapHeight);
             VisibleBounds(out int i0, out int i1, out int j0, out int j1);
             GUI.DrawTextureWithTexCoords(smap, _stabTex, TexCoords(i0, i1, j0, j1));
@@ -764,11 +892,17 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
             sb.Append("\n\nOut of range:");
             foreach ((string name, double value, int expectedSign) in c.OutOfRange)
+            {
                 sb.AppendFormat(CultureInfo.InvariantCulture,
                                 "\n  {0} = {1} ({2})",
                                 name,
                                 double.IsNaN(value) ? "NaN" : value.ToString("G3", CultureInfo.InvariantCulture),
                                 expectedSign < 0 ? "exp <0" : "exp >0");
+                // The Stability tab's own explanation for this derivative, so the map tooltip is
+                // self-explanatory rather than just naming the derivative.
+                if (StabDerivExpKeys.TryGetValue(name, out string expKey))
+                    sb.Append("\n    " + Localizer.Format(expKey));
+            }
 
             return sb.ToString();
         }
@@ -964,7 +1098,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                ? Localizer.Format("FAREnvelopeNone")
                                : _result.BestRangeKm.ToString("F0", CultureInfo.InvariantCulture) + " km";
 
-            return Localizer.Format("FAREnvelopeSummary", ceiling, top, endurance, range);
+            // Two lines: ceiling + top speed, then endurance + range. Built here (not via the one-line
+            // FAREnvelopeSummary template) so the newline survives without touching the localization cfg.
+            return string.Format(CultureInfo.InvariantCulture,
+                                 "Ceiling: {0}    Top speed: {1}\nBest endurance: {2}    Best range: {3}",
+                                 ceiling, top, endurance, range);
         }
 
         public void Cleanup()

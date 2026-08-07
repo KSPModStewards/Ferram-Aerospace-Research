@@ -255,6 +255,29 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             Recompute();
         }
 
+        // Reused private buffer for editor mass-preview interpolation, so dragging the fuel slider between
+        // set points neither allocates a grid per frame nor writes into a raw sample.
+        private PerformanceEnvelopeCalculator.CellResult[,] _massBuffer;
+
+        /// <summary>
+        /// Editor preview: interpolates the mass samples to <paramref name="massKg" /> into a private buffer
+        /// (never a raw sample) and recomputes the summary, so the fuel slider can show intermediate loads
+        /// between the swept set points — the same interpolation the flight scene uses as fuel burns. A
+        /// no-op without mass samples.
+        /// </summary>
+        public void SetDisplayMass(double massKg)
+        {
+            if (!HasMassSamples || MachAxis == null || AltAxis == null)
+                return;
+            if (_massBuffer == null ||
+                _massBuffer.GetLength(0) != MachAxis.Length ||
+                _massBuffer.GetLength(1) != AltAxis.Length)
+                _massBuffer = new PerformanceEnvelopeCalculator.CellResult[MachAxis.Length, AltAxis.Length];
+
+            Envelope = _massBuffer; // point the display buffer away from any raw sample before FillForMass
+            FillForMass(massKg);
+        }
+
         /// <summary>
         /// Fills <see cref="Envelope" /> by interpolating the mass samples to <paramref name="massKg" />,
         /// then recomputes the summary. Continuous quantities (drag, excess thrust, thermal, fuel flow)
@@ -307,29 +330,28 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             double massKg
         )
         {
-            // Only blend two samples that are both a valid feasible cruise. A sample that stalls (black),
-            // is thrust-limited (grey) or overheats carries no valid cruise drag/fuel/endurance — it
-            // returned before the cruise solve — so blending it in corrupts the flying sample's range just
-            // as an untrimmed one does. Snap to the nearer sample instead. (Trimmed-but-infeasible grey
-            // cells used to slip into the blend below because they are still trimmed.)
+            // Not both a feasible cruise (a feasible cell plus a thrust-short/heat-wall one, or two
+            // infeasible ones). Do NOT blend the values — a sample past its cruise solve carries no valid
+            // drag/fuel/endurance, and blending it fringed the boundary with spurious barely-feasible red
+            // cells. Instead pick one sample's cell whole. Which one flips at the mass fraction where THIS
+            // cell's full-throttle excess thrust crosses zero (excess is linear in f between the samples),
+            // computed per cell — so the feasibility edge sweeps smoothly across cells as fuel scrubs,
+            // instead of the whole boundary snapping at the bracket midpoint (the jump between adjacent fuel
+            // points). A stall (untrimmed) sample has no valid excess, so those fall back to a midpoint snap.
             if (!(a.Feasible && b.Feasible))
             {
-                PerformanceEnvelopeCalculator.CellResult near = f < 0.5 ? a : b;
+                if (a.Trimmed && b.Trimmed)
+                {
+                    double denom = a.ExcessThrustN - b.ExcessThrustN;
+                    double f0 = System.Math.Abs(denom) > 1e-9 ? a.ExcessThrustN / denom : 0.5;
+                    if (f0 < 0)
+                        f0 = 0;
+                    else if (f0 > 1)
+                        f0 = 1;
+                    return f < f0 ? a : b;
+                }
 
-                // The snapped-to cell still carries the endurance/range computed at that SAMPLE's mass.
-                // When the heavier sample is infeasible it is the lighter one we snap to, and its mass can
-                // be far below the vessel's actual fuel load — so range reads much too low. Recompute it
-                // against the live mass, exactly as the blend branch below does, so a cell that is only
-                // feasible at lighter mass still reports the range the vessel's real fuel gives.
-                if (near.Feasible)
-                    near.EnduranceHours = massKg <= DryMassKg
-                                              ? 0
-                                              : PerformanceEnvelopeCalculator.EnduranceHours(near.DragN,
-                                                  near.FuelFlowKgPerS,
-                                                  near.LiftToDrag,
-                                                  massKg,
-                                                  DryMassKg);
-                return near;
+                return f < 0.5 ? a : b;
             }
 
             var c = new PerformanceEnvelopeCalculator.CellResult
