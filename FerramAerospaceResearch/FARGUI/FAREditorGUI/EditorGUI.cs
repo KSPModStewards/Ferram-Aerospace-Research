@@ -101,6 +101,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         private MethodInfo editorReportUpdate;
 
         private bool gearToggle;
+        // Velocity/AoA arrow, toggled by the Show/Hide button. The button and the arrow are both absent
+        // on the Heatmaps tab, which has no use for the arrow; elsewhere it defaults on.
         private bool showAoAArrow = true;
 
         private ArrowPointer velocityArrow;
@@ -601,10 +603,16 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 ToggleGear();
             GUILayout.EndVertical();
 
-            GUILayout.BeginVertical();
-            if (GUILayout.Button(showAoAArrow ? Localizer.Format("FARVelIndHide") : Localizer.Format("FARVelIndShow")))
-                showAoAArrow = !showAoAArrow;
-            GUILayout.EndVertical();
+            // Vel-indicator toggle — shown on every tab except Heatmaps, which has no use for the arrow.
+            if (currentMode != FAREditorMode.HEATMAPS)
+            {
+                GUILayout.BeginVertical();
+                if (GUILayout.Button(showAoAArrow
+                                         ? Localizer.Format("FARVelIndHide")
+                                         : Localizer.Format("FARVelIndShow")))
+                    showAoAArrow = !showAoAArrow;
+                GUILayout.EndVertical();
+            }
 
             GUILayout.EndHorizontal();
             switch (currentMode)
@@ -623,8 +631,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                     break;
                 case FAREditorMode.HEATMAPS:
                     _heatmaps.Display();
-                    // Tall: the combined map wraps the per-type maps onto a second row.
-                    guiRect.height = useKSPSkin ? 1050 : 900;
+                    // Fill the display: the maps are sized (HeatmapsGUI) to exactly fill this height.
+                    guiRect.height = HeatmapsGUI.WindowFloor();
                     break;
                 case FAREditorMode.ENGINE_DECK:
                     _engineDeck.Display();
@@ -724,7 +732,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 velocityArrow =
                     ArrowPointer.Create(arrowTransform, Vector3.zero, Vector3.forward, 15, Color.white, true);
 
-            if (showGUI && showAoAArrow)
+            if (showGUI && showAoAArrow && currentMode != FAREditorMode.HEATMAPS)
             {
                 velocityArrow.gameObject.SetActive(true);
                 ArrowDisplay();
