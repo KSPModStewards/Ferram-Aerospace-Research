@@ -77,18 +77,24 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             int w = result.MachAxis.Length;
             int h = result.AltAxis.Length;
 
-            _envTex = NewTexture(w, h);
+            // A stability-only result (no SolverEngines/AJE) carries no envelope grid; skip its texture
+            // entirely — the envelope draw/paint methods all no-op when _envTex is null.
+            bool hasEnvelope = result.Envelope != null;
+            if (hasEnvelope)
+                _envTex = NewTexture(w, h);
             _stabTex = NewTexture(w, h);
 
             for (int j = 0; j < h; j++)
                 for (int i = 0; i < w; i++)
                 {
-                    _envTex.SetPixel(i, HeatmapAxes.TexRow(j), EnvelopeColor(i, j));
+                    if (hasEnvelope)
+                        _envTex.SetPixel(i, HeatmapAxes.TexRow(j), EnvelopeColor(i, j));
                     if (result.HasStability)
                         _stabTex.SetPixel(i, HeatmapAxes.TexRow(j), StabilityColor(i, j));
                 }
 
-            _envTex.Apply();
+            if (hasEnvelope)
+                _envTex.Apply();
             _stabTex.Apply();
         }
 

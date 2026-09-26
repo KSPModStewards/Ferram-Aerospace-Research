@@ -70,16 +70,6 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
         private static IButton blizzyEditorGUIButton;
 
-        private static readonly string[] FAReditorMode_str =
-        {
-            Localizer.Format("FAREditorModeStatic"),
-            Localizer.Format("FAREditorModeDataStab"),
-            Localizer.Format("FAREditorModeDerivSim"),
-            Localizer.Format("FAREditorModeHeatmaps"),
-            Localizer.Format("FAREditorModeEngineDeck"),
-            Localizer.Format("FAREditorModeTrans")
-        };
-
         // ReSharper disable once ConvertToConstant.Local
         private readonly bool useKSPSkin = true; // currently cannot be changed from outside
         private readonly List<GeometryPartModule> _currentGeometryModules = new List<GeometryPartModule>();
@@ -158,16 +148,36 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                      new[] {0, 1, 2, 3});
             GUIDropDown<CelestialBody> celestialBodyDropdown = CreateBodyDropdown();
 
-            modeDropdown = new GUIDropDown<FAREditorMode>(FAReditorMode_str,
-                                                          new[]
-                                                          {
-                                                              FAREditorMode.STATIC,
-                                                              FAREditorMode.STABILITY,
-                                                              FAREditorMode.SIMULATION,
-                                                              FAREditorMode.HEATMAPS,
-                                                              FAREditorMode.ENGINE_DECK,
-                                                              FAREditorMode.AREA_RULING
-                                                          });
+            // The Engine Deck tab is useless without SolverEngines/AJE (its thrust sampling has nothing
+            // to talk to), so drop it from the tab list on installs that don't have them. The Heatmaps
+            // tab stays — it falls back to an engine-independent stability-only sweep there.
+            Simulation.SolverEnginesInterop.Initialize();
+            bool hasEngineDeck = Simulation.SolverEnginesInterop.Available;
+
+            var modeLabels = new List<string>
+            {
+                Localizer.Format("FAREditorModeStatic"),
+                Localizer.Format("FAREditorModeDataStab"),
+                Localizer.Format("FAREditorModeDerivSim"),
+                Localizer.Format("FAREditorModeHeatmaps")
+            };
+            var modeValues = new List<FAREditorMode>
+            {
+                FAREditorMode.STATIC,
+                FAREditorMode.STABILITY,
+                FAREditorMode.SIMULATION,
+                FAREditorMode.HEATMAPS
+            };
+            if (hasEngineDeck)
+            {
+                modeLabels.Add(Localizer.Format("FAREditorModeEngineDeck"));
+                modeValues.Add(FAREditorMode.ENGINE_DECK);
+            }
+
+            modeLabels.Add(Localizer.Format("FAREditorModeTrans"));
+            modeValues.Add(FAREditorMode.AREA_RULING);
+
+            modeDropdown = new GUIDropDown<FAREditorMode>(modeLabels.ToArray(), modeValues.ToArray());
 
             _simManager = new EditorSimManager(_instantSim);
 
