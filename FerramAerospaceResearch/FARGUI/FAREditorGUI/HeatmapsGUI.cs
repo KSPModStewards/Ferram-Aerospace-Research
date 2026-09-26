@@ -101,6 +101,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         private List<HeatmapResult> _results;
         private List<EditorEngineDeck.EngineGroup> _sweepGroups; // engines per map; null = combined
 
+        // No SolverEngines/AJE (or no usable engines): the thrust-based envelope can't be built, so the
+        // sweep runs the engine-independent stability map only. Set per sweep in StartSweep.
+        private bool _stabilityOnly;
+
         // Completed-sweep history so the user can flip back through previous generations and compare
         // (e.g. serial vs multithreaded, or before/after a design tweak). Only the map data is kept per
         // generation — the textures are rebuilt on demand when a generation is shown, so N generations
@@ -554,24 +558,27 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 return;
             }
 
+            // The thrust-based envelope needs SolverEngines/AJE and at least one usable engine. Without
+            // them the stability map is still computable (it is engine-independent), so fall back to a
+            // stability-only sweep rather than refusing outright.
             SolverEnginesInterop.Initialize();
-            if (!SolverEnginesInterop.Available)
+            bool hasEngines = false;
+            if (SolverEnginesInterop.Available)
             {
-                _statusMessage = Localizer.Format("FAREngineDeckNoSolver");
-                FARLogger.Info("Heatmap sweep aborted: SolverEngines/AJE interop unavailable.");
-                return;
+                _deck.UpdateShip();
+                hasEngines = _deck.Ready;
             }
 
-            _deck.UpdateShip();
-            if (!_deck.Ready)
+            _stabilityOnly = !hasEngines;
+
+            if (_stabilityOnly && !_includeStability)
             {
-                _statusMessage = Localizer.Format("FAREngineDeckNoEngines");
-                FARLogger.Info("Heatmap sweep aborted: engine deck not ready (no usable engines found).");
+                _statusMessage = Localizer.Format(SolverEnginesInterop.Available
+                                                      ? "FAREngineDeckNoEngines"
+                                                      : "FAREngineDeckNoSolver");
+                FARLogger.Info("Heatmap sweep aborted: no engine envelope available and stability disabled.");
                 return;
             }
-
-            FARLogger.Info("Heatmap sweep starting: " + _deck.Groups.Count + " engine group(s), " +
-                           nMach + "x" + nAlt + " cells.");
 
             CelestialBody body = _bodySettingDropdown.ActiveSelection;
 
@@ -582,42 +589,72 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                    ? EditorLogic.fetch.ship.shipName
                                    : "";
 
-            // One envelope result + renderer per engine type, plus a combined all-engines map when
-            // there is more than one type. Axes and the stability grid are shared by reference — only
-            // the Envelope differs. _sweepGroups holds which engines each map uses; null = combined.
-            //
-            // Groups are ordered compressor engines (turbojets) first so the maps read turbojet →
-            // ramjet → combined left to right.
-            bool multiType = _deck.Groups.Count > 1;
-
-            var ordered = new List<EditorEngineDeck.EngineGroup>();
-            foreach (EditorEngineDeck.EngineGroup g in _deck.Groups)
-                if (!g.Compressorless)
-                    ordered.Add(g);
-            foreach (EditorEngineDeck.EngineGroup g in _deck.Groups)
-                if (g.Compressorless)
-                    ordered.Add(g);
-
             _results = new List<HeatmapResult>();
             _sweepGroups = new List<EditorEngineDeck.EngineGroup>();
             foreach (HeatmapRenderer r in _envRenderers)
                 r.Cleanup(); // release textures before rebuilding; navigation can leave live ones here
             _envRenderers.Clear();
 
-            foreach (EditorEngineDeck.EngineGroup group in ordered)
+            if (_stabilityOnly)
             {
-                AddResult(machAxis, altAxis, nMach, nAlt, stability, body, craftName,
-                          multiType ? group.Label : "", group);
+                // A single result holding just the stability grid — no envelope, no engine renderers.
+                // Display draws the stability map alone (the envelope-map flow iterates _envRenderers,
+                // which stays empty here).
+                var stabResult = new HeatmapResult
+                {
+                    MachAxis = machAxis,
+                    AltAxis = altAxis,
+                    SpeedAxisMode = _speedInMS,
+                    EnvelopeSamples = null,
+                    Envelope = null,
+                    Stability = stability,
+                    HasStability = true,
+                    EngineTypeLabel = "",
+                    BodyName = body != null ? body.bodyName : "",
+                    CraftName = craftName
+                };
+                _results.Add(stabResult);
+                _stabRenderer.SetResult(stabResult);
+                _cellsTotal = nMach * nAlt;
+                FARLogger.Info("Heatmap stability-only sweep starting (" +
+                               (SolverEnginesInterop.Available ? "no usable engines" : "no SolverEngines/AJE") +
+                               "), " + nMach + "x" + nAlt + " cells.");
+            }
+            else
+            {
+                FARLogger.Info("Heatmap sweep starting: " + _deck.Groups.Count + " engine group(s), " +
+                               nMach + "x" + nAlt + " cells.");
+
+                // One envelope result + renderer per engine type, plus a combined all-engines map when
+                // there is more than one type. Axes and the stability grid are shared by reference — only
+                // the Envelope differs. _sweepGroups holds which engines each map uses; null = combined.
+                // Groups are ordered compressor engines (turbojets) first so the maps read turbojet →
+                // ramjet → combined left to right.
+                bool multiType = _deck.Groups.Count > 1;
+
+                var ordered = new List<EditorEngineDeck.EngineGroup>();
+                foreach (EditorEngineDeck.EngineGroup g in _deck.Groups)
+                    if (!g.Compressorless)
+                        ordered.Add(g);
+                foreach (EditorEngineDeck.EngineGroup g in _deck.Groups)
+                    if (g.Compressorless)
+                        ordered.Add(g);
+
+                foreach (EditorEngineDeck.EngineGroup group in ordered)
+                {
+                    AddResult(machAxis, altAxis, nMach, nAlt, stability, body, craftName,
+                              multiType ? group.Label : "", group);
+                }
+
+                if (multiType)
+                    AddResult(machAxis, altAxis, nMach, nAlt, stability, body, craftName,
+                              Localizer.Format("FARHeatmapsCombined"), null);
+
+                _stabRenderer.SetResult(_results[0]); // shares the stability grid
+                _cellsTotal = nMach * nAlt * (_results.Count * MassSamples + (_includeStability ? 1 : 0));
             }
 
-            if (multiType)
-                AddResult(machAxis, altAxis, nMach, nAlt, stability, body, craftName,
-                          Localizer.Format("FARHeatmapsCombined"), null);
-
-            _stabRenderer.SetResult(_results[0]); // shares the stability grid
-
             _cellsDone = 0;
-            _cellsTotal = nMach * nAlt * (_results.Count * MassSamples + (_includeStability ? 1 : 0));
             _cancelRequested = false;
 
             _statusMessage = "";
@@ -674,31 +711,38 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             double ut = Planetarium.GetUniversalTime();
 
             PerformanceEnvelopeCalculator calc = _simManager.EnvelopeCalculator;
-            PerformanceEnvelopeCalculator.VehicleProperties[] massProps = calc.ComputeMassSamples(_deck, MassSamples);
-            PerformanceEnvelopeCalculator.VehicleProperties wetProps = massProps[massProps.Length - 1];
-
-            if (!wetProps.Valid)
-            {
-                _statusMessage = Localizer.Format("FAREnvelopeNoVehicle");
-                FARLogger.Info("Heatmap sweep aborted: vehicle properties invalid (mass/reference area).");
-                _sweep = null;
-                yield break;
-            }
 
             double[] machAxis = _results[0].MachAxis;
             double[] altAxis = _results[0].AltAxis;
 
-            double dryMass = massProps[0].MassKg; // sample 0 is dry (no usable fuel)
-            int partCount = CountPhysicalParts();
-            foreach (HeatmapResult r in _results)
+            // Mass sampling and the per-map mass metadata are envelope-only; the stability-only fallback
+            // has no engine deck to weigh and no envelope grids to tag.
+            PerformanceEnvelopeCalculator.VehicleProperties[] massProps = null;
+            if (!_stabilityOnly)
             {
-                r.MassKg = wetProps.MassKg; // displayed grid is the wet sample until flight interpolates
-                r.RefAreaM2 = wetProps.Area;
-                r.PartCount = partCount;
-                r.DryMassKg = dryMass;
-                r.SampleMassesKg = new double[massProps.Length];
-                for (int k = 0; k < massProps.Length; k++)
-                    r.SampleMassesKg[k] = massProps[k].MassKg;
+                massProps = calc.ComputeMassSamples(_deck, MassSamples);
+                PerformanceEnvelopeCalculator.VehicleProperties wetProps = massProps[massProps.Length - 1];
+
+                if (!wetProps.Valid)
+                {
+                    _statusMessage = Localizer.Format("FAREnvelopeNoVehicle");
+                    FARLogger.Info("Heatmap sweep aborted: vehicle properties invalid (mass/reference area).");
+                    _sweep = null;
+                    yield break;
+                }
+
+                double dryMass = massProps[0].MassKg; // sample 0 is dry (no usable fuel)
+                int partCount = CountPhysicalParts();
+                foreach (HeatmapResult r in _results)
+                {
+                    r.MassKg = wetProps.MassKg; // displayed grid is the wet sample until flight interpolates
+                    r.RefAreaM2 = wetProps.Area;
+                    r.PartCount = partCount;
+                    r.DryMassKg = dryMass;
+                    r.SampleMassesKg = new double[massProps.Length];
+                    for (int k = 0; k < massProps.Length; k++)
+                        r.SampleMassesKg[k] = massProps[k].MassKg;
+                }
             }
 
             // Stability is engine-independent, so sweep it once into the shared grid.
@@ -752,6 +796,19 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                     _stabRenderer.ApplyStability();
                     yield return null;
                 }
+
+            // Stability-only fallback (no engine solver / no usable engines): the stability map is done,
+            // and there is no envelope to sweep. Finish here, skipping the envelope pass and the
+            // history/flight cache, which are envelope-shaped.
+            if (_stabilityOnly)
+            {
+                _statusMessage = SolverEnginesInterop.Available
+                                     ? "No usable engines - stability map only (the engine envelope needs AJE)."
+                                     : "No SolverEngines/AJE - stability map only.";
+                FARLogger.Info("Heatmap stability-only sweep complete: " + _cellsDone + " cells.");
+                _sweep = null;
+                yield break;
+            }
 
             // Envelope: cell-outer, so every engine configuration at a cell shares one aerodynamic
             // solve — the expensive InstantConditionSim trim is done once per (cell, mass) by BeginCell
@@ -1011,6 +1068,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                 if (!rowValid[j] || _cancelRequested)
                                     return;
 
+                                ferram4.SimThreadContext.AcquireSlot();
                                 double altRow = altAxis[j];
                                 for (int i = 0; i < nMach; i++)
                                 {
@@ -1041,6 +1099,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                         }
                                     }
                                 }
+
+                                ferram4.SimThreadContext.ReleaseSlot();
                             }));
                         _sweepTask = task;
 
