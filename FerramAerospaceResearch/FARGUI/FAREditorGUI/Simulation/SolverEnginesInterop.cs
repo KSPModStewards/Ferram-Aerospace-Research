@@ -12,6 +12,7 @@ Reflection bridge to SolverEngines / AJE for editor-side engine sampling.
  */
 
 using System;
+using System.Linq;
 using System.Reflection;
 using UnityEngine;
 
@@ -87,7 +88,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         // The serial path above mutates the one live ModuleEnginesSolver per engine. The parallel
         // sweep instead clones each engine's EngineSolver per worker slot (MemberwiseClone — every
         // performance field is a value type or the value-type EngineThermodynamics struct, so a
-        // shallow copy is independent) and drives the clone's own SetEngineState/SetFreestreamAndInlet/
+        // shallow copy is independent, apart from the curves CloneSolver copies and RealFuels' random
+        // draws, see rfSolverType) and drives the clone's own SetEngineState/SetFreestreamAndInlet/
         // CalculatePerformance, reading the read-only module scalars off a snapshot. Resolved
         // separately from Available so an old SolverEngines still samples serially.
         public static bool ParallelAvailable { get; private set; }
@@ -101,6 +103,19 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         private static FieldInfo engineMultFlow;
         private static FieldInfo engineMultIsp;
         private static FieldInfo engineLastPropFrac;
+
+        // RealFuels' SolverRF draws a run-to-run variance from one static System.Random shared by every
+        // RealFuels engine whenever it evaluates a burning engine (its wasCombusting is never set, so the
+        // "!wasCombusting && combusting" ignition test is true on every call). System.Random is not
+        // thread-safe: sweep workers drawing from it together corrupt it, after which it returns 0 and
+        // RealFuels' polar-method normal sampler loops forever - in the sweep, and on the next ignition in
+        // flight. A clone is made nominal instead: no variance, and wasCombusting held true so the draw
+        // never happens. Without those fields, SolverRF clones are driven one at a time.
+        private static Type rfSolverType;
+        private static FieldInfo rfWasCombusting;
+        private static FieldInfo[] rfVarianceFields;
+        private static bool rfNominal;
+        private static readonly object rfSerialLock = new object();
 
         // Per-thread arg arrays for the drive path (the shared args* above are not thread-safe).
         [ThreadStatic] private static object[] driveState2;
@@ -283,6 +298,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                                     engineMultIsp != null &&
                                     engineLastPropFrac != null &&
                                     engineMaxTemp != null;
+
+                ResolveRealFuels();
 
                 if (Available)
                     FARLogger.Info("SolverEngines interop ready; editor engine sampling enabled" +
@@ -788,12 +805,37 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             return s;
         }
 
+        // RealFuels' SolverRF and the fields that make a clone nominal (see rfSolverType).
+        private static void ResolveRealFuels()
+        {
+            foreach (AssemblyLoader.LoadedAssembly a in AssemblyLoader.loadedAssemblies)
+                if (a.assembly.GetName().Name == "RealFuels")
+                {
+                    rfSolverType = a.assembly.GetType("RealFuels.SolverRF");
+                    break;
+                }
+            if (rfSolverType == null)
+                return;
+
+            const BindingFlags inst = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            rfWasCombusting = rfSolverType.GetField("wasCombusting", inst);
+            string[] names = { "varyFlow", "varyIsp", "varyMR", "baseVaryFlow", "baseVaryIsp", "baseVaryMR", "runVaryFlow", "runVaryIsp", "runVaryMR" };
+            rfVarianceFields = names.Select(n => rfSolverType.GetField(n, inst)).ToArray();
+            rfNominal = rfWasCombusting != null && rfWasCombusting.FieldType == typeof(bool) &&
+                        rfVarianceFields.All(f => f != null && f.FieldType == typeof(double));
+            if (!rfNominal)
+                FARLogger.Warning("RealFuels SolverRF fields not as expected; its engine clones are sampled one at a time");
+        }
+
+        private static bool IsRealFuels(object solver) => rfSolverType != null && rfSolverType.IsInstanceOfType(solver);
+
         /// <summary>
         /// An independent copy of the engine's EngineSolver for one worker slot. MemberwiseClone
         /// copies every value field (including the value-type EngineThermodynamics gas states) by
         /// value; only reference-typed FloatCurve fields (the centrifugal-flow maps on a jet) would
         /// stay shared, and AnimationCurve.Evaluate mutates an internal cache, so each is deep-copied.
-        /// Main thread only — builds Unity AnimationCurves.
+        /// A RealFuels solver is made nominal (see rfSolverType). Main thread only — builds Unity
+        /// AnimationCurves.
         /// </summary>
         public static object CloneSolver(PartModule engine)
         {
@@ -814,6 +856,13 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                     if (f.GetValue(clone) is FloatCurve src)
                         f.SetValue(clone, CloneFloatCurve(src));
                 }
+
+            if (rfNominal && IsRealFuels(clone))
+            {
+                foreach (FieldInfo f in rfVarianceFields)
+                    f.SetValue(clone, 0d);
+                rfWasCombusting.SetValue(clone, true);
+            }
 
             return clone;
         }
@@ -874,11 +923,26 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             a4[2] = scalars.FlowMultiplier;
             a4[3] = scalars.IspMultiplier;
 
+            bool realFuels = IsRealFuels(cloneSolver);
             try
             {
-                solverSetEngineState.Invoke(cloneSolver, a2);
-                solverSetFreestreamAndInlet.Invoke(cloneSolver, a7);
-                solverCalculatePerformance.Invoke(cloneSolver, a4);
+                if (realFuels && rfNominal)
+                    rfWasCombusting.SetValue(cloneSolver, true); // in case a RealFuels build does set it
+                if (realFuels && !rfNominal)
+                {
+                    lock (rfSerialLock)
+                    {
+                        solverSetEngineState.Invoke(cloneSolver, a2);
+                        solverSetFreestreamAndInlet.Invoke(cloneSolver, a7);
+                        solverCalculatePerformance.Invoke(cloneSolver, a4);
+                    }
+                }
+                else
+                {
+                    solverSetEngineState.Invoke(cloneSolver, a2);
+                    solverSetFreestreamAndInlet.Invoke(cloneSolver, a7);
+                    solverCalculatePerformance.Invoke(cloneSolver, a4);
+                }
             }
             catch (TargetInvocationException)
             {
