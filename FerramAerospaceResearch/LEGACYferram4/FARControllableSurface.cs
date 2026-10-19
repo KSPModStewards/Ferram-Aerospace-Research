@@ -457,6 +457,24 @@ namespace ferram4
             UpdateMovableSection();
         }
 
+        /// <summary>
+        ///     The movable section and the change (world) that puts it back at rest: undeflected, as its planform is measured.
+        ///     False without a section whose rest orientation is known.
+        /// </summary>
+        internal bool RestTransform(out Transform section, out Matrix4x4 toRest)
+        {
+            section = movableSection;
+            toRest = Matrix4x4.identity;
+            if (movableSection == null || !MovableOrigReady)
+                return false;
+            Transform parent = movableSection.parent;
+            Matrix4x4 frame = parent != null ? parent.localToWorldMatrix : Matrix4x4.identity;
+            Matrix4x4 rest = Matrix4x4.TRS(movableSection.localPosition, MovableOrig, movableSection.localScale);
+            Matrix4x4 now = Matrix4x4.TRS(movableSection.localPosition, movableSection.localRotation, movableSection.localScale);
+            toRest = frame * rest * now.inverse * frame.inverse;
+            return true;
+        }
+
         private void UpdateMovableSection()
         {
             movableSection = part.FindModelTransform(transformName); //And the transform
