@@ -430,9 +430,9 @@ namespace ferram4
             double rootChord, tipChord;
             if (nonSideAttach <= 0)
             {
-                // MAC = 2/3 rootChord (1 + taper + taper^2) / (1 + taper)
+                // MAC_actual is the mean chord (S = b_2 MAC): rootChord (1 + taper) / 2
                 double taper = TaperRatio;
-                rootChord = 1.5 * MAC_actual * (1 + taper) / (1 + taper + taper * taper);
+                rootChord = 2 * MAC_actual / (1 + taper);
                 tipChord = rootChord * taper;
                 tipMid = rootMid -
                          b_2_actual *
