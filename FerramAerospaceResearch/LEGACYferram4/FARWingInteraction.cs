@@ -918,6 +918,20 @@ namespace ferram4
         {
             // panels join while their normals are within 30 deg
             private const float MinCos = 0.866f;
+            // a panel this much shorter across than along (its semispan over its chord) is a strip: one slice of a wing cut
+            // finely where its outline bends, which joins the next along its length; or a boom built of a wing panel,
+            // which touches a wing only at its end and is no part of it
+            private const double SliverRatio = 0.08;
+            // a control surface is on a wing when it meets the wing (or a control surface on it) along this share of its
+            // span, as a flap hangs from its hinge; a stabilator touching an elevon at a corner, or a canard lying beside
+            // a strake, is a wing of its own
+            private const float HingeShare = 0.5f;
+
+            internal static bool Sliver(FARWingAerodynamicModel w) => w.b_2_actual < SliverRatio * w.MAC_actual;
+
+            // a wing part standing more than 60 deg out of the wing's plane (or shielded), which the wing hangs from, is a
+            // body (BodyBeyond)
+            private const float SkinCos = 0.5f;
 
             public sealed class Panel
             {
@@ -1005,7 +1019,7 @@ namespace ferram4
                 g.panels.Add(first);
                 for (int i = 0; i < g.panels.Count; i++)
                     for (int j = candidates.Count - 1; j >= 0; j--)
-                        if (Touch(g.panels[i], candidates[j]))
+                        if (Linked(g.panels[i], candidates[j]))
                         {
                             g.panels.Add(candidates[j]);
                             candidates.RemoveAt(j);
@@ -1120,13 +1134,105 @@ namespace ferram4
                 return hull;
             }
 
-            /// <summary>Whether a panel (a control surface) touches any panel of this wing</summary>
+            /// <summary>Whether two panels are one wing: they touch, and a strip among them (see Sliver) along its length</summary>
+            private static bool Linked(Panel a, Panel b) => Touch(a, b) && Lengthwise(a, b) && Lengthwise(b, a);
+
+            /// <summary>
+            ///     Whether a panel meets another along its length: any panel but a strip; a strip in contact over half its
+            ///     chord (a slice beside the next), not at its end (a boom from a wing's trailing edge to a tail)
+            /// </summary>
+            private static bool Lengthwise(Panel strip, Panel other)
+            {
+                if (!Sliver(strip.Wing))
+                    return true;
+                Vector3 chordwise = Vector3.Cross(strip.Normal, SpanAxis(strip, out _)).normalized;
+                return Contact(strip, other, chordwise) >= 0.5f * strip.Chord;
+            }
+
+            /// <summary>Whether a control surface hangs from any panel of this wing (see Hinged)</summary>
             public bool Touches(Panel surface)
             {
                 foreach (Panel p in panels)
-                    if (Touch(p, surface))
+                    if (Hinged(surface, p))
                         return true;
                 return false;
+            }
+
+            /// <summary>
+            ///     Whether a control surface hangs from a panel: they touch, along at least HingeShare of the surface's span
+            ///     (its extent along its own span axis), as a flap meets the wing at its hinge or lies over its trailing
+            ///     edge. Touching at a corner, or along the surface's root or tip, is not hanging from it.
+            /// </summary>
+            private static bool Hinged(Panel surface, Panel p)
+            {
+                if (!Touch(p, surface))
+                    return false;
+                Vector3 span = SpanAxis(surface, out float length);
+                return Contact(surface, p, span) >= HingeShare * length;
+            }
+
+            /// <summary>
+            ///     A panel's span axis in its plane, and its outline's length along it: of the part's right and chordwise
+            ///     axes, the one along which the outline is about FAR's span for it (a part can be placed turned on its
+            ///     wing, its right axis along the chord)
+            /// </summary>
+            private static Vector3 SpanAxis(Panel p, out float length)
+            {
+                Vector3 chordwise = Vector3.Cross(p.Normal, p.Right).normalized;
+                Range(p.Outline, p.Right, out float r0, out float r1);
+                Range(p.Outline, chordwise, out float c0, out float c1);
+                float b2 = (float)p.Wing.b_2_actual;
+                bool right = Math.Abs(r1 - r0 - b2) <= Math.Abs(c1 - c0 - b2);
+                length = right ? r1 - r0 : c1 - c0;
+                return right ? p.Right : chordwise;
+            }
+
+            /// <summary>
+            ///     Whether two control surfaces meet along an edge (an aileron outboard of a flap, elevons built end to end
+            ///     into a strake): in contact, along their span or their chord, over at least half the shorter chord; not
+            ///     at a corner (a stabilator behind an elevon)
+            /// </summary>
+            private static bool Joined(Panel a, Panel b)
+            {
+                if (!Touch(a, b))
+                    return false;
+                Vector3 span = SpanAxis(a, out _), chordwise = Vector3.Cross(a.Normal, span).normalized;
+                return Math.Max(Contact(a, b, span), Contact(a, b, chordwise)) >= 0.5f * Math.Min(a.Chord, b.Chord);
+            }
+
+            /// <summary>
+            ///     How far along axis two touching panels are in contact: the extent along it of the points on either's
+            ///     outline (corners and points along the edges) that lie over the other's outline or within a small gap of
+            ///     it, at about its height
+            /// </summary>
+            private static float Contact(Panel a, Panel b, Vector3 axis)
+            {
+                const float gap = 0.05f;
+                float height = 0.2f + 0.25f * Math.Min(a.Chord, b.Chord);
+                float min = float.MaxValue, max = float.MinValue;
+
+                void Near(Panel from, Panel to)
+                {
+                    Vector3[] o = from.Outline;
+                    for (int i = 0; i < o.Length; i++)
+                    {
+                        Vector3 p0 = o[i], p1 = o[(i + 1) % o.Length];
+                        for (int k = 0; k < 8; k++)
+                        {
+                            Vector3 q = Vector3.Lerp(p0, p1, 0.125f * k);
+                            float h = Vector3.Dot(q - to.Center, to.Normal);
+                            if (Math.Abs(h) > height || DistanceInPlane(q - h * to.Normal, to) > gap)
+                                continue;
+                            float x = Vector3.Dot(q, axis);
+                            min = Math.Min(min, x);
+                            max = Math.Max(max, x);
+                        }
+                    }
+                }
+
+                Near(a, b);
+                Near(b, a);
+                return max > min ? max - min : 0;
             }
 
             /// <summary>
@@ -1359,8 +1465,7 @@ namespace ferram4
                 if (!Straddles && (bodyMin != null || bodyMax != null))
                 {
                     float mid = 0.5f * (vMin + vMax);
-                    float cMin = bodyMin == null ? mid : Vector3.Dot(Frame.InverseTransformPoint(bodyMin.partTransform.position), s);
-                    float cMax = bodyMax == null ? mid : Vector3.Dot(Frame.InverseTransformPoint(bodyMax.partTransform.position), s);
+                    float cMin = BodyCenter(bodyMin, s, mid), cMax = BodyCenter(bodyMax, s, mid);
                     bool rootAtMin = Math.Abs(cMin - mid) >= Math.Abs(cMax - mid);
                     float c = rootAtMin ? cMin : cMax;
                     double tipToTip = 2 * Math.Abs((rootAtMin ? vMax : vMin) - c);
@@ -1385,7 +1490,27 @@ namespace ferram4
             ///     Whether c (across the flow) is about midway between the wing and its mirror image, its panels' symmetry
             ///     counterparts in about the same plane; true for a wing without one
             /// </summary>
-            private bool MirrorMeetsAt(float c, Vector3 s, double tipToTip)
+            /// <summary>
+            ///     Where a body's center lies across the flow: its part's position; for a skin (a wing part, see BodyBeyond),
+            ///     which sits off center on the side of the fuselage it makes, where the wing meets its mirror image
+            /// </summary>
+            private float BodyCenter(Part body, Vector3 s, float none)
+            {
+                if (body == null)
+                    return none;
+                if (body.FindModuleImplementing<FARWingAerodynamicModel>() != null && MirrorCenter(s, out float center))
+                    return center;
+                return Vector3.Dot(Frame.InverseTransformPoint(body.partTransform.position), s);
+            }
+
+            private bool MirrorMeetsAt(float c, Vector3 s, double tipToTip) =>
+                !MirrorCenter(s, out float center) || Math.Abs(center - c) <= 0.05 * tipToTip + 0.1;
+
+            /// <summary>
+            ///     Where (across the flow) the wing and its mirror image meet: midway between its panels and their symmetry
+            ///     counterparts in about the same plane; false for a wing without one
+            /// </summary>
+            private bool MirrorCenter(Vector3 s, out float center)
             {
                 float sum = 0;
                 int count = 0;
@@ -1402,7 +1527,8 @@ namespace ferram4
                         count++;
                     }
 
-                return count == 0 || Math.Abs(sum / count - c) <= 0.05 * tipToTip + 0.1;
+                center = count > 0 ? sum / count : 0;
+                return count > 0;
             }
 
             /// <summary>
@@ -1630,7 +1756,7 @@ namespace ferram4
 
                 for (int i = 0; i < on.Count; i++)
                     for (int j = rest.Count - 1; j >= 0; j--)
-                        if (Touch(on[i], rest[j]))
+                        if (Hinged(rest[j], on[i]) || Joined(rest[j], on[i]))
                         {
                             on.Add(rest[j]);
                             rest.RemoveAt(j);
@@ -1687,8 +1813,10 @@ namespace ferram4
                     FARWingAerodynamicModel w = p == null ? null : p.FindModuleImplementing<FARWingAerodynamicModel>();
                     if (w == null || w.isShielded || members.Contains(w) || w.MAC_actual <= 0)
                         continue;
-                    // the wing's own control surfaces are the wing (FAR's planform of a sheared one can reach past its root)
-                    if (w is FARControllableSurface && Holds(w))
+                    // the wing's own control surfaces are the wing (FAR's planform of a sheared one can reach past its root),
+                    // and their mirror images the mirror wing's (an elevator across the centerline to meet its mirror)
+                    if (w is FARControllableSurface && (Holds(w) || p.symmetryCounterparts.Any(m =>
+                            m != null && m.FindModuleImplementing<FARWingAerodynamicModel>() is FARWingAerodynamicModel mw && Holds(mw))))
                         continue;
                     if (Math.Abs(Vector3.Dot(Frame.InverseTransformDirection(p.partTransform.forward), n)) < 0.7f)
                         continue;
@@ -1808,9 +1936,17 @@ namespace ferram4
                 Part best = null;
                 float farthest = from;
 
-                void Consider(Part p)
+                // a wing part is a body only as the part the panel hangs from, and only one shielded inside the fuselage or
+                // standing well out of the wing's plane: the skin of a fuselage built of wing panels (a winglet on a tip is
+                // the wing's child, and no body)
+                void Consider(Part p, bool parent)
                 {
-                    if (p == null || p.FindModuleImplementing<FARWingAerodynamicModel>() != null)
+                    if (p == null)
+                        return;
+                    FARWingAerodynamicModel w = p.FindModuleImplementing<FARWingAerodynamicModel>();
+                    if (w != null && (!parent || !w.isShielded &&
+                                      Math.Abs(Vector3.Dot(Frame.InverseTransformDirection(p.partTransform.forward),
+                                                           panels[0].Normal)) >= SkinCos))
                         return;
                     float at = Vector3.Dot(Frame.InverseTransformPoint(p.partTransform.position), outward);
                     if (at > farthest)
@@ -1820,9 +1956,9 @@ namespace ferram4
                     }
                 }
 
-                Consider(panel.parent);
+                Consider(panel.parent, true);
                 foreach (Part child in panel.children)
-                    Consider(child);
+                    Consider(child, false);
                 return best;
             }
         }
