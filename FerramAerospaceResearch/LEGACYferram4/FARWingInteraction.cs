@@ -865,18 +865,16 @@ namespace ferram4
         ///     before.
         /// </summary>
         /// <param name="transformedAR">This panel's own aspect ratio (semispan over chord, along the flow)</param>
-        /// <param name="parallelInPlaneLocal">Normalized local velocity vector projected onto wing surface</param>
-        internal double SpanChainedAR(double transformedAR, Vector3d parallelInPlaneLocal)
+        internal double SpanChainedAR(double transformedAR)
         {
             double own = transformedAR * ARFactor;
             BodyLiftFactor = 1;
             GroupTanSweep = double.NaN;
             if (parentWingPart == null || vesselParts == null)
                 return own;
-            Vector3 flow = parentWingPart.partTransform.TransformDirection((Vector3)parallelInPlaneLocal);
             // a control surface is part of the wing it is on, and takes that wing's aspect ratio
             WingGroup g;
-            if (parentWingModule is FARControllableSurface && FindHostWing() && AsWing(hostWing, flow))
+            if (parentWingModule is FARControllableSurface && FindHostWing() && AsWing(hostWing))
             {
                 g = hostWing;
             }
@@ -885,7 +883,7 @@ namespace ferram4
                 if (wingGroup == null || wingGroup.Generation != wingGroupGeneration)
                     WingGroup.Build(parentWingModule, vesselParts);
                 g = wingGroup;
-                if (!AsWing(g, flow))
+                if (!AsWing(g))
                     return own;
             }
 
@@ -902,8 +900,8 @@ namespace ferram4
         // (the wing and its mirror are one wing through the body, its control surfaces on it). One panel on a nacelle is
         // the outer part of a wing that goes on past the nacelle, one against other panels part of a wing built of
         // layers: their own aspect ratio, as before
-        private static bool AsWing(WingGroup g, Vector3 flow) =>
-            g != null && g.PanelCount > 0 && g.Measure(flow) && (g.Members.Count > 1 || g.RootOnBody && g.RootOnCenter);
+        private static bool AsWing(WingGroup g) =>
+            g != null && g.PanelCount > 0 && g.Measure() && (g.Members.Count > 1 || g.RootOnBody && g.RootOnCenter);
 
         // for a wing on a bare body (see WingGroup.BodyLiftFactor): its lift slope's factor for the body between the
         // roots, and the tangent of the whole wing's half-chord sweep, which replaces the panel's own (NaN: the panel's)
@@ -985,7 +983,6 @@ namespace ferram4
             // the panels' own areas summed (m^2), and the part of it that lifts: less where panels overlap by more than
             // a joint's worth
             public double PanelArea, LiftArea;
-            private Vector3 measuredFlow;
             private bool measured;
 
             public static void Build(FARWingAerodynamicModel start, List<Part> parts)
@@ -1334,20 +1331,22 @@ namespace ferram4
 
             /// <summary>
             ///     The wing's semispan across the flow, its area (overlaps counted once), and the exposures of its two
-            ///     ends, for a flow direction (world); false if the flow is about normal to the wing, or the frame is gone
+            ///     ends; false if the flow is about normal to the wing, or the frame is gone. The flow is the vessel's
+            ///     forward axis (its root part's up, as the editor flies it), not the airflow of the moment: a wing's
+            ///     planform is its shape, and measured along the airflow its root and span moved with sideslip (a fin's
+            ///     with the angle of attack), so its aspect ratio did in flight. Measured once.
             /// </summary>
-            public bool Measure(Vector3 flow)
+            public bool Measure()
             {
                 if (Frame == null)
                     return false;
-                flow = Frame.InverseTransformDirection(flow);
+                if (measured)
+                    return true;
                 Vector3 n = panels[0].Normal;
-                Vector3 f = Vector3.ProjectOnPlane(flow, n);
+                Vector3 f = Vector3.ProjectOnPlane(Vector3.up, n);
                 if (f.sqrMagnitude < 1e-6f)
                     return false;
                 f.Normalize();
-                if (measured && Vector3.Dot(f, measuredFlow) > 0.9998f)
-                    return true;
                 Vector3 s = Vector3.Cross(n, f).normalized;
 
                 // the planforms in (along the flow, across it)
@@ -1481,7 +1480,6 @@ namespace ferram4
                         BodyStrip = strip > 0 ? strip : (rootAtMin ? chordAtMin : chordAtMax) * (0.5 * tipToTip - span);
                     }
                 }
-                measuredFlow = f;
                 measured = true;
                 return true;
             }

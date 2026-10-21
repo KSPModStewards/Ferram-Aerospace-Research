@@ -1353,7 +1353,7 @@ namespace ferram4
 
             SetSweepAngle(sweepHalfChord);
 
-            effective_AR = wingInteraction.SpanChainedAR(transformed_AR, ParallelInPlaneLocal);
+            effective_AR = wingInteraction.SpanChainedAR(transformed_AR);
 
             //Even this range of effective ARs is large, but it keeps the Oswald's Efficiency numbers in check
             effective_AR = effective_AR.Clamp(0.25, 30d);
