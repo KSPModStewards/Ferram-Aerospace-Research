@@ -925,6 +925,9 @@ namespace ferram4
             // a strake, is a wing of its own
             private const float HingeShare = 0.5f;
 
+            // an outline's edges shorter than this (m) have no direction worth trusting
+            private const float MinEdge = 1e-3f;
+
             internal static bool Sliver(FARWingAerodynamicModel w) => w.b_2_actual < SliverRatio * w.MAC_actual;
 
             // a wing part standing more than 60 deg out of the wing's plane (or shielded), which the wing hangs from, is a
@@ -1096,6 +1099,13 @@ namespace ferram4
                 if (points.Count < 3)
                     return null;
                 List<Vector2> hull = ConvexHull(points);
+                // corners within a millimeter of the last kept one go: the edge between them points wherever rounding
+                // takes it, and one pointing the wrong way puts points inside the outline outside it (see DistanceInPlane)
+                for (int i = hull.Count - 1; i > 0; i--)
+                    if ((hull[i] - hull[i - 1]).sqrMagnitude <= MinEdge * MinEdge)
+                        hull.RemoveAt(i);
+                while (hull.Count > 1 && (hull[0] - hull[hull.Count - 1]).sqrMagnitude <= MinEdge * MinEdge)
+                    hull.RemoveAt(hull.Count - 1);
                 if (hull.Count < 3)
                     return null;
                 var outline = new Vector3[hull.Count];
@@ -1302,10 +1312,14 @@ namespace ferram4
                 for (int i = 0; i < o.Length; i++)
                 {
                     Vector3 p0 = o[i], edge = o[(i + 1) % o.Length] - p0;
-                    // inside a convex outline the point is on the same side of every edge, whichever way it runs
-                    float side = Vector3.Dot(Vector3.Cross(edge, q - p0), b.Normal);
-                    left |= side > 0;
-                    right |= side < 0;
+                    // inside a convex outline the point is on the same side of every edge, whichever way it runs; an
+                    // edge too short to have a direction (a repeated corner, a delta wing's tip) has no side
+                    if (edge.sqrMagnitude > MinEdge * MinEdge)
+                    {
+                        float side = Vector3.Dot(Vector3.Cross(edge, q - p0), b.Normal);
+                        left |= side > 0;
+                        right |= side < 0;
+                    }
                     float t = Mathf.Clamp01(Vector3.Dot(q - p0, edge) / Mathf.Max(edge.sqrMagnitude, 1e-8f));
                     nearest = Math.Min(nearest, (p0 + t * edge - q).magnitude);
                 }
