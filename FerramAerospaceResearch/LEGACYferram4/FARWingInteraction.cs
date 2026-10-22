@@ -1146,13 +1146,22 @@ namespace ferram4
                 return Contact(strip, other, chordwise) >= 0.5f * strip.Chord;
             }
 
-            /// <summary>Whether a control surface hangs from any panel of this wing (see Hinged)</summary>
+            /// <summary>
+            ///     Whether a control surface hangs from this wing (see Hinged), its hinge along any of its panels together:
+            ///     an elevon behind a wing cut in segments across it, a rudder on a fin and the piece above it
+            /// </summary>
             public bool Touches(Panel surface)
             {
+                Vector3 span = SpanAxis(surface, out float length);
+                var lo = new List<float>();
+                var hi = new List<float>();
                 foreach (Panel p in panels)
-                    if (Hinged(surface, p))
-                        return true;
-                return false;
+                    if (Touch(p, surface) && ContactRange(surface, p, span, out float min, out float max))
+                    {
+                        lo.Add(min);
+                        hi.Add(max);
+                    }
+                return MergedLength(lo, hi) >= HingeShare * length;
             }
 
             /// <summary>
@@ -1202,11 +1211,15 @@ namespace ferram4
             ///     outline (corners and points along the edges) that lie over the other's outline or within a small gap of
             ///     it, at about its height
             /// </summary>
-            private static float Contact(Panel a, Panel b, Vector3 axis)
+            private static float Contact(Panel a, Panel b, Vector3 axis) =>
+                ContactRange(a, b, axis, out float min, out float max) ? max - min : 0;
+
+            /// <summary>Where along axis two touching panels are in contact (see Contact); false if nowhere</summary>
+            private static bool ContactRange(Panel a, Panel b, Vector3 axis, out float min, out float max)
             {
                 const float gap = 0.05f;
                 float height = 0.2f + 0.25f * Math.Min(a.Chord, b.Chord);
-                float min = float.MaxValue, max = float.MinValue;
+                float lo = float.MaxValue, hi = float.MinValue;
 
                 void Near(Panel from, Panel to)
                 {
@@ -1221,15 +1234,17 @@ namespace ferram4
                             if (Math.Abs(h) > height || DistanceInPlane(q - h * to.Normal, to) > gap)
                                 continue;
                             float x = Vector3.Dot(q, axis);
-                            min = Math.Min(min, x);
-                            max = Math.Max(max, x);
+                            lo = Math.Min(lo, x);
+                            hi = Math.Max(hi, x);
                         }
                     }
                 }
 
                 Near(a, b);
                 Near(b, a);
-                return max > min ? max - min : 0;
+                min = lo;
+                max = hi;
+                return hi > lo;
             }
 
             /// <summary>
