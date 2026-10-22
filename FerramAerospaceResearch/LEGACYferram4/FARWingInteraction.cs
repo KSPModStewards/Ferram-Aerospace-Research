@@ -1447,8 +1447,8 @@ namespace ferram4
                 Area = area;
                 PanelArea = farArea;
                 LiftArea = farArea * (1 - overlap);
-                ExposureMin = EndExposure(v, vMin, -s, -vMin, span, out Part bodyMin);
-                ExposureMax = EndExposure(v, vMax, s, vMax, span, out Part bodyMax);
+                ExposureMin = EndExposure(u, v, vMin, -s, -vMin, span, f, s, n, out Part bodyMin);
+                ExposureMax = EndExposure(u, v, vMax, s, vMax, span, f, s, n, out Part bodyMax);
                 // the root is the end a body holds (the one farther from it, when a pod also holds the tip); the mirror
                 // wing's tip lies as far beyond the body's center
                 RootOnBody = false;
@@ -1873,13 +1873,16 @@ namespace ferram4
             /// <summary>
             ///     How exposed one end of the wing is (1: a free tip, 0: against a body): a part that is not a wing, attached
             ///     to any panel of the wing and lying out at that end, covers it (the fuselage a wing root is attached to,
-            ///     whichever panel holds it; a pod at a tip); otherwise the side rays of the panels at that end that point
-            ///     along the span
+            ///     whichever panel holds it; a pod at a tip); otherwise the share of the end's chord that no other part's
+            ///     model covers just beyond the end, about at the wing's height (a winglet, a pod, a fin standing out of the
+            ///     wing's plane).
+            ///     From the parts' shapes, so the same in the editor and in flight (raycasts against colliders were not).
             /// </summary>
             /// <param name="end">Where the end is across the flow</param>
             /// <param name="outward">Out of the wing at that end</param>
             /// <param name="endOutward">Where the end is along outward</param>
-            private double EndExposure(float[][] v, float end, Vector3 outward, float endOutward, double span, out Part body)
+            private double EndExposure(float[][] u, float[][] v, float end, Vector3 outward, float endOutward, double span,
+                                       Vector3 f, Vector3 s, Vector3 n, out Part body)
             {
                 // the body's center lies beyond a root, or within this much of the end: a strake's planform can reach
                 // further inboard than the panel that holds the wing to the fuselage
@@ -1902,26 +1905,60 @@ namespace ferram4
                 if (body != null)
                     return 0;
 
+                // the end's chord along the flow and its height: the corners of the panels at that end
                 float near = 0.02f * (float)span + 0.05f;
-                double sum = 0;
-                int rays = 0;
+                float tipLo = float.MaxValue, tipHi = float.MinValue, hSum = 0;
+                int hCount = 0;
                 for (int i = 0; i < panels.Count; i++)
+                    for (int k = 0; k < v[i].Length; k++)
+                        if (Math.Abs(v[i][k] - end) <= near)
+                        {
+                            tipLo = Math.Min(tipLo, u[i][k]);
+                            tipHi = Math.Max(tipHi, u[i][k]);
+                            hSum += Vector3.Dot(panels[i].Corners[k], n);
+                            hCount++;
+                        }
+                if (hCount == 0 || tipHi - tipLo < 1e-3f || vesselParts == null)
+                    return 1;
+                float h = hSum / hCount, height = 0.2f + 0.25f * (tipHi - tipLo);
+                const float gap = 0.05f;
+                float side = Vector3.Dot(outward, s) > 0 ? 1 : -1;
+
+                // the stretches of the end's chord that other parts cover, just beyond the end
+                var members = new HashSet<FARWingAerodynamicModel>(Members);
+                var lo = new List<float>();
+                var hi = new List<float>();
+                foreach (Part p in vesselParts)
                 {
-                    float reach = Math.Abs(v[i][0] - end);
-                    for (int k = 1; k < v[i].Length; k++)
-                        reach = Math.Min(reach, Math.Abs(v[i][k] - end));
-                    if (reach > near)
+                    if (p == null)
                         continue;
-                    Panel p = panels[i];
-                    float along = Vector3.Dot(p.Right, outward);
-                    if (Math.Abs(along) < 0.7f)
+                    FARWingAerodynamicModel w = p.FindModuleImplementing<FARWingAerodynamicModel>();
+                    // the wing's own panels are the wing, not what its end meets; a control surface is no endplate (its
+                    // model moves as it deflects, so it would cover the end differently in flight than in the editor); nor
+                    // is a panel in about the wing's plane, which carries the wing on (it is left out of the wing only when
+                    // shielded, and FAR's shielding of a sliver at a tip differs between the editor and flight): a winglet
+                    // or a fin standing out of the plane closes the end
+                    if (w != null && (members.Contains(w) || w is FARControllableSurface ||
+                                      Math.Abs(Vector3.Dot(Frame.InverseTransformDirection(p.partTransform.forward), n)) >= MinCos))
                         continue;
-                    FARWingInteraction wi = p.Wing.WingInteraction;
-                    sum += along > 0 ? wi.rightwardExposure : wi.leftwardExposure;
-                    rays++;
+                    Box box = BoxOf(p, f, s, n);
+                    if (box.UMax < box.UMin)
+                        continue;
+                    // reaching past the end on its outer side, from within the gap of it
+                    bool beyond = side > 0 ? box.VMin <= end + gap && box.VMax > end + gap
+                                           : box.VMax >= end - gap && box.VMin < end - gap;
+                    if (!beyond || box.HMin > h + height || box.HMax < h - height)
+                        continue;
+                    float x0 = Math.Max(tipLo, box.UMin), x1 = Math.Min(tipHi, box.UMax);
+                    if (x1 > x0)
+                    {
+                        lo.Add(x0);
+                        hi.Add(x1);
+                    }
                 }
 
-                return rays > 0 ? sum / rays : 1;
+                double covered = MergedLength(lo, hi);
+                return Math.Max(0, 1 - covered / (tipHi - tipLo));
             }
 
             /// <summary>
