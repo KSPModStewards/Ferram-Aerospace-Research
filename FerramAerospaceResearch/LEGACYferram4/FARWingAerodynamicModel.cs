@@ -155,6 +155,9 @@ namespace ferram4
         private Vector3d ParallelInPlaneLocal = Vector3d.zero;
 
         private FARWingInteraction wingInteraction;
+        // the aspect ratio the lift slope uses, and the panel's own (semispan over chord), as last computed
+        internal double EffectiveAR => effective_AR;
+        internal double OwnAR => transformed_AR;
         private FARAeroPartModule aeroModule;
 
         public short srfAttachNegative = 1;

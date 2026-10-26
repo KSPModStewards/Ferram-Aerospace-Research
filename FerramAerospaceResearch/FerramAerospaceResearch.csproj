@@ -180,6 +180,7 @@
     <Compile Include="FARGUI\FARFlightGUI\FlightGUI.cs" />
     <Compile Include="FARGUI\GUIDropDown.cs" />
     <Compile Include="FARGUI\GUIUtils.cs" />
+    <Compile Include="FARGUI\FAREditorGUI\ComponentsGUI.cs" />
     <Compile Include="FARGUI\FAREditorGUI\StabilityDerivGUI.cs" />
     <Compile Include="FARPartGeometry\GeometryMesh.cs" />
     <Compile Include="FARPartGeometry\GeometryPartModule.cs" />

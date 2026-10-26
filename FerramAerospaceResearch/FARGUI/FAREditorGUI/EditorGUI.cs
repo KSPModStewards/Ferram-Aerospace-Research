@@ -75,7 +75,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             Localizer.Format("FAREditorModeStatic"),
             Localizer.Format("FAREditorModeDataStab"),
             Localizer.Format("FAREditorModeDerivSim"),
-            Localizer.Format("FAREditorModeTrans")
+            Localizer.Format("FAREditorModeTrans"),
+            Localizer.Format("FAREditorModeComponents")
         };
 
         // ReSharper disable once ConvertToConstant.Local
@@ -102,6 +103,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         private StaticAnalysisGraphGUI _editorGraph;
         private StabilityDerivGUI _stabDeriv;
         private StabilityDerivSimulationGUI _stabDerivLinSim;
+        private ComponentsGUI _components;
+        // whether the Components tab was shown (its tints on the parts) when last drawn
+        private bool componentsShown;
+        // the window to fit itself to the Components tab at the next layout (it was shown, or its table toggled)
+        private bool fitWindow;
 
         private MethodInfo editorReportUpdate;
 
@@ -160,7 +166,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                                               FAREditorMode.STATIC,
                                                               FAREditorMode.STABILITY,
                                                               FAREditorMode.SIMULATION,
-                                                              FAREditorMode.AREA_RULING
+                                                              FAREditorMode.AREA_RULING,
+                                                              FAREditorMode.COMPONENTS
                                                           });
 
             _simManager = new EditorSimManager(_instantSim);
@@ -168,6 +175,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             _editorGraph = new StaticAnalysisGraphGUI(_simManager, flapSettingDropDown, celestialBodyDropdown);
             _stabDeriv = new StabilityDerivGUI(_simManager, flapSettingDropDown, celestialBodyDropdown);
             _stabDerivLinSim = new StabilityDerivSimulationGUI(_simManager);
+            _components = new ComponentsGUI(_simManager, flapSettingDropDown, celestialBodyDropdown, ShowVoxels);
 
             Color crossSection = FARConfig.GUIColors.LdColor;
             crossSection.a = 0.8f;
@@ -236,6 +244,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             }
 
             _stabDerivLinSim = null;
+            _components?.ClearTints();
+            _components = null;
             _instantSim = null;
             _areaRulingOverlay.Cleanup();
             _areaRulingOverlay = null;
@@ -375,6 +385,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                     voxelWatch.Reset();
 
                     _simManager.UpdateAeroData(_vehicleAero, _wingAerodynamicModel);
+                    _components.MarkDirty();
                     UpdateCrossSections();
                     
                     foreach (IDesignConcern designConcern in _customDesignConcerns)
@@ -507,6 +518,14 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 return;
             if (showGUI)
             {
+                // the window fit to the tab again (the layout grows it to the controls), in the layout pass only so
+                // that the events after it see the same size
+                if (fitWindow && Event.current.type == EventType.Layout)
+                {
+                    fitWindow = false;
+                    guiRect.width = guiRect.height = 100;
+                }
+
                 guiRect = GUILayout.Window(GetHashCode(),
                                            guiRect,
                                            OverallSelectionGUI,
@@ -531,20 +550,38 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         private void OverallSelectionGUI(int windowId)
         {
             GUILayout.BeginHorizontal(GUILayout.Width(800));
-            modeDropdown.GUIDropDownDisplay();
+            // the Components tab: its planet at the right of this row, and no velocity arrow (it has no use there)
+            bool components = modeDropdown.ActiveSelection == FAREditorMode.COMPONENTS;
+            if (components)
+                modeDropdown.GUIDropDownDisplay(GUILayout.Width(200));
+            else
+                modeDropdown.GUIDropDownDisplay();
             currentMode = modeDropdown.ActiveSelection;
 
-            GUILayout.BeginVertical();
-            if (GUILayout.Button(gearToggle
-                                     ? Localizer.Format("FARGearToggleLower")
-                                     : Localizer.Format("FARGearToggleRaise")))
-                ToggleGear();
-            GUILayout.EndVertical();
+            if (components)
+            {
+                if (GUILayout.Button(gearToggle
+                                         ? Localizer.Format("FARGearToggleLower")
+                                         : Localizer.Format("FARGearToggleRaise"),
+                                     GUILayout.Width(110)))
+                    ToggleGear();
+                GUILayout.FlexibleSpace();
+                _components.PlanetDisplay();
+            }
+            else
+            {
+                GUILayout.BeginVertical();
+                if (GUILayout.Button(gearToggle
+                                         ? Localizer.Format("FARGearToggleLower")
+                                         : Localizer.Format("FARGearToggleRaise")))
+                    ToggleGear();
+                GUILayout.EndVertical();
 
-            GUILayout.BeginVertical();
-            if (GUILayout.Button(showAoAArrow ? Localizer.Format("FARVelIndHide") : Localizer.Format("FARVelIndShow")))
-                showAoAArrow = !showAoAArrow;
-            GUILayout.EndVertical();
+                GUILayout.BeginVertical();
+                if (GUILayout.Button(showAoAArrow ? Localizer.Format("FARVelIndHide") : Localizer.Format("FARVelIndShow")))
+                    showAoAArrow = !showAoAArrow;
+                GUILayout.EndVertical();
+            }
 
             GUILayout.EndHorizontal();
             switch (currentMode)
@@ -566,6 +603,19 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                     DebugVisualizationGUI();
                     guiRect.height = useKSPSkin ? 350 : 220;
                     break;
+                case FAREditorMode.COMPONENTS:
+                    // back on the tab: its tints again, and the window fit to it
+                    if (!componentsShown)
+                    {
+                        _components.MarkDirty();
+                        fitWindow = true;
+                    }
+
+                    componentsShown = true;
+                    _components.Display();
+                    if (_components.TakeResize())
+                        fitWindow = true;
+                    break;
             }
 
             GUI.DragWindow();
@@ -576,24 +626,27 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             GUILayout.BeginHorizontal();
             GUI.enabled = !Instance.VoxelizationUpdateQueued;
             if (GUILayout.Button(Localizer.Format("FARDebugVoxels")))
-            {
-                Matrix4x4? localToWorldMatrix = null;
-                try
-                {
-                    // even with no root parts in the editor, neither RootPart or its partTransform are null
-                    // but trying to get localToWorldMatrix throws NRE
-                    localToWorldMatrix = EditorLogic.RootPart.partTransform.localToWorldMatrix;
-                }
-                catch (NullReferenceException)
-                {
-                }
-
-                if (localToWorldMatrix != null)
-                    _vehicleAero.DebugVisualizeVoxels((Matrix4x4)localToWorldMatrix);
-            }
+                ShowVoxels();
 
             GUI.enabled = true;
             GUILayout.EndHorizontal();
+        }
+
+        private void ShowVoxels()
+        {
+            Matrix4x4? localToWorldMatrix = null;
+            try
+            {
+                // even with no root parts in the editor, neither RootPart or its partTransform are null
+                // but trying to get localToWorldMatrix throws NRE
+                localToWorldMatrix = EditorLogic.RootPart.partTransform.localToWorldMatrix;
+            }
+            catch (NullReferenceException)
+            {
+            }
+
+            if (localToWorldMatrix != null)
+                _vehicleAero.DebugVisualizeVoxels((Matrix4x4)localToWorldMatrix);
         }
 
         private void CrossSectionAnalysisGUI()
@@ -640,6 +693,13 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
         private void LateUpdate()
         {
+            // the Components tab's tints off once it is left or the window closed
+            if (componentsShown && (!showGUI || currentMode != FAREditorMode.COMPONENTS))
+            {
+                componentsShown = false;
+                _components.ClearTints();
+            }
+
             if (arrowTransform == null)
             {
                 if (velocityArrow != null)
@@ -783,7 +843,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             STATIC,
             STABILITY,
             SIMULATION,
-            AREA_RULING
+            AREA_RULING,
+            COMPONENTS
         }
     }
 }
