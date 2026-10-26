@@ -279,8 +279,14 @@ namespace ferram4
         public void NUFAR_UpdateShieldingStateFromAreaFactor()
         {
             isShielded = NUFAR_areaExposedFactor < 0.1 * S;
-            FARWingInteraction.InvalidateWingGroups();
+            FARWingInteraction.InvalidateWingGroups(part);
         }
+
+        /// <summary>
+        ///     Whether the voxels find this panel covered by other parts: shielded, for a control surface at rest (a
+        ///     deflected one comes out of the cover, see FARControllableSurface.CheckShielded). Changes only with the voxels
+        /// </summary>
+        internal bool ShieldedAtRest => NUFAR_areaExposedFactor < 0.1 * S;
 
         public double GetStall()
         {

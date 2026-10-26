@@ -263,7 +263,7 @@ namespace ferram4
 
             ClInterferenceFactor = ClCdInterference;
             vesselParts = VesselPartList;
-            wingGroupGeneration++;
+            InvalidateWingGroups(parentWingPart);
         }
 
         //This updates the interactions of all wings near this one; call this one when something changes rather than all of them at once
@@ -310,12 +310,59 @@ namespace ferram4
         }
 
         /// <summary>
-        ///     Finds every wing's group again: call when which panels are shielded may have changed
+        ///     Finds every wing's group again, on every vessel: call when the model changes
         /// </summary>
         internal static void InvalidateWingGroups()
         {
-            wingGroupGeneration++;
+            globalGeneration++;
         }
+
+        /// <summary>
+        ///     Finds the groups of this part's vessel again: call when its shape, or which of its panels are shielded, may
+        ///     have changed
+        /// </summary>
+        internal static void InvalidateWingGroups(Part part)
+        {
+            if (part == null)
+            {
+                globalGeneration++;
+                return;
+            }
+
+            int key = WingGroup.FrameOf(part).GetInstanceID();
+            if (!vesselGenerations.TryGetValue(key, out int g) && vesselGenerations.Count > 4096)
+                ForgetVessels();
+            vesselGenerations[key] = g + 1;
+        }
+
+        // the groups' generation: one count for each vessel (by its root part), plus one for all of them
+        private static int globalGeneration;
+        private static readonly Dictionary<int, int> vesselGenerations = new Dictionary<int, int>();
+
+        /// <summary>
+        ///     Forgets the vessels' counts (kept by root part, which vessels come and go by): every generation from here
+        ///     on is past all before, so no group built before is current
+        /// </summary>
+        internal static void ForgetVessels()
+        {
+            int most = 0;
+            foreach (int g in vesselGenerations.Values)
+                most = Math.Max(most, g);
+            globalGeneration += most + 1;
+            vesselGenerations.Clear();
+        }
+
+        private static int GenerationOf(Part part)
+        {
+            if (part == null)
+                return globalGeneration;
+            vesselGenerations.TryGetValue(WingGroup.FrameOf(part).GetInstanceID(), out int g);
+            return globalGeneration + g;
+        }
+
+        // whether a group was built for this part's vessel as it is now
+        private static bool Current(WingGroup g, Part part) =>
+            g != null && part != null && g.Frame == WingGroup.FrameOf(part) && g.Generation == GenerationOf(part);
 
         private void CompressArrayToList(
             FARWingAerodynamicModel[] arrayIn,
@@ -799,11 +846,10 @@ namespace ferram4
                 associatedInfluences[j] *= influenceSum;
         }
 
-        // a control surface: the wing it is on (the wing group its part touches), found again with the groups, and the
-        // control surface as a panel
+        // a control surface: the wing it is on (the wing group its part touches), found again with the groups
         private WingGroup hostWing;
-        private WingGroup.Panel hostPanel;
         private int hostGeneration = -1;
+        private Transform hostFrame;
 
         /// <summary>
         ///     The wing group this control surface is on, if it is one: touching it, or touching a control surface on it (the
@@ -811,29 +857,28 @@ namespace ferram4
         /// </summary>
         private bool FindHostWing()
         {
-            if (hostGeneration == wingGroupGeneration)
+            Transform frame = parentWingPart == null ? null : WingGroup.FrameOf(parentWingPart);
+            int generation = GenerationOf(parentWingPart);
+            if (hostGeneration == generation && hostFrame == frame)
                 return hostWing != null && hostWing.Frame != null;
-            hostGeneration = wingGroupGeneration;
+            hostGeneration = generation;
+            hostFrame = frame;
             hostWing = null;
-            hostPanel = null;
-            if (!(parentWingModule is FARControllableSurface) || vesselParts == null || parentWingPart == null)
-                return false;
-            Transform frame = WingGroup.FrameOf(parentWingPart);
-            WingGroup.Panel panel = WingGroup.MakePanel(parentWingModule, frame);
-            if (panel == null)
+            if (!(parentWingModule is FARControllableSurface) || vesselParts == null || parentWingPart == null ||
+                parentWingModule.MAC_actual <= 0 || parentWingModule.b_2_actual <= 0)
                 return false;
 
             var tested = new HashSet<WingGroup>();
             double best = 0;
-            foreach (Part p in vesselParts)
+            foreach (Part p in WingGroup.PartsNow(parentWingPart, vesselParts))
             {
                 if (p == null || p == parentWingPart)
                     continue;
-                FARWingAerodynamicModel w = p.FindModuleImplementing<FARWingAerodynamicModel>();
-                if (w == null || w is FARControllableSurface || w.isShielded || w.WingInteraction == null)
+                FARWingAerodynamicModel w = WingGroup.WingOf(p);
+                if (w == null || w is FARControllableSurface || w.ShieldedAtRest || w.WingInteraction == null)
                     continue;
                 FARWingInteraction wi = w.WingInteraction;
-                if (wi.wingGroup == null || wi.wingGroup.Generation != wingGroupGeneration)
+                if (!Current(wi.wingGroup, p))
                     WingGroup.Build(w, vesselParts);
                 WingGroup g = wi.wingGroup;
                 if (g == null || g.Frame != frame || !tested.Add(g) || !g.Holds(parentWingModule))
@@ -846,14 +891,36 @@ namespace ferram4
                 }
             }
 
-            hostPanel = panel;
             return hostWing != null;
         }
 
-        // the wing this panel is part of, found again whenever any wing's neighbors have been
-        private static int wingGroupGeneration;
+        // the wing this panel is part of, found again whenever its vessel's wings' neighbors have been
         private WingGroup wingGroup;
         private List<Part> vesselParts;
+
+        // this panel as a wing group sees it (null: not made yet, or the part's shape changed since)
+        private WingGroup.PanelShape panelCache;
+
+        // this panel in its vessel's frame, made from panelCache, for the groups of one generation
+        private WingGroup.Panel panel;
+        private int panelGeneration;
+        private Transform panelFrame;
+
+        /// <summary>
+        ///     The wing group this panel takes its aspect ratio from: the wing a control surface is on, else the panel's own
+        ///     group; null when the panel keeps its own aspect ratio (a lone panel or a shielded one)
+        /// </summary>
+        private WingGroup GroupForAR()
+        {
+            if (parentWingPart == null || vesselParts == null)
+                return null;
+            // a control surface is part of the wing it is on, and takes that wing's aspect ratio
+            if (parentWingModule is FARControllableSurface && FindHostWing() && AsWing(hostWing))
+                return hostWing;
+            if (!Current(wingGroup, parentWingPart))
+                WingGroup.Build(parentWingModule, vesselParts);
+            return AsWing(wingGroup) ? wingGroup : null;
+        }
 
         /// <summary>
         ///     The effective aspect ratio of this panel. Panels that touch, in about the same plane, are one wing however it
@@ -867,25 +934,11 @@ namespace ferram4
         /// <param name="transformedAR">This panel's own aspect ratio (semispan over chord, along the flow)</param>
         internal double SpanChainedAR(double transformedAR)
         {
-            double own = transformedAR * ARFactor;
             BodyLiftFactor = 1;
             GroupTanSweep = double.NaN;
-            if (parentWingPart == null || vesselParts == null)
-                return own;
-            // a control surface is part of the wing it is on, and takes that wing's aspect ratio
-            WingGroup g;
-            if (parentWingModule is FARControllableSurface && FindHostWing() && AsWing(hostWing))
-            {
-                g = hostWing;
-            }
-            else
-            {
-                if (wingGroup == null || wingGroup.Generation != wingGroupGeneration)
-                    WingGroup.Build(parentWingModule, vesselParts);
-                g = wingGroup;
-                if (!AsWing(g))
-                    return own;
-            }
+            WingGroup g = GroupForAR();
+            if (g == null)
+                return transformedAR * ARFactor;
 
             // the lift of the wing's planform: overlaps once, and the strip of body between the roots
             BodyLiftFactor = g.BodyLiftFactor;
@@ -941,23 +994,195 @@ namespace ferram4
                 // for a control surface hung from its leading edge, its model's outline (FAR keeps no shape for one, and
                 // B9's surfaces on a swept hinge are sheared to streamwise side edges)
                 public Vector3[] Corners;
-                // the part's model seen from above its plane (convex hull, world), which touching is tested on
+                // the part's model seen from above its plane (convex hull), which touching is tested on
                 public Vector3[] Outline;
                 public Vector3 Center, Normal, Right;
                 public float Chord;
+                // the farthest corner of Outline from Center: a point farther than this plus a gap is not within the gap
+                public float Radius;
+                // the box around Outline, in the frame
+                public Vector3 Min, Max;
+            }
+
+            /// <summary>
+            ///     A panel's planform and model outline in its part's own frame, kept while the part's shape is the same: its
+            ///     planform's numbers, and each mesh the outline was read from (a procedural wing's edited in place, a
+            ///     variant's shown or hidden, a section moved by the part's animation). The meshes are read and their hull
+            ///     found once, not on every rebuild of the groups
+            /// </summary>
+            internal sealed class PanelShape
+            {
+                public Vector3[] Corners, Outline;
+                private double s, mac, b2, taper, sweep;
+                private Vector3 rootMid;
+                private int attach;
+                private readonly List<MeshState> meshes = new List<MeshState>();
+
+                private bool Fits(FARWingAerodynamicModel w) =>
+                    s == w.S && mac == w.MAC_actual && b2 == w.b_2_actual && taper == w.TaperRatio &&
+                    sweep == w.MidChordSweep && rootMid == w.rootMidChordOffsetFromOrig &&
+                    attach == w.nonSideAttach * 2 + w.srfAttachNegative && MeshesHold(w.part);
+
+                private bool MeshesHold(Part part)
+                {
+                    if (meshes.Count == 0)
+                        return true;
+                    Transform t = part.partTransform;
+                    RestOf(part, out Transform section, out Matrix4x4 toRest);
+                    foreach (MeshState m in meshes)
+                        if (m.Filter == null || m.Filter.sharedMesh != m.Mesh || m.Mesh == null ||
+                            m.Filter.gameObject.activeInHierarchy != m.Active || m.Mesh.bounds != m.Bounds ||
+                            !Same(PoseOf(m.Filter, t, section, toRest), m.Pose))
+                            return false;
+                    return true;
+                }
+
+                private static bool Same(Matrix4x4 a, Matrix4x4 b)
+                {
+                    for (int i = 0; i < 16; i++)
+                        if (Math.Abs(a[i] - b[i]) > 1e-4f)
+                            return false;
+                    return true;
+                }
+
+                public static PanelShape Of(FARWingAerodynamicModel w)
+                {
+                    PanelShape shape = w.WingInteraction.panelCache;
+                    if (shape != null && shape.Fits(w))
+                        return shape;
+                    Transform t = w.part.partTransform;
+                    shape = new PanelShape
+                    {
+                        s = w.S,
+                        mac = w.MAC_actual,
+                        b2 = w.b_2_actual,
+                        taper = w.TaperRatio,
+                        sweep = w.MidChordSweep,
+                        rootMid = w.rootMidChordOffsetFromOrig,
+                        attach = w.nonSideAttach * 2 + w.srfAttachNegative,
+                        Corners = new Vector3[4]
+                    };
+                    w.PlanformCorners(shape.Corners);
+                    for (int k = 0; k < 4; k++)
+                        shape.Corners[k] = t.InverseTransformPoint(shape.Corners[k]);
+                    shape.Outline = ModelOutline(w.part, t.forward, shape.meshes);
+                    if (shape.Outline != null)
+                        for (int k = 0; k < shape.Outline.Length; k++)
+                            shape.Outline[k] = t.InverseTransformPoint(shape.Outline[k]);
+                    w.WingInteraction.panelCache = shape;
+                    return shape;
+                }
+            }
+
+            // a mesh a panel's outline was read from, as it was then
+            private struct MeshState
+            {
+                public MeshFilter Filter;
+                public Mesh Mesh;
+                public bool Active;
+                public Bounds Bounds;
+                // its vertices to the part's frame, at rest (see PoseOf)
+                public Matrix4x4 Pose;
+            }
+
+            // a control surface's movable section and what takes it back to rest (identity: none, or not a surface)
+            private static void RestOf(Part part, out Transform section, out Matrix4x4 toRest)
+            {
+                section = null;
+                toRest = Matrix4x4.identity;
+                FARControllableSurface surface = part.FindModuleImplementing<FARControllableSurface>();
+                if (surface == null || !surface.RestTransform(out section, out toRest))
+                {
+                    section = null;
+                    toRest = Matrix4x4.identity;
+                }
+            }
+
+            // a mesh's vertices to its part's frame t, its control surface's section at rest: as the outline reads them
+            private static Matrix4x4 PoseOf(MeshFilter mf, Transform t, Transform section, Matrix4x4 toRest)
+            {
+                Matrix4x4 world = mf.transform.localToWorldMatrix;
+                if (section != null && mf.transform.IsChildOf(section))
+                    world = toRest * world;
+                return t.worldToLocalMatrix * world;
             }
 
             public readonly List<FARWingAerodynamicModel> Members = new List<FARWingAerodynamicModel>();
             private readonly List<Panel> panels = new List<Panel>();
+            // shielded panels between the members: no lift, but wing between the panels on either side
+            private readonly List<Panel> bridges = new List<Panel>();
             public int Generation;
             // the vessel's parts when the group was built: the panels between a root and its mirror are looked for there
             private List<Part> vesselParts;
             public Transform Frame;
+            // the vessel's forward axis in Frame (FlowAxis)
+            private Vector3 flow = Vector3.up;
             public int PanelCount => panels.Count;
-            public FARWingAerodynamicModel PanelWing(int i) => panels[i].Wing;
 
             public static Transform FrameOf(Part part) =>
                 part.localRoot != null ? part.localRoot.partTransform : part.partTransform;
+
+            /// <summary>
+            ///     A part's vessel's parts as they are now: a wing's own list can be an older one (the editor's is made anew
+            ///     as the ship changes), and every group of a vessel looks at the same. In the editor the ship's own list,
+            ///     not FARAeroUtil.AllEditorParts: that is kept once made, and made here it could miss parts still being
+            ///     placed, which the wings' neighbor search would then go without
+            /// </summary>
+            public static List<Part> PartsNow(Part part, List<Part> kept)
+            {
+                if (HighLogic.LoadedSceneIsEditor)
+                    return EditorLogic.fetch != null && EditorLogic.fetch.ship != null ? EditorLogic.fetch.ship.parts : kept;
+                return part != null && part.vessel != null ? part.vessel.parts : kept;
+            }
+
+            // each part's wing module, null for none, by part: what modules a part has is set when it is made
+            private static readonly Dictionary<int, FARWingAerodynamicModel> wingOf =
+                new Dictionary<int, FARWingAerodynamicModel>();
+
+            // the caches by part and by vessel hold parts, modules and transforms: let go with the scene, and in the
+            // editor as the ship changes (a part picked up or an undo makes new ones). A change in the editor starts
+            // the groups anew too: a procedural wing edited, or a variant picked, changes a panel's mesh alone
+            static WingGroup()
+            {
+                GameEvents.onGameSceneLoadRequested.Add(_ =>
+                {
+                    ClearCaches();
+                    ForgetVessels();
+                });
+                GameEvents.onEditorShipModified.Add(_ =>
+                {
+                    ClearCaches();
+                    InvalidateWingGroups();
+                });
+            }
+
+            private static void ClearCaches()
+            {
+                wingOf.Clear();
+                flowAxes.Clear();
+                boundsCorners.Clear();
+            }
+
+            /// <summary>A part's wing module (a control surface's too), null if it has none</summary>
+            public static FARWingAerodynamicModel WingOf(Part p)
+            {
+                if (p == null)
+                    return null;
+                int key = p.GetInstanceID();
+                if (wingOf.TryGetValue(key, out FARWingAerodynamicModel w))
+                    return w;
+                if (wingOf.Count > 8192)
+                    wingOf.Clear();
+                w = p.FindModuleImplementing<FARWingAerodynamicModel>();
+                wingOf[key] = w;
+                return w;
+            }
+
+            /// <summary>
+            ///     Whether a panel counts as shielded for the wing's shape: covered by other parts as the voxels find it, at
+            ///     rest. A control surface deflected out of its cover lifts again, but the wing's planform stays the same
+            /// </summary>
+            internal static bool Shielded(FARWingAerodynamicModel w) => w.ShieldedAtRest;
             public double B2, Area, ExposureMin, ExposureMax;
             // whether a body holds the wing's root, and then its span from tip to the mirror tip across that body (m)
             public bool RootOnBody;
@@ -990,9 +1215,11 @@ namespace ferram4
 
             public static void Build(FARWingAerodynamicModel start, List<Part> parts)
             {
-                var g = new WingGroup { Generation = wingGroupGeneration, Frame = FrameOf(start.part), vesselParts = parts };
+                parts = PartsNow(start.part, parts);
+                var g = new WingGroup { Generation = GenerationOf(start.part), Frame = FrameOf(start.part), vesselParts = parts };
+                g.flow = FlowAxis(g.Frame, parts, g.Generation);
                 Panel first = MakePanel(start, g.Frame);
-                if (first == null || start.isShielded)
+                if (first == null || Shielded(start))
                 {
                     g.Members.Add(start);
                     start.WingInteraction.wingGroup = g;
@@ -1001,35 +1228,81 @@ namespace ferram4
 
                 bool control = start is FARControllableSurface;
                 var candidates = new List<Panel>();
+                // shielded panels: no lift, so no part of the panels' own area, but still wing between the panels on
+                // either side (a strip under an engine pylon, shielded by the nacelle, cut the 737's wing in two there)
+                var bridges = new List<Panel>();
                 foreach (Part p in parts)
                 {
                     if (p == null || p == start.part)
                         continue;
-                    FARWingAerodynamicModel w = p.FindModuleImplementing<FARWingAerodynamicModel>();
-                    if (w == null || w.WingInteraction == null || w.isShielded || w is FARControllableSurface != control)
+                    FARWingAerodynamicModel w = WingOf(p);
+                    if (w == null || w.WingInteraction == null || w is FARControllableSurface != control)
                         continue;
                     if (FrameOf(p) != g.Frame)
                         continue;
                     Panel c = MakePanel(w, g.Frame);
                     if (c != null)
-                        candidates.Add(c);
+                        (Shielded(w) ? bridges : candidates).Add(c);
                 }
 
-                // every panel reachable through touching panels
+                // every panel reachable through touching panels; then through shielded ones too, but only across a break
+                // along the span (see Bridged), and not to a member's mirror image: the panels inside a fuselage join no
+                // wing to its mirror (that wing is measured through the body, see Measure), where a lifting center
+                // section does
                 g.panels.Add(first);
-                for (int i = 0; i < g.panels.Count; i++)
+                var memberParts = new HashSet<Part> { start.part };
+                var reached = new List<Panel> { first };
+
+                void Join(Panel c)
+                {
+                    g.panels.Add(c);
+                    memberParts.Add(c.Wing.part);
+                    reached.Add(c);
+                }
+
+                for (int i = 0; i < reached.Count; i++)
                     for (int j = candidates.Count - 1; j >= 0; j--)
-                        if (Linked(g.panels[i], candidates[j]))
+                        if (Linked(reached[i], candidates[j]))
                         {
-                            g.panels.Add(candidates[j]);
+                            Join(candidates[j]);
                             candidates.RemoveAt(j);
                         }
 
-                var memberParts = new HashSet<Part>();
+                if (bridges.Count > 0)
+                {
+                    // the panels reached so far link to no other candidate (all were tested above): from them only the
+                    // shielded panels; from each shielded panel reached, the member its chain of them starts at
+                    int linked = reached.Count;
+                    var origins = new Dictionary<Panel, Panel>();
+                    for (int i = 0; i < reached.Count; i++)
+                    {
+                        Panel from = reached[i];
+                        bool shielded = origins.TryGetValue(from, out Panel origin);
+                        if (i >= linked)
+                            for (int j = candidates.Count - 1; j >= 0; j--)
+                            {
+                                Panel c = candidates[j];
+                                if (!Linked(from, c) || c.Wing.part.symmetryCounterparts.Any(memberParts.Contains) ||
+                                    shielded && !g.Bridged(origin, from, c))
+                                    continue;
+                                Join(c);
+                                candidates.RemoveAt(j);
+                            }
+
+                        for (int j = bridges.Count - 1; j >= 0; j--)
+                            if (Linked(from, bridges[j]))
+                            {
+                                origins[bridges[j]] = shielded ? origin : from;
+                                g.bridges.Add(bridges[j]);
+                                reached.Add(bridges[j]);
+                                bridges.RemoveAt(j);
+                            }
+                    }
+                }
+
                 foreach (Panel p in g.panels)
                 {
                     g.Members.Add(p.Wing);
-                    memberParts.Add(p.Wing.part);
                     p.Wing.WingInteraction.wingGroup = g;
                 }
 
@@ -1039,22 +1312,50 @@ namespace ferram4
                             g.Straddles = true;
             }
 
+            /// <summary>
+            ///     Whether a shielded panel (a strip under a nacelle or pylon) joins a member to a panel beyond it: the panel
+            ///     lies past the shielded one along the member's span, and on the member's side of the vessel's centerline
+            ///     (through the root part, the frame's origin) unless the member spans it. Not a tail or canard whose root a
+            ///     plate inside the fuselage shares with the wing's, nor the mirror wing of a craft built without symmetry
+            /// </summary>
+            private bool Bridged(Panel member, Panel bridge, Panel c)
+            {
+                Vector3 s = Vector3.Cross(member.Normal, Vector3.ProjectOnPlane(flow, member.Normal));
+                if (s.sqrMagnitude < 1e-6f)
+                    s = SpanAxis(member, out _);
+                s.Normalize();
+                float m = Vector3.Dot(member.Center, s), b = Vector3.Dot(bridge.Center, s), x = Vector3.Dot(c.Center, s);
+                if ((b - m) * (x - b) <= 0)
+                    return false;
+                Range(member.Outline, s, out float lo, out float hi);
+                return !(lo > 0 && x < 0 || hi < 0 && x > 0);
+            }
+
             public static Panel MakePanel(FARWingAerodynamicModel w, Transform frame)
             {
                 if (w == null || w.WingInteraction == null || w.MAC_actual <= 0 || w.b_2_actual <= 0)
                     return null;
+                // every group built in a generation sees the same panel: made once (a shape that changes starts a new
+                // generation, see WingGroup's events)
+                FARWingInteraction wi = w.WingInteraction;
+                int generation = GenerationOf(w.part);
+                if (wi.panel != null && wi.panelGeneration == generation && wi.panelFrame == frame)
+                    return wi.panel;
+                PanelShape shape = PanelShape.Of(w);
+                Transform t = w.part.partTransform;
                 var p = new Panel { Wing = w, Corners = new Vector3[4] };
-                w.PlanformCorners(p.Corners);
                 for (int k = 0; k < 4; k++)
-                    p.Corners[k] = frame.InverseTransformPoint(p.Corners[k]);
-                Vector3 normal = w.part.partTransform.forward;
-                p.Normal = frame.InverseTransformDirection(normal);
-                p.Right = frame.InverseTransformDirection(w.part.partTransform.right);
+                    p.Corners[k] = frame.InverseTransformPoint(t.TransformPoint(shape.Corners[k]));
+                p.Normal = frame.InverseTransformDirection(t.forward);
+                p.Right = frame.InverseTransformDirection(t.right);
                 p.Chord = (float)w.MAC_actual;
-                Vector3[] outline = ModelOutline(w.part, normal);
-                if (outline != null)
+                Vector3[] outline = null;
+                if (shape.Outline != null)
+                {
+                    outline = new Vector3[shape.Outline.Length];
                     for (int k = 0; k < outline.Length; k++)
-                        outline[k] = frame.InverseTransformPoint(outline[k]);
+                        outline[k] = frame.InverseTransformPoint(t.TransformPoint(shape.Outline[k]));
+                }
                 p.Outline = outline ?? p.Corners;
                 if (outline != null && w.nonSideAttach > 0 && outline.Length >= 3)
                     p.Corners = outline;
@@ -1062,6 +1363,16 @@ namespace ferram4
                 foreach (Vector3 c in p.Outline)
                     p.Center += c;
                 p.Center /= p.Outline.Length;
+                p.Min = p.Max = p.Outline[0];
+                foreach (Vector3 c in p.Outline)
+                {
+                    p.Radius = Math.Max(p.Radius, (c - p.Center).magnitude);
+                    p.Min = Vector3.Min(p.Min, c);
+                    p.Max = Vector3.Max(p.Max, c);
+                }
+                wi.panel = p;
+                wi.panelGeneration = generation;
+                wi.panelFrame = frame;
                 return p;
             }
 
@@ -1069,22 +1380,28 @@ namespace ferram4
             ///     The convex hull of a part's model meshes projected on its plane (world): what the panel covers as the
             ///     player sees it. FAR's planform for a stock part can fall short of the mesh, and a stock wing's collider is
             ///     a simpler shape than its mesh; either can leave a gap between panels that overlap. Null without a readable
-            ///     mesh.
+            ///     mesh. The meshes read go in meshes, as they are.
             /// </summary>
-            private static Vector3[] ModelOutline(Part part, Vector3 normal)
+            private static Vector3[] ModelOutline(Part part, Vector3 normal, List<MeshState> meshes)
             {
                 Transform t = part.partTransform;
                 Vector3 origin = t.position, e1 = t.right, e2 = Vector3.Cross(normal, e1).normalized;
                 // a control surface's movable section at rest: its outline must not follow its deflection
-                FARControllableSurface surface = part.FindModuleImplementing<FARControllableSurface>();
-                Transform section = null;
-                Matrix4x4 toRest = Matrix4x4.identity;
-                bool atRest = surface != null && surface.RestTransform(out section, out toRest);
+                RestOf(part, out Transform section, out Matrix4x4 toRest);
+                bool atRest = section != null;
                 var points = new List<Vector2>();
                 foreach (MeshFilter mf in part.FindModelComponents<MeshFilter>())
                 {
                     if (mf == null || mf.sharedMesh == null || !mf.sharedMesh.isReadable)
                         continue;
+                    meshes.Add(new MeshState
+                    {
+                        Filter = mf,
+                        Mesh = mf.sharedMesh,
+                        Active = mf.gameObject.activeInHierarchy,
+                        Bounds = mf.sharedMesh.bounds,
+                        Pose = PoseOf(mf, t, section, toRest)
+                    });
                     bool moves = atRest && mf.transform.IsChildOf(section);
                     foreach (Vector3 v in mf.sharedMesh.vertices)
                     {
@@ -1100,7 +1417,7 @@ namespace ferram4
                     return null;
                 List<Vector2> hull = ConvexHull(points);
                 // corners within a millimeter of the last kept one go: the edge between them points wherever rounding
-                // takes it, and one pointing the wrong way puts points inside the outline outside it (see DistanceInPlane)
+                // takes it, and one pointing the wrong way puts points inside the outline outside it (see WithinGap)
                 for (int i = hull.Count - 1; i > 0; i--)
                     if ((hull[i] - hull[i - 1]).sqrMagnitude <= MinEdge * MinEdge)
                         hull.RemoveAt(i);
@@ -1233,15 +1550,21 @@ namespace ferram4
 
                 void Near(Panel from, Panel to)
                 {
+                    // as in Steps: an edge passing farther from to's center than its farthest corner and the gap has none
+                    float reach = to.Radius + gap + 1e-3f;
                     Vector3[] o = from.Outline;
                     for (int i = 0; i < o.Length; i++)
                     {
                         Vector3 p0 = o[i], p1 = o[(i + 1) % o.Length];
+                        Vector3 e0 = Vector3.ProjectOnPlane(p0 - to.Center, to.Normal), e = Vector3.ProjectOnPlane(p1 - p0, to.Normal);
+                        float t = Mathf.Clamp01(-Vector3.Dot(e0, e) / Mathf.Max(e.sqrMagnitude, 1e-8f));
+                        if ((e0 + t * e).sqrMagnitude > reach * reach)
+                            continue;
                         for (int k = 0; k < 8; k++)
                         {
                             Vector3 q = Vector3.Lerp(p0, p1, 0.125f * k);
                             float h = Vector3.Dot(q - to.Center, to.Normal);
-                            if (Math.Abs(h) > height || DistanceInPlane(q - h * to.Normal, to) > gap)
+                            if (Math.Abs(h) > height || !WithinGap(q - h * to.Normal, to, gap))
                                 continue;
                             float x = Vector3.Dot(q, axis);
                             lo = Math.Min(lo, x);
@@ -1276,39 +1599,59 @@ namespace ferram4
                     !Separated(a.Outline, a, b, gap) && !Separated(b.Outline, a, b, gap))
                     return true;
 
-                // meeting at an edge or a corner, at about one height there
-                return Step(a, b, gap) <= height || Step(b, a, gap) <= height;
+                // meeting at an edge or a corner, at about one height there: a point of one's outline within the gap of
+                // the other's and that height of its plane, so not when the centers are farther apart than both reaches
+                // and those
+                float apart = a.Radius + b.Radius + gap + height;
+                if (d.sqrMagnitude > apart * apart)
+                    return false;
+                // nor when their boxes are farther apart than those along any axis (such a point is within gap and
+                // height of the other's outline, so within that of its box)
+                float margin = gap + height;
+                if (a.Min.x - margin > b.Max.x || b.Min.x - margin > a.Max.x || a.Min.y - margin > b.Max.y ||
+                    b.Min.y - margin > a.Max.y || a.Min.z - margin > b.Max.z || b.Min.z - margin > a.Max.z)
+                    return false;
+                return Steps(a, b, gap, height) || Steps(b, a, gap, height);
             }
 
             /// <summary>
-            ///     The smallest height above or below b's plane of a point on a's outline (its corners and points along its
-            ///     edges) that lies over b's outline, within gap of it
+            ///     Whether a point on a's outline (its corners and points along its edges) lies over b's outline, within gap
+            ///     of it, and within height above or below b's plane
             /// </summary>
-            private static float Step(Panel a, Panel b, float gap)
+            private static bool Steps(Panel a, Panel b, float gap, float height)
             {
-                float best = float.MaxValue;
+                // a millimeter more: rounding never skips an edge with a point just within the gap
+                float reach = b.Radius + gap + 1e-3f;
                 Vector3[] o = a.Outline;
                 for (int i = 0; i < o.Length; i++)
                 {
                     Vector3 p0 = o[i], p1 = o[(i + 1) % o.Length];
+                    // the edge seen in b's plane: no point of it within gap of b's outline when it passes farther than
+                    // that from b's center than b's farthest corner
+                    Vector3 e0 = Vector3.ProjectOnPlane(p0 - b.Center, b.Normal), e = Vector3.ProjectOnPlane(p1 - p0, b.Normal);
+                    float t = Mathf.Clamp01(-Vector3.Dot(e0, e) / Mathf.Max(e.sqrMagnitude, 1e-8f));
+                    if ((e0 + t * e).sqrMagnitude > reach * reach)
+                        continue;
                     for (int k = 0; k < 4; k++)
                     {
                         Vector3 q = Vector3.Lerp(p0, p1, 0.25f * k);
                         float h = Vector3.Dot(q - b.Center, b.Normal);
-                        if (Math.Abs(h) < best && DistanceInPlane(q - h * b.Normal, b) <= gap)
-                            best = Math.Abs(h);
+                        if (Math.Abs(h) <= height && WithinGap(q - h * b.Normal, b, gap))
+                            return true;
                     }
                 }
 
-                return best;
+                return false;
             }
 
-            /// <summary>How far a point in b's plane lies outside b's outline (0 inside)</summary>
-            private static float DistanceInPlane(Vector3 q, Panel b)
+            /// <summary>Whether a point in b's plane lies over b's outline or within gap of it</summary>
+            private static bool WithinGap(Vector3 q, Panel b, float gap)
             {
+                float reach = b.Radius + gap;
+                if ((q - b.Center).sqrMagnitude > reach * reach)
+                    return false;
                 Vector3[] o = b.Outline;
                 bool left = false, right = false;
-                float nearest = float.MaxValue;
                 for (int i = 0; i < o.Length; i++)
                 {
                     Vector3 p0 = o[i], edge = o[(i + 1) % o.Length] - p0;
@@ -1320,11 +1663,20 @@ namespace ferram4
                         left |= side > 0;
                         right |= side < 0;
                     }
-                    float t = Mathf.Clamp01(Vector3.Dot(q - p0, edge) / Mathf.Max(edge.sqrMagnitude, 1e-8f));
-                    nearest = Math.Min(nearest, (p0 + t * edge - q).magnitude);
                 }
 
-                return left && right ? nearest : 0;
+                if (!(left && right))
+                    return true;
+                // outside: within gap of an edge
+                for (int i = 0; i < o.Length; i++)
+                {
+                    Vector3 p0 = o[i], edge = o[(i + 1) % o.Length] - p0;
+                    float t = Mathf.Clamp01(Vector3.Dot(q - p0, edge) / Mathf.Max(edge.sqrMagnitude, 1e-8f));
+                    if ((p0 + t * edge - q).sqrMagnitude <= gap * gap)
+                        return true;
+                }
+
+                return false;
             }
 
             private static bool Separated(Vector3[] edges, Panel a, Panel b, float gap)
@@ -1359,11 +1711,72 @@ namespace ferram4
             }
 
             /// <summary>
+            ///     The vessel's forward axis in Frame: of the root part's axes, the one most of the vessel's wing area has its
+            ///     chord along (each wing part's up, along which FAR takes the panel's own chord), up when it is one of them. A
+            ///     craft's parts sit square to it, so a root part placed turned (a probe core on its side) still has the
+            ///     forward axis among its own, where its up would measure the span along the chord. The vote is the whole
+            ///     vessel's, not one wing's: a panel turned to make a shape (a tailplane built of a panel on its side) has its
+            ///     chord across the flow
+            /// </summary>
+            private static Vector3 FlowAxis(Transform frame, List<Part> parts, int generation)
+            {
+                // one vote for every group of the vessel built in a generation
+                int key = frame.GetInstanceID();
+                if (flowAxes.TryGetValue(key, out FlowVote vote) && vote.Generation == generation && vote.Parts == parts)
+                    return vote.Axis;
+                if (flowAxes.Count > 256)
+                    flowAxes.Clear();
+                Vector3 axis = VoteFlowAxis(frame, parts);
+                flowAxes[key] = new FlowVote { Generation = generation, Parts = parts, Axis = axis };
+                return axis;
+            }
+
+            private sealed class FlowVote
+            {
+                public int Generation;
+                public List<Part> Parts;
+                public Vector3 Axis;
+            }
+
+            // each frame's forward axis, by its instance id
+            private static readonly Dictionary<int, FlowVote> flowAxes = new Dictionary<int, FlowVote>();
+
+            private static Vector3 VoteFlowAxis(Transform frame, List<Part> parts)
+            {
+                // either way along an axis: a mirrored panel's chord can point aft
+                Vector3 chord = Vector3.zero;
+                foreach (Part p in parts)
+                {
+                    if (p == null || FrameOf(p) != frame)
+                        continue;
+                    FARWingAerodynamicModel w = WingOf(p);
+                    if (w == null || w is FARControllableSurface)
+                        continue;
+                    Transform t = p.partTransform;
+                    Vector3 c = frame.InverseTransformDirection(Vector3.ProjectOnPlane(t.up, t.forward)).normalized;
+                    chord += (float)w.S * new Vector3(Math.Abs(c.x), Math.Abs(c.y), Math.Abs(c.z));
+                }
+
+                Vector3 best = Vector3.up;
+                float most = chord.y;
+                if (chord.x > most + 1e-3f * chord.magnitude)
+                {
+                    best = Vector3.right;
+                    most = chord.x;
+                }
+
+                if (chord.z > most + 1e-3f * chord.magnitude)
+                    best = Vector3.forward;
+                return best;
+            }
+
+            /// <summary>
             ///     The wing's semispan across the flow, its area (overlaps counted once), and the exposures of its two
             ///     ends; false if the flow is about normal to the wing, or the frame is gone. The flow is the vessel's
-            ///     forward axis (its root part's up, as the editor flies it), not the airflow of the moment: a wing's
-            ///     planform is its shape, and measured along the airflow its root and span moved with sideslip (a fin's
-            ///     with the angle of attack), so its aspect ratio did in flight. Measured once.
+            ///     forward axis (see FlowAxis), not the airflow of the moment: a wing's planform is its shape, and measured
+            ///     along the airflow its root and span moved with sideslip (a fin's with the angle of attack), so its aspect
+            ///     ratio did in flight. A shielded panel between the members is wing too: its width is in the span, its
+            ///     planform in the area. Measured once.
             /// </summary>
             public bool Measure()
             {
@@ -1372,45 +1785,87 @@ namespace ferram4
                 if (measured)
                     return true;
                 Vector3 n = panels[0].Normal;
-                Vector3 f = Vector3.ProjectOnPlane(Vector3.up, n);
+                Vector3 f = Vector3.ProjectOnPlane(flow, n);
                 if (f.sqrMagnitude < 1e-6f)
                     return false;
                 f.Normalize();
                 Vector3 s = Vector3.Cross(n, f).normalized;
 
-                // the planforms in (along the flow, across it)
-                int count = panels.Count;
-                var u = new float[count][];
-                var v = new float[count][];
-                var stations = new List<float>(4 * count);
+                // the planforms in (along the flow, across it): the members, then the shielded panels between them
+                int count = panels.Count, all = count + bridges.Count;
+                var u = new float[all][];
+                var v = new float[all][];
+                var stations = new List<float>(4 * all);
                 double trapezoidArea = 0, farArea = 0;
-                for (int i = 0; i < count; i++)
+                for (int i = 0; i < all; i++)
                 {
-                    int corners = panels[i].Corners.Length;
+                    Panel p = i < count ? panels[i] : bridges[i - count];
+                    int corners = p.Corners.Length;
                     u[i] = new float[corners];
                     v[i] = new float[corners];
                     for (int k = 0; k < corners; k++)
                     {
-                        u[i][k] = Vector3.Dot(panels[i].Corners[k], f);
-                        v[i][k] = Vector3.Dot(panels[i].Corners[k], s);
-                        stations.Add(v[i][k]);
+                        u[i][k] = Vector3.Dot(p.Corners[k], f);
+                        v[i][k] = Vector3.Dot(p.Corners[k], s);
+                        if (i < count)
+                            stations.Add(v[i][k]);
                     }
 
+                    if (i >= count)
+                        continue;
                     double a = 0;
                     for (int k = 0; k < corners; k++)
                         a += u[i][k] * v[i][(k + 1) % corners] - u[i][(k + 1) % corners] * v[i][k];
                     trapezoidArea += Math.Abs(0.5 * a);
-                    farArea += panels[i].Wing.S;
+                    farArea += p.Wing.S;
                 }
 
                 stations.Sort();
                 float vMin = stations[0], vMax = stations[stations.Count - 1];
+                // where a shielded panel ends between the members' ends
+                for (int i = count; i < all; i++)
+                    foreach (float at in v[i])
+                        if (at > vMin && at < vMax)
+                            stations.Add(at);
+                stations.Sort();
 
-                // the chord the panels cover together at stations across the flow
-                double span = 0, area = 0, chordAtMin = 0, chordAtMax = 0;
+                var lo = new List<float>(all);
+                var hi = new List<float>(all);
+
+                // the chord panels from..to cover together at a station across the flow
+                double ChordAt(float at, int from, int to)
+                {
+                    lo.Clear();
+                    hi.Clear();
+                    for (int i = from; i < to; i++)
+                    {
+                        float min = float.MaxValue, max = float.MinValue;
+                        int corners = v[i].Length;
+                        for (int k = 0; k < corners; k++)
+                        {
+                            int k2 = (k + 1) % corners;
+                            float v1 = v[i][k], v2 = v[i][k2];
+                            if ((v1 - at) * (v2 - at) > 0 || v1 == v2)
+                                continue;
+                            float x = u[i][k] + (at - v1) / (v2 - v1) * (u[i][k2] - u[i][k]);
+                            min = Math.Min(min, x);
+                            max = Math.Max(max, x);
+                        }
+
+                        if (max > min)
+                        {
+                            lo.Add(min);
+                            hi.Add(max);
+                        }
+                    }
+
+                    return MergedLength(lo, hi);
+                }
+
+                // the chord the panels cover together at stations across the flow; where no member reaches, a shielded
+                // panel's
+                double span = 0, area = 0, memberArea = 0, chordAtMin = 0, chordAtMax = 0;
                 double sw = 0, swv = 0, swu = 0, swvv = 0, swvu = 0;
-                var lo = new List<float>(count);
-                var hi = new List<float>(count);
                 for (int j = 1; j < stations.Count; j++)
                 {
                     float w = stations[j] - stations[j - 1];
@@ -1420,31 +1875,11 @@ namespace ferram4
                     for (int q = 0; q < steps; q++)
                     {
                         float at = stations[j - 1] + (q + 0.5f) * w / steps;
-                        lo.Clear();
-                        hi.Clear();
-                        for (int i = 0; i < count; i++)
-                        {
-                            float min = float.MaxValue, max = float.MinValue;
-                            int corners = v[i].Length;
-                            for (int k = 0; k < corners; k++)
-                            {
-                                int k2 = (k + 1) % corners;
-                                float v1 = v[i][k], v2 = v[i][k2];
-                                if ((v1 - at) * (v2 - at) > 0 || v1 == v2)
-                                    continue;
-                                float x = u[i][k] + (at - v1) / (v2 - v1) * (u[i][k2] - u[i][k]);
-                                min = Math.Min(min, x);
-                                max = Math.Max(max, x);
-                            }
-
-                            if (max > min)
-                            {
-                                lo.Add(min);
-                                hi.Add(max);
-                            }
-                        }
-
-                        double chord = MergedLength(lo, hi);
+                        double chord = ChordAt(at, 0, count);
+                        if (chord > 0)
+                            memberArea += chord * w / steps;
+                        else
+                            chord = ChordAt(at, count, all);
                         if (chord <= 0)
                             continue;
                         if (span <= 0)
@@ -1467,9 +1902,9 @@ namespace ferram4
                     return false;
                 double det = sw * swvv - swv * swv;
                 HalfChordTan = det > 1e-9 ? Math.Abs((sw * swvu - swv * swu) / det) : 0;
-                // the share of the panels' planforms that overlaps: FAR's trapezoids of panels that only abut can overlap a
-                // little at the joint, so the first 3 % counts as abutting, not stacked
-                double overlap = Math.Max(0, 1 - area / Math.Max(trapezoidArea, 1e-6) - 0.03);
+                // the share of the members' planforms that overlaps: FAR's trapezoids of panels that only abut can overlap
+                // a little at the joint, so the first 3 % counts as abutting, not stacked
+                double overlap = Math.Max(0, 1 - memberArea / Math.Max(trapezoidArea, 1e-6) - 0.03);
                 // in FAR's panel areas (a control surface's outline is its mesh's, not FAR's planform)
                 area *= farArea / Math.Max(trapezoidArea, 1e-6);
                 B2 = span;
@@ -1503,7 +1938,7 @@ namespace ferram4
                         // ...and the body reaches the root (a panel out on the wing can hang from a part on the centerline)
                         float rootEnd = rootAtMin ? vMin : vMax;
                         RootOnCenter = MirrorMeetsAt(c, s, tipToTip) &&
-                                       Reach(rootAtMin ? bodyMin : bodyMax, c, s) >= Math.Abs(rootEnd - c) - (0.05 * tipToTip + 0.1);
+                                       Reach(rootAtMin ? bodyMin : bodyMax, c, f, s, n) >= Math.Abs(rootEnd - c) - (0.05 * tipToTip + 0.1);
                         TipToTip = tipToTip;
                         double strip = RootStrip(rootAtMin ? bodyMin : bodyMax, c, f, s, n, u, v);
                         BodyStrip = strip > 0 ? strip : (rootAtMin ? chordAtMin : chordAtMax) * (0.5 * tipToTip - span);
@@ -1514,10 +1949,6 @@ namespace ferram4
             }
 
             /// <summary>
-            ///     Whether c (across the flow) is about midway between the wing and its mirror image, its panels' symmetry
-            ///     counterparts in about the same plane; true for a wing without one
-            /// </summary>
-            /// <summary>
             ///     Where a body's center lies across the flow: its part's position; for a skin (a wing part, see BodyBeyond),
             ///     which sits off center on the side of the fuselage it makes, where the wing meets its mirror image
             /// </summary>
@@ -1525,11 +1956,15 @@ namespace ferram4
             {
                 if (body == null)
                     return none;
-                if (body.FindModuleImplementing<FARWingAerodynamicModel>() != null && MirrorCenter(s, out float center))
+                if (WingOf(body) != null && MirrorCenter(s, out float center))
                     return center;
                 return Vector3.Dot(Frame.InverseTransformPoint(body.partTransform.position), s);
             }
 
+            /// <summary>
+            ///     Whether c (across the flow) is about midway between the wing and its mirror image, its panels' symmetry
+            ///     counterparts in about the same plane; true for a wing without one
+            /// </summary>
             private bool MirrorMeetsAt(float c, Vector3 s, double tipToTip) =>
                 !MirrorCenter(s, out float center) || Math.Abs(center - c) <= 0.05 * tipToTip + 0.1;
 
@@ -1640,29 +2075,13 @@ namespace ferram4
             }
 
             /// <summary>
-            ///     How far a part's model reaches from c across the flow (m): its meshes' bounds in their own frames,
-            ///     turned with the part, so the answer does not depend on how the vessel sits in the world
+            ///     How far a part's model reaches from c across the flow (m): its box (BoxOf), so the answer does not depend
+            ///     on how the vessel sits in the world; 0 without a mesh
             /// </summary>
-            private float Reach(Part p, float c, Vector3 s)
+            private float Reach(Part p, float c, Vector3 f, Vector3 s, Vector3 n)
             {
-                float reach = 0;
-                foreach (MeshFilter mf in p.FindModelComponents<MeshFilter>())
-                {
-                    if (mf == null || mf.sharedMesh == null)
-                        continue;
-                    Bounds b = mf.sharedMesh.bounds;
-                    for (int k = 0; k < 8; k++)
-                    {
-                        Vector3 corner = b.center + Vector3.Scale(b.extents,
-                                                                  new Vector3((k & 1) == 0 ? -1 : 1,
-                                                                              (k & 2) == 0 ? -1 : 1,
-                                                                              (k & 4) == 0 ? -1 : 1));
-                        Vector3 q = Frame.InverseTransformPoint(mf.transform.TransformPoint(corner));
-                        reach = Math.Max(reach, Math.Abs(Vector3.Dot(q, s) - c));
-                    }
-                }
-
-                return reach;
+                Box box = BoxOf(p, f, s, n);
+                return box.VMax < box.VMin ? 0 : Math.Max(Math.Abs(box.VMax - c), Math.Abs(c - box.VMin));
             }
 
             /// <summary>A part's model's extent in the wing's frame: along the flow (u), across it (v), along the normal (h)</summary>
@@ -1694,6 +2113,42 @@ namespace ferram4
                     HMin = float.MaxValue,
                     HMax = float.MinValue
                 };
+                foreach (Vector3 q in BoundsCorners(p, Frame).Points)
+                {
+                    float x = Vector3.Dot(q, f), y = Vector3.Dot(q, s), z = Vector3.Dot(q, n);
+                    box.UMin = Math.Min(box.UMin, x);
+                    box.UMax = Math.Max(box.UMax, x);
+                    box.VMin = Math.Min(box.VMin, y);
+                    box.VMax = Math.Max(box.VMax, y);
+                    box.HMin = Math.Min(box.HMin, z);
+                    box.HMax = Math.Max(box.HMax, z);
+                }
+
+                return box;
+            }
+
+            private sealed class Corners8
+            {
+                public Vector3[] Points;
+                public int Generation;
+                public Transform Frame;
+                // a sphere around Points (Radius negative: no points)
+                public Vector3 Center;
+                public float Radius;
+            }
+
+            // each part's mesh-bounds corners in a frame, kept for the generation (by part instance id)
+            private static readonly Dictionary<int, Corners8> boundsCorners = new Dictionary<int, Corners8>();
+
+            /// <summary>The corners of the bounds of a part's model meshes, in frame</summary>
+            private static Corners8 BoundsCorners(Part p, Transform frame)
+            {
+                int key = p.GetInstanceID(), generation = GenerationOf(p);
+                if (boundsCorners.TryGetValue(key, out Corners8 kept) && kept.Generation == generation && kept.Frame == frame)
+                    return kept;
+                if (boundsCorners.Count > 4096)
+                    boundsCorners.Clear();
+                var points = new List<Vector3>();
                 foreach (MeshFilter mf in p.FindModelComponents<MeshFilter>())
                 {
                     if (mf == null || mf.sharedMesh == null)
@@ -1705,18 +2160,27 @@ namespace ferram4
                                                                   new Vector3((k & 1) == 0 ? -1 : 1,
                                                                               (k & 2) == 0 ? -1 : 1,
                                                                               (k & 4) == 0 ? -1 : 1));
-                        Vector3 q = Frame.InverseTransformPoint(mf.transform.TransformPoint(corner));
-                        float x = Vector3.Dot(q, f), y = Vector3.Dot(q, s), z = Vector3.Dot(q, n);
-                        box.UMin = Math.Min(box.UMin, x);
-                        box.UMax = Math.Max(box.UMax, x);
-                        box.VMin = Math.Min(box.VMin, y);
-                        box.VMax = Math.Max(box.VMax, y);
-                        box.HMin = Math.Min(box.HMin, z);
-                        box.HMax = Math.Max(box.HMax, z);
+                        points.Add(frame.InverseTransformPoint(mf.transform.TransformPoint(corner)));
                     }
                 }
 
-                return box;
+                var corners = new Corners8 { Points = points.ToArray(), Generation = generation, Frame = frame, Radius = -1 };
+                if (points.Count > 0)
+                {
+                    Vector3 min = points[0], max = points[0];
+                    foreach (Vector3 q in points)
+                    {
+                        min = Vector3.Min(min, q);
+                        max = Vector3.Max(max, q);
+                    }
+
+                    corners.Center = 0.5f * (min + max);
+                    foreach (Vector3 q in points)
+                        corners.Radius = Math.Max(corners.Radius, (q - corners.Center).magnitude);
+                }
+
+                boundsCorners[key] = corners;
+                return corners;
             }
 
             /// <summary>A part that is not a wing and every such part joined to it through parts that are not wings</summary>
@@ -1729,19 +2193,19 @@ namespace ferram4
                 {
                     Part p = open.Pop();
                     foreach (Part next in p.children.Concat(new[] { p.parent }))
-                        if (next != null && next.FindModuleImplementing<FARWingAerodynamicModel>() == null && set.Add(next))
+                        if (next != null && WingOf(next) == null && set.Add(next))
                             open.Push(next);
                 }
 
                 return set;
             }
 
-            /// <summary>The area of the control surfaces on this wing that are not shielded (m^2)</summary>
+            /// <summary>The area of the control surfaces on this wing that are not shielded at rest (m^2)</summary>
             private double FindControlArea()
             {
                 double sum = 0;
                 foreach (FARWingAerodynamicModel w in Controls())
-                    if (!w.isShielded)
+                    if (!Shielded(w))
                         sum += w.S;
                 return sum;
             }
@@ -1769,7 +2233,7 @@ namespace ferram4
                 {
                     if (p == null || FrameOf(p) != Frame)
                         continue;
-                    FARWingAerodynamicModel w = p.FindModuleImplementing<FARWingAerodynamicModel>();
+                    FARWingAerodynamicModel w = WingOf(p);
                     if (!(w is FARControllableSurface))
                         continue;
                     Panel c = MakePanel(w, Frame);
@@ -1837,13 +2301,13 @@ namespace ferram4
                 var members = new HashSet<FARWingAerodynamicModel>(Members);
                 foreach (Part p in vesselParts)
                 {
-                    FARWingAerodynamicModel w = p == null ? null : p.FindModuleImplementing<FARWingAerodynamicModel>();
-                    if (w == null || w.isShielded || members.Contains(w) || w.MAC_actual <= 0)
+                    FARWingAerodynamicModel w = p == null ? null : WingOf(p);
+                    if (w == null || Shielded(w) || members.Contains(w) || w.MAC_actual <= 0)
                         continue;
                     // the wing's own control surfaces are the wing (FAR's planform of a sheared one can reach past its root),
                     // and their mirror images the mirror wing's (an elevator across the centerline to meet its mirror)
                     if (w is FARControllableSurface && (Holds(w) || p.symmetryCounterparts.Any(m =>
-                            m != null && m.FindModuleImplementing<FARWingAerodynamicModel>() is FARWingAerodynamicModel mw && Holds(mw))))
+                            m != null && WingOf(m) is FARWingAerodynamicModel mw && Holds(mw))))
                         continue;
                     if (Math.Abs(Vector3.Dot(Frame.InverseTransformDirection(p.partTransform.forward), n)) < 0.7f)
                         continue;
@@ -1952,6 +2416,8 @@ namespace ferram4
                 float h = hSum / hCount, height = 0.2f + 0.25f * (tipHi - tipLo);
                 const float gap = 0.05f;
                 float side = Vector3.Dot(outward, s) > 0 ? 1 : -1;
+                // a sphere's reach along s or n (both about unit vectors), with a little to spare for rounding
+                float reachScale = Math.Max(s.magnitude, n.magnitude) * 1.001f;
 
                 // the stretches of the end's chord that other parts cover, just beyond the end
                 var members = new HashSet<FARWingAerodynamicModel>(Members);
@@ -1961,7 +2427,7 @@ namespace ferram4
                 {
                     if (p == null)
                         continue;
-                    FARWingAerodynamicModel w = p.FindModuleImplementing<FARWingAerodynamicModel>();
+                    FARWingAerodynamicModel w = WingOf(p);
                     // the wing's own panels are the wing, not what its end meets; a control surface is no endplate (its
                     // model moves as it deflects, so it would cover the end differently in flight than in the editor); nor
                     // is a panel in about the wing's plane, which carries the wing on (it is left out of the wing only when
@@ -1969,6 +2435,12 @@ namespace ferram4
                     // or a fin standing out of the plane closes the end
                     if (w != null && (members.Contains(w) || w is FARControllableSurface ||
                                       Math.Abs(Vector3.Dot(Frame.InverseTransformDirection(p.partTransform.forward), n)) >= MinCos))
+                        continue;
+                    // nor a part whose bounds' sphere reaches neither past the end nor to its height (see below)
+                    Corners8 bounds = BoundsCorners(p, Frame);
+                    float r = bounds.Radius * reachScale, cs = Vector3.Dot(bounds.Center, s), cn = Vector3.Dot(bounds.Center, n);
+                    if (bounds.Radius < 0 || (side > 0 ? cs + r <= end + gap : cs - r >= end - gap) ||
+                        cn - r > h + height || cn + r < h - height)
                         continue;
                     Box box = BoxOf(p, f, s, n);
                     if (box.UMax < box.UMin)
@@ -2007,8 +2479,8 @@ namespace ferram4
                 {
                     if (p == null)
                         return;
-                    FARWingAerodynamicModel w = p.FindModuleImplementing<FARWingAerodynamicModel>();
-                    if (w != null && (!parent || !w.isShielded &&
+                    FARWingAerodynamicModel w = WingOf(p);
+                    if (w != null && (!parent || !Shielded(w) &&
                                       Math.Abs(Vector3.Dot(Frame.InverseTransformDirection(p.partTransform.forward),
                                                            panels[0].Normal)) >= SkinCos))
                         return;
