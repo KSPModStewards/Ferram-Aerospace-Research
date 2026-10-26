@@ -69,6 +69,10 @@ namespace FerramAerospaceResearch
         public static Callback Toggle = delegate { };
         private static bool debugMenu;
         private static bool inputLocked;
+        // the model options window (the toolbar button's right click)
+        private static bool modelOptions;
+        private static bool modelOptionsLocked;
+        private static Rect modelWinPos = new Rect(80, 120, 380, 100);
 
         private static readonly string[] MenuTab_str =
         {
@@ -169,6 +173,14 @@ namespace FerramAerospaceResearch
                                                                                  ApplicationLauncher.AppScenes.SPH |
                                                                                  ApplicationLauncher.AppScenes.FLIGHT,
                                                                                  FARAssets.Instance.Textures.IconLarge);
+            // right click: the model options, in every scene the button is in
+            FARDebugButtonStock.onRightClick = ToggleModelOptions;
+        }
+
+        /// <summary>The model options window shown or hidden (the toolbar button's right click)</summary>
+        public static void ToggleModelOptions()
+        {
+            modelOptions = !modelOptions;
         }
 
         private static void onAppLaunchToggle()
@@ -185,6 +197,8 @@ namespace FerramAerospaceResearch
 
         public void OnGUI()
         {
+            ModelOptionsGUI();
+
             if (HighLogic.LoadedScene != GameScenes.SPACECENTER)
             {
                 debugMenu = false;
@@ -219,6 +233,71 @@ namespace FerramAerospaceResearch
             {
                 InputLockManager.RemoveControlLock("FARDebugLock");
                 inputLocked = false;
+            }
+        }
+
+        /// <summary>
+        ///     The model options window: switches between FAR's aerodynamic models, for every tab of the editor's window
+        ///     and in flight alike (FARDebugValues.ModelChanged tells them)
+        /// </summary>
+        private void ModelOptionsGUI()
+        {
+            bool sceneHasButton = HighLogic.LoadedSceneIsEditor || HighLogic.LoadedSceneIsFlight ||
+                                  HighLogic.LoadedScene == GameScenes.SPACECENTER;
+            if (!modelOptions || !sceneHasButton)
+            {
+                ModelOptionsLock(false);
+                return;
+            }
+
+            GUI.skin = HighLogic.Skin;
+            modelWinPos = GUILayout.Window("FARModelOptions".GetHashCode(),
+                                           modelWinPos,
+                                           ModelOptionsWindow,
+                                           "FAR Model Options",
+                                           GUILayout.Width(380));
+            modelWinPos = GUIUtils.ClampToScreen(modelWinPos);
+            ModelOptionsLock(modelWinPos.Contains(GUIUtils.GetMousePos()));
+        }
+
+        private static void ModelOptionsWindow(int windowID)
+        {
+            bool whole = GUILayout.Toggle(FARDebugValues.wholeWingAspectRatio, "Whole-wing aspect ratio");
+            GUILayout.Label(whole
+                                ? "Each wing panel takes the aspect ratio of the whole wing it is part of."
+                                : "Each wing panel keeps its own aspect ratio (upstream FAR).");
+            if (whole != FARDebugValues.wholeWingAspectRatio)
+            {
+                FARDebugValues.wholeWingAspectRatio = whole;
+                FARWingInteraction.InvalidateWingGroups();
+                FARDebugValues.OnModelChanged();
+            }
+
+            if (GUILayout.Button("Close"))
+                modelOptions = false;
+            GUI.DragWindow();
+        }
+
+        // the editor (or KSC) not clicked through the window
+        private static void ModelOptionsLock(bool locked)
+        {
+            if (locked == modelOptionsLocked)
+                return;
+            modelOptionsLocked = locked;
+            if (HighLogic.LoadedSceneIsEditor && EditorLogic.fetch != null)
+            {
+                if (locked)
+                    EditorLogic.fetch.Lock(false, false, false, "FARModelOptionsLock");
+                else
+                    EditorLogic.fetch.Unlock("FARModelOptionsLock");
+            }
+            else if (locked)
+            {
+                InputLockManager.SetControlLock(ControlTypes.KSC_ALL | ControlTypes.CAMERACONTROLS, "FARModelOptionsLock");
+            }
+            else
+            {
+                InputLockManager.RemoveControlLock("FARModelOptionsLock");
             }
         }
 
@@ -580,6 +659,11 @@ namespace FerramAerospaceResearch
             else
                 FARDebugValues.aeroFailureExplosions = true;
 
+            if (node.HasValue("wholeWingAspectRatio") && bool.TryParse(node.GetValue("wholeWingAspectRatio"), out tmp))
+                FARDebugValues.wholeWingAspectRatio = tmp;
+            else
+                FARDebugValues.wholeWingAspectRatio = true;
+
             FARAeroUtil.LoadAeroDataFromConfig();
             FARActionGroupConfiguration.LoadConfiguration();
 
@@ -601,6 +685,7 @@ namespace FerramAerospaceResearch
             node.AddValue("showMomentArrows", FARDebugValues.showMomentArrows);
             node.AddValue("useBlizzyToolbar", FARDebugValues.useBlizzyToolbar & ToolbarManager.ToolbarAvailable);
             node.AddValue("aeroFailureExplosions", FARDebugValues.aeroFailureExplosions);
+            node.AddValue("wholeWingAspectRatio", FARDebugValues.wholeWingAspectRatio);
 
             FARActionGroupConfiguration.SaveConfiguration();
             // save in off thread so that it doesn't delay scene changes
@@ -632,5 +717,17 @@ namespace FerramAerospaceResearch
 
         public static bool useBlizzyToolbar;
         public static bool aeroFailureExplosions = true;
+
+        // the aspect ratio of the whole wing a panel is part of (and that wing's sweep and the lift of the body between
+        // its roots); off: each panel's own, as before. Set in the model options window
+        public static bool wholeWingAspectRatio = true;
+
+        /// <summary>A model option changed: the editor's analyses go stale</summary>
+        public static event Action ModelChanged;
+
+        public static void OnModelChanged()
+        {
+            ModelChanged?.Invoke();
+        }
     }
 }

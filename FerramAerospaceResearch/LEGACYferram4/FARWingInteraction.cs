@@ -908,11 +908,12 @@ namespace ferram4
 
         /// <summary>
         ///     The wing group this panel takes its aspect ratio from: the wing a control surface is on, else the panel's own
-        ///     group; null when the panel keeps its own aspect ratio (a lone panel or a shielded one)
+        ///     group; null when the panel keeps its own aspect ratio (a lone panel, a shielded one, or whole-wing aspect
+        ///     ratios off)
         /// </summary>
         private WingGroup GroupForAR()
         {
-            if (parentWingPart == null || vesselParts == null)
+            if (!FARDebugValues.wholeWingAspectRatio || parentWingPart == null || vesselParts == null)
                 return null;
             // a control surface is part of the wing it is on, and takes that wing's aspect ratio
             if (parentWingModule is FARControllableSurface && FindHostWing() && AsWing(hostWing))
@@ -923,13 +924,19 @@ namespace ferram4
         }
 
         /// <summary>
+        ///     The wing this panel takes its aspect ratio from (a control surface: the wing it is on), one object for every
+        ///     panel of it; null when the panel keeps its own. For the editor's Components tab
+        /// </summary>
+        internal object WingKey => GroupForAR();
+
+        /// <summary>
         ///     The effective aspect ratio of this panel. Panels that touch, in about the same plane, are one wing however it
         ///     was cut: along the span, along the chord, or overlapping. Each panel takes the aspect ratio of the whole wing
         ///     (WingGroup.AspectRatio), and a control surface that of the wing it is on. For a wing on a bare body it also
         ///     sets the whole wing's half-chord sweep and the factor for the lift of the body between the roots
         ///     (GroupTanSweep, BodyLiftFactor). A wing of one panel is a wing too when its root is on the body where it
         ///     meets its mirror image. Any other panel that touches no other keeps its own aspect ratio times ARFactor, as
-        ///     before.
+        ///     before. With FARDebugValues.wholeWingAspectRatio off, every panel keeps its own (upstream's model).
         /// </summary>
         /// <param name="transformedAR">This panel's own aspect ratio (semispan over chord, along the flow)</param>
         internal double SpanChainedAR(double transformedAR)

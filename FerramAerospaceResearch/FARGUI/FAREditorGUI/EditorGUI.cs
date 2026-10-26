@@ -199,11 +199,19 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             GameEvents.onEditorRedo.Add(ResetEditorEvent);
             GameEvents.onEditorShipModified.Add(ResetEditorEvent);
             GameEvents.onEditorLoad.Add(ResetEditorEvent);
+            FARDebugValues.ModelChanged += OnModelChanged;
 
             GameEvents.onGUIEngineersReportReady.Add(AddDesignConcerns);
             GameEvents.onGUIEngineersReportDestroy.Add(RemoveDesignConcerns);
 
             RequestUpdateVoxel();
+        }
+
+        // a model option changed (the model options window): the Components tab recomputes; the other tabs' results are
+        // from their last run, and show the new model when run again
+        private void OnModelChanged()
+        {
+            _components?.MarkDirty();
         }
 
         private void AddDesignConcerns()
@@ -233,6 +241,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             GameEvents.onEditorRedo.Remove(ResetEditorEvent);
             GameEvents.onEditorShipModified.Remove(ResetEditorEvent);
             GameEvents.onEditorLoad.Remove(ResetEditorEvent);
+            FARDebugValues.ModelChanged -= OnModelChanged;
 
             GameEvents.onGUIEngineersReportReady.Remove(AddDesignConcerns);
             GameEvents.onGUIEngineersReportDestroy.Remove(RemoveDesignConcerns);
@@ -750,7 +759,14 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             blizzyEditorGUIButton = ToolbarManager.Instance.add("FerramAerospaceResearch", "FAREditorButtonBlizzy");
             blizzyEditorGUIButton.TexturePath = FARAssets.Instance.Textures.IconSmall.Url;
             blizzyEditorGUIButton.ToolTip = "FAR Editor";
-            blizzyEditorGUIButton.OnClick += e => showGUI = !showGUI;
+            // right click: the model options
+            blizzyEditorGUIButton.OnClick += e =>
+            {
+                if (e.MouseButton == 1)
+                    FARDebugAndSettings.ToggleModelOptions();
+                else
+                    showGUI = !showGUI;
+            };
         }
 
         public static void onAppLaunchToggle()
