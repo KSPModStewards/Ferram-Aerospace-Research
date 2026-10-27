@@ -1154,6 +1154,9 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             double ut = Planetarium.GetUniversalTime();
 
             PerformanceEnvelopeCalculator calc = _simManager.EnvelopeCalculator;
+            // A part with another mod's AeroForceModifier keeps the sweep on the main thread: the modifier is called
+            // with the live part (BeginParallelSweep refuses such a vessel).
+            bool multithread = _multithread && calc.CanSweepInParallel;
 
             double[] machAxis = _results[0].MachAxis;
             double[] altAxis = _results[0].AltAxis;
@@ -1225,7 +1228,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             // Stand-alone stability pass — only when there is no envelope sweep to ride with (stability
             // only) or multithreading is off. Otherwise the parallel envelope worker below fills each row's
             // stability cells in the same pass.
-            if (includeStab && (_stabilityOnly || !_multithread))
+            if (includeStab && (_stabilityOnly || !multithread))
                 for (int j = 0; j < altAxis.Length; j++)
                 {
                     if (_cancelRequested)
@@ -1296,7 +1299,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
             _extrapolatedCount = 0;
 
-            if (_multithread)
+            if (multithread)
             {
                 // Parallel sweep. When the interop can drive per-worker engine solver clones, the trim
                 // and engine passes run merged in ONE parallel loop over altitude rows, so each row's

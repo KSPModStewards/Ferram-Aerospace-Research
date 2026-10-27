@@ -56,13 +56,17 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             _instantCondition = instantConditionSim;
         }
 
+        /// <summary>Whether the sweep may run on worker threads (see InstantConditionSim.CanSweepInParallel).</summary>
+        public bool CanSweepInParallel => _instantCondition.CanSweepInParallel;
+
         /// <summary>
         /// Freezes the main-thread-only geometry the aero solve reads so the cruise trim can run on
-        /// worker threads. Main thread only; pair with <see cref="EndParallelSweep" />.
+        /// worker threads. Main thread only; pair with <see cref="EndParallelSweep" />. False, having set
+        /// up nothing, when <see cref="CanSweepInParallel" /> is false.
         /// </summary>
-        public void BeginParallelSweep()
+        public bool BeginParallelSweep()
         {
-            _instantCondition.BeginParallelSweep();
+            return _instantCondition.BeginParallelSweep();
         }
 
         public void EndParallelSweep()
