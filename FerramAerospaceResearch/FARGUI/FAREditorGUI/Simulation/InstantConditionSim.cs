@@ -430,12 +430,26 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         /// another mod sets, called with the live part, which may read game state): run the sweep
         /// serially then.
         /// </summary>
+        /// <summary>
+        /// Whether a sweep may run on worker threads: false when a part carries an AeroForceModifier,
+        /// which is called with the live part and may read game state. Main thread.
+        /// </summary>
+        public bool CanSweepInParallel
+        {
+            get
+            {
+                if (_currentAeroModules != null)
+                    foreach (FARAeroPartModule m in _currentAeroModules)
+                        if (m != null && m.AeroForceModifier != null)
+                            return false;
+                return true;
+            }
+        }
+
         public bool BeginParallelSweep()
         {
-            if (_currentAeroModules != null)
-                foreach (FARAeroPartModule m in _currentAeroModules)
-                    if (m != null && m.AeroForceModifier != null)
-                        return false;
+            if (!CanSweepInParallel)
+                return false;
 
             _simEditorFacility = EditorDriver.editorFacility;
             _simCoM = ComputeEditorCoM();
