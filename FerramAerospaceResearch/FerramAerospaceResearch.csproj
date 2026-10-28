@@ -196,8 +196,15 @@
     <Compile Include="FARPM.cs" />
     <Compile Include="FARThreading\ThreadBarrier.cs" />
     <Compile Include="FARAtmosphere.cs" />
+    <Compile Include="FARLogAnyThread.cs" />
     <Compile Include="LEGACYferram4\FARWingAerodynamicModel.cs" />
     <Compile Include="LEGACYferram4\FARWingInteraction.cs" />
+    <Compile Include="LEGACYferram4\Scratch\FrozenPartTransform.cs" />
+    <Compile Include="LEGACYferram4\Scratch\ExactCurve.cs" />
+    <Compile Include="LEGACYferram4\Scratch\SimThreadContext.cs" />
+    <Compile Include="LEGACYferram4\Scratch\WingScratch.cs" />
+    <Compile Include="LEGACYferram4\Scratch\WingInteractionScratch.cs" />
+    <Compile Include="LEGACYferram4\Scratch\ControlSurfaceScratch.cs" />
     <Compile Include="FARKSPAddonFlightScene.cs" />
     <Compile Include="InstallChecker.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

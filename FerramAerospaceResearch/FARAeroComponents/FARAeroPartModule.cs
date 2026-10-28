@@ -67,6 +67,37 @@ namespace FerramAerospaceResearch.FARAeroComponents
         public Vector3 partLocalVelNorm;
         public Vector3 partLocalAngVel;
 
+        // Snapshot of this part's transform and CoM offset, non-null only while a heatmap sweep
+        // is running. When set, the parallel body-section force evaluation (SimulatedForceContext)
+        // reads geometry from it instead of the Unity Transform, which is main-thread-only.
+        public ferram4.FrozenPartTransform? SimGeom;
+        public Vector3 SimCoMOffset;
+
+        /// <summary>
+        /// SimGeom on a sweep worker (SimThreadContext.InSweep), else none: the main thread's own evaluations during
+        /// a sweep read the live transform, as they do outside one.
+        /// </summary>
+        public ferram4.FrozenPartTransform? SweepGeom
+        {
+            get { return ferram4.SimThreadContext.InSweep ? SimGeom : null; }
+        }
+
+        /// <summary>
+        /// Captures (or, with capture=false, releases) the transform snapshot the parallel sweep
+        /// reads from. Must be called on the main thread.
+        /// </summary>
+        public void SetSimGeometry(bool capture)
+        {
+            if (!capture)
+            {
+                SimGeom = null;
+                return;
+            }
+
+            SimGeom = new ferram4.FrozenPartTransform(part.partTransform);
+            SimCoMOffset = part.CoMOffset;
+        }
+
         private Vector3 worldSpaceVelNorm;
         public Vector3 worldSpaceAeroForce;
         public Vector3 worldSpaceTorque;

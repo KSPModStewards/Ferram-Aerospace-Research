@@ -45,6 +45,7 @@ Copyright 2022, Michael Ferrara, aka Ferram4
 using System;
 using System.Globalization;
 using UnityEngine;
+using FerramAerospaceResearch.Threading;
 
 namespace FerramAerospaceResearch
 {
@@ -398,8 +399,9 @@ namespace FerramAerospaceResearch
                 if (q1 == q0)
                 {
                     if (p1 != p0)
-                        FARLogger.Warning($"Tolerance of {(p1 - p0).ToString(CultureInfo.InvariantCulture)} reached");
-                    FARLogger.Debug($"Secant method converged in {funcCalls.ToString()} function calls");
+                        SweepQuietWarning($"Tolerance of {(p1 - p0).ToString(CultureInfo.InvariantCulture)} reached");
+                    if (MainThread.IsMainThread)
+                        FARLogger.Debug($"Secant method converged in {funcCalls.ToString()} function calls");
                     return new OptimizationResult((p1 + p0) / 2, funcCalls, true);
                 }
 
@@ -410,7 +412,8 @@ namespace FerramAerospaceResearch
 
                 if (IsClose(p, p1, tol, rTol))
                 {
-                    FARLogger.Debug($"Secant method converged in {funcCalls.ToString()} function calls with tolerance of {(p1 - p).ToString(CultureInfo.InvariantCulture)}");
+                    if (MainThread.IsMainThread)
+                        FARLogger.Debug($"Secant method converged in {funcCalls.ToString()} function calls with tolerance of {(p1 - p).ToString(CultureInfo.InvariantCulture)}");
                     return new OptimizationResult(p, funcCalls, true);
                 }
 
@@ -420,13 +423,13 @@ namespace FerramAerospaceResearch
 
                 if (double.IsNaN(p0) && double.IsNaN(p1))
                 {
-                    FARLogger.Warning($"Both {nameof(p0)} and {nameof(p1)} are NaN, used {funcCalls.ToString()} function calls");
+                    SweepQuietWarning($"Both {nameof(p0)} and {nameof(p1)} are NaN, used {funcCalls.ToString()} function calls");
                     return new OptimizationResult(p, funcCalls);
                 }
 
                 if (p1 < minLimit && p0 < minLimit || p1 > maxLimit && p0 > maxLimit)
                 {
-                    FARLogger.Warning($"{nameof(p1)} and {nameof(p0)} are outside the limits, used {funcCalls.ToString()} function calls");
+                    SweepQuietWarning($"{nameof(p1)} and {nameof(p0)} are outside the limits, used {funcCalls.ToString()} function calls");
                     return new OptimizationResult(p, funcCalls);
                 }
 
@@ -434,9 +437,18 @@ namespace FerramAerospaceResearch
                 funcCalls++;
             }
 
-            FARLogger.Warning($"Secant method failed to converge in {funcCalls.ToString()} function calls");
+            SweepQuietWarning($"Secant method failed to converge in {funcCalls.ToString()} function calls");
             return new OptimizationResult(p, funcCalls);
             // ReSharper restore CompareOfFloatsByEqualityOperator
+        }
+
+        // The secant solver's convergence diagnostics would flood from the parallel envelope sweep's
+        // worker threads, and from a snapshot prediction on another thread, where any Unity log call
+        // (FARLogger routes to Debug.LogFormat) is a native-crash risk. Only the main thread logs them.
+        private static void SweepQuietWarning(string message)
+        {
+            if (MainThread.IsMainThread)
+                FARLogger.Warning(message);
         }
 
         public struct OptimizationResult

@@ -44,6 +44,7 @@ Copyright 2022, Michael Ferrara, aka Ferram4
 
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using ferram4;
 using FerramAerospaceResearch.FARPartGeometry;
 using Unity.Mathematics;
@@ -55,6 +56,12 @@ namespace FerramAerospaceResearch.FARAeroComponents
     {
         private static FloatCurve crossFlowDragMachCurve;
         private static FloatCurve crossFlowDragReynoldsCurve;
+
+        // The cross-flow curves as every slot evaluates them: exact copies that any thread can evaluate (a Unity
+        // FloatCurve keeps a segment cache and is not safe to evaluate concurrently). See ExactCurve.
+        private static volatile ExactCurve crossFlowDragMachExact;
+        private static volatile ExactCurve crossFlowDragReynoldsExact;
+        private static readonly object crossFlowLock = new object();
 
         public FARFloatCurve xForcePressureAoA0;
         public FARFloatCurve xForcePressureAoA180;
@@ -473,8 +480,26 @@ namespace FerramAerospaceResearch.FARAeroComponents
             }
         }
 
-        private readonly SimulatedForceContext simContext =
-            new SimulatedForceContext(Vector3.zero, new FARCenterQuery(), 0.0f);
+        // One force context per thread slot (see SimThreadContext); an array index is much cheaper
+        // than ThreadLocal.Value under Mono. Each slot is single-threaded, so lazy create is safe.
+        private readonly SimulatedForceContext[] simContextSlots =
+            new SimulatedForceContext[SimThreadContext.MaxSlots];
+
+        private SimulatedForceContext SimContext
+        {
+            get
+            {
+                int s = SimThreadContext.Slot;
+                SimulatedForceContext c = simContextSlots[s];
+                if (c == null)
+                {
+                    c = new SimulatedForceContext(Vector3.zero, new FARCenterQuery(), 0.0f);
+                    simContextSlots[s] = c;
+                }
+
+                return c;
+            }
+        }
 
         public void PredictionCalculateAeroForces(
             float atmDensity,
@@ -486,6 +511,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
             FARCenterQuery center
         )
         {
+            SimulatedForceContext simContext = SimContext;
             simContext.UpdateSimulationContext(vel, center, atmDensity);
             CalculateAeroForces(machNumber, reynoldsPerUnitLength, pseudoKnudsenNumber, skinFrictionDrag, simContext);
         }
@@ -508,9 +534,17 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         public static void GenerateCrossFlowDragCurve()
         {
-            if (crossFlowDragMachCurve != null)
+            if (crossFlowDragReynoldsExact != null)
                 return;
+            lock (crossFlowLock)
+            {
+                if (crossFlowDragReynoldsExact == null)
+                    BuildCrossFlowDragCurves();
+            }
+        }
 
+        private static void BuildCrossFlowDragCurves()
+        {
             crossFlowDragMachCurve = new FloatCurve();
             crossFlowDragMachCurve.Add(0, 1.2f, 0, 0);
             crossFlowDragMachCurve.Add(0.3f, 1.2f, 0, 0);
@@ -532,19 +566,22 @@ namespace FerramAerospaceResearch.FARAeroComponents
             crossFlowDragReynoldsCurve.Add(500000, 0.20833333333333333333333333333333f, 0, 0);
             crossFlowDragReynoldsCurve.Add(1000000, 0.33333333333333333333333333333333f, 7E-8f, 7E-8f);
             crossFlowDragReynoldsCurve.Add(10000000, 0.58333333333333333333333333333333f, 0, 0);
+
+            crossFlowDragMachExact = new ExactCurve(crossFlowDragMachCurve);
+            crossFlowDragReynoldsExact = new ExactCurve(crossFlowDragReynoldsCurve);
         }
 
         private static float CalculateCrossFlowDrag(float crossFlowMach, float crossFlowReynolds)
         {
             if (crossFlowMach > 0.5f)
-                return crossFlowDragMachCurve.Evaluate(crossFlowMach);
+                return crossFlowDragMachExact.Evaluate(crossFlowMach);
             float reynoldsInfluenceFactor = 1;
             if (crossFlowMach > 0.4f)
                 reynoldsInfluenceFactor -= (crossFlowMach - 0.4f) * 10;
 
-            float crossFlowDrag = crossFlowDragReynoldsCurve.Evaluate(crossFlowReynolds);
+            float crossFlowDrag = crossFlowDragReynoldsExact.Evaluate(crossFlowReynolds);
             crossFlowDrag = (crossFlowDrag - 1) * reynoldsInfluenceFactor + 1;
-            crossFlowDrag *= crossFlowDragMachCurve.Evaluate(crossFlowMach);
+            crossFlowDrag *= crossFlowDragMachExact.Evaluate(crossFlowMach);
 
             return crossFlowDrag;
         }

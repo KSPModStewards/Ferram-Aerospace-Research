@@ -43,6 +43,7 @@ Copyright 2022, Michael Ferrara, aka Ferram4
  */
 
 using System;
+using System.Threading;
 using FerramAerospaceResearch;
 using FerramAerospaceResearch.Settings;
 using UnityEngine;
@@ -220,25 +221,150 @@ namespace ferram4
                        stepIncrement = 0.05f)]
         public float minControl = 0.1f;
 
-        protected double PitchLocation;
-        protected double YawLocation;
-        protected double RollLocation;
-        protected double BrakeRudderLocation;
-        protected double BrakeRudderSide;
-        protected int flapLocation;
-        protected int spoilerLocation;
+        // Per-call control-surface state, thread-local so the parallel heatmap sweep can
+        // evaluate independent cells against the same surface concurrently. The wing math
+        // uses the inherited (also thread-local) _scratch; this covers the control-specific
+        // fields. Backed by properties so every existing call site is unchanged; on the
+        // single-threaded flight/editor paths this is the main thread's instance, so
+        // behaviour there is identical.
+        // Per-thread-slot control scratch (see SimThreadContext); array index beats ThreadLocal.Value
+        // under Mono. Each slot is single-threaded, so the lazy create needs no synchronisation.
+        private readonly ControlSurfaceScratch[] _ctrlScratchSlots =
+            new ControlSurfaceScratch[SimThreadContext.MaxSlots];
 
-        private double AoAsign = 1;
+        private ControlSurfaceScratch _ctrlScratch
+        {
+            get
+            {
+                int s = SimThreadContext.Slot;
+                ControlSurfaceScratch sc = _ctrlScratchSlots[s];
+                if (sc == null)
+                {
+                    sc = new ControlSurfaceScratch {IsShielded = isShielded};
+                    _ctrlScratchSlots[s] = sc;
+                }
+
+                return sc;
+            }
+        }
+
+        // A control surface also reads the root part's transform and its parent's position;
+        // snapshot those alongside the base part transform for the off-thread sweep.
+        private FrozenPartTransform? simRootGeom;
+        private Vector3 simParentPos;
+
+        public override void SetSimGeometry(bool capture)
+        {
+            base.SetSimGeometry(capture);
+            if (!capture)
+            {
+                simRootGeom = null;
+                return;
+            }
+
+            // Each sweep slot starts from the shielding as it is now. A slot's scratch is kept from one sweep to the
+            // next, and between sweeps the shielding can change on the instance (a re-voxelization, a deflection on
+            // the main thread); a slot seeded once would keep a stale value, and a surface it has as shielded is
+            // skipped by the trim and never deflected there again. No worker runs yet (main thread, sweep start).
+            for (int s = 1; s <= SimThreadContext.SweepPoolSize; s++)
+                if (_ctrlScratchSlots[s] != null)
+                    _ctrlScratchSlots[s].IsShielded = isShielded;
+
+            if (EditorLogic.RootPart != null)
+                simRootGeom = new FrozenPartTransform(EditorLogic.RootPart.partTransform);
+            simParentPos = part.parent != null ? part.parent.partTransform.position : Vector3.zero;
+        }
+
+        protected double PitchLocation
+        {
+            get => _ctrlScratch.PitchLocation;
+            set => _ctrlScratch.PitchLocation = value;
+        }
+
+        protected double YawLocation
+        {
+            get => _ctrlScratch.YawLocation;
+            set => _ctrlScratch.YawLocation = value;
+        }
+
+        protected double RollLocation
+        {
+            get => _ctrlScratch.RollLocation;
+            set => _ctrlScratch.RollLocation = value;
+        }
+
+        protected double BrakeRudderLocation
+        {
+            get => _ctrlScratch.BrakeRudderLocation;
+            set => _ctrlScratch.BrakeRudderLocation = value;
+        }
+
+        protected double BrakeRudderSide
+        {
+            get => _ctrlScratch.BrakeRudderSide;
+            set => _ctrlScratch.BrakeRudderSide = value;
+        }
+
+        protected int flapLocation
+        {
+            get => _ctrlScratch.flapLocation;
+            set => _ctrlScratch.flapLocation = value;
+        }
+
+        protected int spoilerLocation
+        {
+            get => _ctrlScratch.spoilerLocation;
+            set => _ctrlScratch.spoilerLocation = value;
+        }
+
+        private double AoAsign
+        {
+            get => _ctrlScratch.AoAsign;
+            set => _ctrlScratch.AoAsign = value;
+        }
 
         //DaMichel: treat desired AoA's from flap and stick inputs separately for different animation rates
-        private double AoAdesiredControl;
-        private double AoAdesiredFlap;
-        private double AoAcurrentControl; // current deflection due to control inputs
-        private double AoAcurrentFlap;    // current deflection due to flap/spoiler deployment
-        private double AoAoffset;         // total current deflection
+        private double AoAdesiredControl
+        {
+            get => _ctrlScratch.AoAdesiredControl;
+            set => _ctrlScratch.AoAdesiredControl = value;
+        }
 
-        private double lastAoAoffset;
-        private Vector3d deflectedNormal = Vector3d.forward;
+        private double AoAdesiredFlap
+        {
+            get => _ctrlScratch.AoAdesiredFlap;
+            set => _ctrlScratch.AoAdesiredFlap = value;
+        }
+
+        private double AoAcurrentControl // current deflection due to control inputs
+        {
+            get => _ctrlScratch.AoAcurrentControl;
+            set => _ctrlScratch.AoAcurrentControl = value;
+        }
+
+        private double AoAcurrentFlap // current deflection due to flap/spoiler deployment
+        {
+            get => _ctrlScratch.AoAcurrentFlap;
+            set => _ctrlScratch.AoAcurrentFlap = value;
+        }
+
+        private double AoAoffset // total current deflection
+        {
+            get => _ctrlScratch.AoAoffset;
+            set => _ctrlScratch.AoAoffset = value;
+        }
+
+        private double lastAoAoffset
+        {
+            get => _ctrlScratch.lastAoAoffset;
+            set => _ctrlScratch.lastAoAoffset = value;
+        }
+
+        private Vector3d deflectedNormal
+        {
+            get => _ctrlScratch.deflectedNormal;
+            set => _ctrlScratch.deflectedNormal = value;
+        }
         public bool brake;
         private bool justStarted;
 
@@ -528,8 +654,20 @@ namespace ferram4
 
         private void CheckShielded()
         {
-            if (NUFAR_areaExposedFactor < 0.1 * S && !NUFAR_totalExposedAreaFactor.NearlyEqual(0))
+            if (!(NUFAR_areaExposedFactor < 0.1 * S) || NUFAR_totalExposedAreaFactor.NearlyEqual(0))
+                return;
+
+            // During the parallel sweep write the per-thread value; the instance field is shared and
+            // read by the solve on other threads, so writing it here would race.
+            if (SimGeom.HasValue)
+                _ctrlScratch.IsShielded = Math.Abs(AoAoffset) <= 5;
+            else
                 isShielded = Math.Abs(AoAoffset) <= 5;
+        }
+
+        public override bool GetShielded()
+        {
+            return SimGeom.HasValue ? _ctrlScratch.IsShielded : isShielded;
         }
 
         public void CalculateSurfaceFunctions()
@@ -671,7 +809,9 @@ namespace ferram4
         public override double CalculateAoA(Vector3d velocity)
         {
             // Use the vector computed by DeflectionAnimation
-            Vector3d perp = part_transform.TransformDirection(deflectedNormal);
+            Vector3d perp = SimGeom.HasValue
+                                ? SimGeom.Value.TransformDirection(deflectedNormal)
+                                : part_transform.TransformDirection(deflectedNormal);
             double PerpVelocity = Vector3d.Dot(perp, velocity.normalized);
             return Math.Asin(PerpVelocity.Clamp(-1, 1));
         }
@@ -764,23 +904,30 @@ namespace ferram4
 
             lastAoAoffset = AoAoffset;
 
-            // Compute a vector for CalculateAoA
+            // Compute a vector for CalculateAoA. deflectedNormal is a property (thread-local
+            // scratch), so its components are updated through a local rather than in place.
             double radAoAoffset = AoAoffset * FARMathUtil.deg2rad * ctrlSurfFrac;
-            deflectedNormal.y = Math.Sin(radAoAoffset);
-            double tmp = 1 - deflectedNormal.y * deflectedNormal.y;
+            Vector3d dn = deflectedNormal;
+            dn.y = Math.Sin(radAoAoffset);
+            double tmp = 1 - dn.y * dn.y;
             if (tmp < 0)
                 tmp = 0;
-            deflectedNormal.z = Math.Sqrt(tmp);
+            dn.z = Math.Sqrt(tmp);
+            deflectedNormal = dn;
 
-            // Visually animate the surface
-            movableSection.localRotation = MovableOrig;
-            if (!AoAoffset.NearlyEqual(0))
+            // Visually animate the surface. Skipped on a sweep worker, off the main thread; the
+            // animation mutates a Unity Transform and is cosmetic.
+            if (!SweepGeom.HasValue)
             {
-                Quaternion localRot = flipAxis
-                                          ? Quaternion.FromToRotation(deflectedNormal, new Vector3(0, 0, 1))
-                                          : Quaternion.FromToRotation(new Vector3(0, 0, 1), deflectedNormal);
+                movableSection.localRotation = MovableOrig;
+                if (!AoAoffset.NearlyEqual(0))
+                {
+                    Quaternion localRot = flipAxis
+                                              ? Quaternion.FromToRotation(deflectedNormal, new Vector3(0, 0, 1))
+                                              : Quaternion.FromToRotation(new Vector3(0, 0, 1), deflectedNormal);
 
-                movableSection.localRotation *= localRot;
+                    movableSection.localRotation *= localRot;
+                }
             }
 
             CheckShielded();
@@ -798,24 +945,40 @@ namespace ferram4
         {
             if (!HighLogic.LoadedSceneIsEditor)
                 return;
-            Transform partTransform = part.partTransform;
-            Transform rootTransform = EditorLogic.RootPart.partTransform;
 
-            // cache transform vectors
-            Vector3 partPosition = partTransform.position;
+            // Transform reads come from the frozen snapshot on a sweep worker (off the main
+            // thread) and from the live transforms otherwise.
+            Vector3 partPosition, partForward, partUp, forward, up, right;
+            FrozenPartTransform? sweepGeom = SweepGeom;
+            if (sweepGeom.HasValue)
+            {
+                partPosition = sweepGeom.Value.Position;
+                partForward = sweepGeom.Value.Forward;
+                partUp = sweepGeom.Value.Up;
+                forward = simRootGeom.Value.Forward;
+                up = simRootGeom.Value.Up;
+                right = simRootGeom.Value.Right;
+            }
+            else
+            {
+                Transform partTransform = part.partTransform;
+                Transform rootTransform = EditorLogic.RootPart.partTransform;
+                partPosition = partTransform.position;
+                partForward = partTransform.forward;
+                partUp = partTransform.up;
+                forward = rootTransform.forward;
+                up = rootTransform.up;
+                right = rootTransform.right;
+            }
+
             Vector3 CoMoffset = partPosition - CoM;
-
-            Vector3 partForward = partTransform.forward;
-            Vector3 forward = rootTransform.forward;
-            Vector3 up = rootTransform.up;
-            Vector3 right = rootTransform.right;
 
             PitchLocation = Vector3.Dot(partForward, forward) * Math.Sign(Vector3.Dot(CoMoffset, up));
             YawLocation = -Vector3.Dot(partForward, right) * Math.Sign(Vector3.Dot(CoMoffset, up));
             RollLocation = Vector3.Dot(partForward, forward) * Math.Sign(Vector3.Dot(CoMoffset, -right));
             BrakeRudderLocation = Vector3.Dot(partForward, forward);
             BrakeRudderSide = Mathf.Sign(Vector3.Dot(CoMoffset, right));
-            AoAsign = Math.Sign(Vector3.Dot(partTransform.up, up));
+            AoAsign = Math.Sign(Vector3.Dot(partUp, up));
             AoAdesiredControl = 0;
             if (!pitchaxis.NearlyEqual(0))
                 AoAdesiredControl += PitchLocation * pitch * pitchaxis * 0.01;
@@ -849,14 +1012,15 @@ namespace ferram4
                 flapLocation =
                     Math.Sign(Vector3.Dot(HighLogic.LoadedSceneIsFlight
                                               ? vessel.ReferenceTransform.forward
-                                              : EditorLogic.RootPart.partTransform.forward,
+                                              : forward,
                                           partForward));
 
                 spoilerLocation = -flapLocation;
             }
             else if (part.parent != null)
             {
-                flapLocation = Math.Sign(Vector3.Dot(partPosition - part.parent.partTransform.position, partForward));
+                Vector3 parentPos = sweepGeom.HasValue ? simParentPos : part.parent.partTransform.position;
+                flapLocation = Math.Sign(Vector3.Dot(partPosition - parentPos, partForward));
                 spoilerLocation = flapLocation;
             }
             else
