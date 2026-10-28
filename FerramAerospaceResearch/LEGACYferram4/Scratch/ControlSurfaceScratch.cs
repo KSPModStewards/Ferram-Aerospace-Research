@@ -63,9 +63,14 @@ namespace ferram4
         // per-thread on the parallel path or those reads race. Seeded from the instance value.
         public bool IsShielded;
 
+        // The surface's settings as a vessel snapshot captured them, for a snapshot prediction that deflects it for
+        // control inputs of its own (FARControllableSurface.ApplySnapshotControls); null otherwise.
+        public ControlSurfaceSettings Settings;
+
         /// <summary>The deflection, control mapping and shielding of another slot (the flight's), for a prediction.</summary>
         public void CopyControlStateFrom(ControlSurfaceScratch src)
         {
+            Settings = src.Settings;
             AoAcurrentControl = src.AoAcurrentControl;
             AoAcurrentFlap = src.AoAcurrentFlap;
             AoAoffset = src.AoAoffset;
@@ -83,5 +88,22 @@ namespace ferram4
             spoilerLocation = src.spoilerLocation;
             IsShielded = src.IsShielded;
         }
+    }
+
+    /// <summary>
+    /// What FARControllableSurface's deflection for a control input reads from the part and the game besides its
+    /// control mapping: the axis settings, the dynamic deflection settings, the fraction of the surface that moves, the
+    /// body's sea-level density and the exposure the shielding check reads. Captured on the main thread with a vessel
+    /// snapshot; never changed afterwards.
+    /// </summary>
+    public sealed class ControlSurfaceSettings
+    {
+        public float PitchAxis, YawAxis, RollAxis, BrakeRudder, MaxDeflect, PitchAxisDueToAoA, CtrlSurfFrac;
+        public bool IsDynamicDeflection;
+        // Whether flight moves the surface at all (FixedUpdate: a movable section, a controllable part).
+        public bool Deflects;
+        public float DynamicControlStartSpeed, Exponent, MinControl;
+        public double AtmDensityASL;
+        public double AreaExposedFactor, TotalExposedAreaFactor, S;
     }
 }

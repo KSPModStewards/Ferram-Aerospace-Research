@@ -80,6 +80,12 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         public Vector3 LocalVelocity(FARAeroSection.PartData pd)
         {
+            // A snapshot prediction reads the parts captured with the snapshot; a part that was not captured is
+            // left out (zero velocity is skipped), since reading it live is not allowed off the main thread.
+            if (pd.aeroModule.TryGetSnapshotState(out FARAeroPartModule.SnapshotState captured))
+                return captured.Geom.InverseTransformVector(worldVel);
+            if (SimThreadContext.SnapshotStamp != 0)
+                return Vector3.zero;
             ferram4.FrozenPartTransform? sweepGeom = pd.aeroModule.SweepGeom;
             if (sweepGeom.HasValue)
                 return sweepGeom.Value.InverseTransformVector(worldVel);
@@ -110,14 +116,17 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 localForceTemp * (float)dragFactor + (forceVector - localForceTemp) * (float)liftFactor;
 
             Vector3 centroid;
-            if (pd.aeroModule.SimGeom.HasValue)
+            bool snapshot = pd.aeroModule.TryGetSnapshotState(out FARAeroPartModule.SnapshotState captured);
+            ferram4.FrozenPartTransform? sweepGeom = snapshot ? null : pd.aeroModule.SweepGeom;
+            if (snapshot || sweepGeom.HasValue)
             {
-                ferram4.FrozenPartTransform g = pd.aeroModule.SimGeom.Value;
+                ferram4.FrozenPartTransform g = snapshot ? captured.Geom : sweepGeom.Value;
+                Vector3 comOffset = snapshot ? captured.CoMOffset : pd.aeroModule.SimCoMOffset;
                 forceVector = g.TransformDirection(partLocalForce);
                 torqueVector = g.TransformDirection(torqueVector * (float)dynamicPressurekPa);
                 if (float.IsNaN(forceVector.x) || float.IsNaN(torqueVector.x))
                     return;
-                centroid = g.TransformPoint(pd.centroidPartSpace - pd.aeroModule.SimCoMOffset);
+                centroid = g.TransformPoint(pd.centroidPartSpace - comOffset);
                 center.AddForce(centroid, forceVector);
                 center.AddTorque(torqueVector);
                 return;

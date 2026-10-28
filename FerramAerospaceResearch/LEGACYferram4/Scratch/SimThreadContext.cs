@@ -104,12 +104,33 @@ namespace ferram4
         // Other threads' prediction slots: all of PredictionSlots but the main thread's.
         private static readonly SlotPool predictionPool = new SlotPool(MaxSlots - PredictionSlots, PredictionSlots - 1);
 
+        private static long lastStamp;
+
         /// <summary>
-        /// The flight prediction the calling thread is inside, or null, with the airflow it simulates.
+        /// The flight prediction the calling thread is inside, or null: the airflow it simulates and the external
+        /// temperature its skin friction takes (the vessel's as captured with a snapshot), if set.
         /// </summary>
         public sealed class PredictionCall
         {
             public Vector3d Velocity;
+            public double? ExternalTemperature;
+
+            /// <summary>The adiabatic index the wing and shock math takes (FARAeroUtil.CurrentAdiabaticIndex), if set.</summary>
+            public double? AdiabaticIndex;
+
+            /// <summary>The adiabatic index a wing's skin friction takes (the vessel's, in flight), if set.</summary>
+            public double? VesselAdiabaticIndex;
+
+            /// <summary>The body's reference viscosity and temperature (FARAeroUtil.currentBodyData), if set.</summary>
+            public FerramAerospaceResearch.Settings.BodySettings? BodyData;
+
+            /// <summary>
+            /// Nonzero for a prediction made from a vessel snapshot: the parts' captured state (geometry, masses,
+            /// shielding, ...) installed on the slot for this call carries the same stamp, and the solve reads it
+            /// instead of the live parts. Zero for a prediction from the live vessel.
+            /// </summary>
+            public long Stamp;
+
             internal int Slot;
             internal bool OnMainThreadSlot;
             internal int PreviousSlot;
@@ -118,6 +139,22 @@ namespace ferram4
         }
 
         public static PredictionCall Prediction => prediction;
+
+        /// <summary>A new stamp for a snapshot prediction (see <see cref="PredictionCall.Stamp"/>).</summary>
+        public static long NewStamp()
+        {
+            return Interlocked.Increment(ref lastStamp);
+        }
+
+        /// <summary>The stamp of the snapshot prediction the calling thread is inside, or 0.</summary>
+        public static long SnapshotStamp
+        {
+            get
+            {
+                PredictionCall call = prediction;
+                return call != null ? call.Stamp : 0;
+            }
+        }
 
         /// <summary>
         /// Moves the calling thread onto a prediction slot for the duration of one prediction; pair with
@@ -186,6 +223,12 @@ namespace ferram4
         /// game as they do outside one.
         /// </summary>
         public static bool InSweep => inSweep && prediction == null;
+
+        /// <summary>
+        /// Neither in a prediction nor on a sweep worker: everything the solve reads is the live game state (the
+        /// flight, the serial editor tabs). The hot paths check this first, the cheap way to the common case.
+        /// </summary>
+        public static bool LiveOnly => prediction == null && !inSweep;
 
         /// <summary>
         /// How many slots a sweep hands out: one per possible concurrent worker plus a small margin. They are

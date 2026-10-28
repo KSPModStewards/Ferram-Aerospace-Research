@@ -42,7 +42,9 @@ Copyright 2022, Michael Ferrara, aka Ferram4
 	http://forum.kerbalspaceprogram.com/threads/60863
  */
 
+using System;
 using System.Collections.Generic;
+using System.Threading;
 using ferram4;
 using FerramAerospaceResearch.FARGUI.FARFlightGUI;
 using FerramAerospaceResearch.FARPartGeometry;
@@ -91,6 +93,18 @@ namespace FerramAerospaceResearch.FARAeroComponents
         private CachedSimResults lastSimResults;
         // Predictions can come from more than one thread; the memo is read and written whole under this lock.
         private readonly object lastSimResultsLock = new object();
+
+        // Changes whenever the aerodynamic model a snapshot holds changes: bumped before and after the aero data is
+        // swapped for a new voxelization (the sections swapped out are then refilled by the voxel thread), when the
+        // vessel is modified, and when it is unloaded or destroyed.
+        private long snapshotVersion;
+
+        internal long SnapshotVersion => Interlocked.Read(ref snapshotVersion);
+
+        private void BumpSnapshotVersion()
+        {
+            Interlocked.Increment(ref snapshotVersion);
+        }
         public VehicleExposure Exposure { get; private set; }
 
         internal VehicleAerodynamics VehicleAero
@@ -204,6 +218,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 return;
             if (_vehicleAero.CalculationCompleted)
             {
+                BumpSnapshotVersion();
                 _vehicleAero.GetNewAeroData(out _currentAeroModules,
                                             out _unusedAeroModules,
                                             out _currentAeroSections,
@@ -229,6 +244,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 }
 
                 _vesselIntakeRamDrag.UpdateAeroData(_currentAeroModules);
+                BumpSnapshotVersion();
             }
 
             if (FlightGlobals.ready && _currentAeroSections != null && vessel)
@@ -298,13 +314,14 @@ namespace FerramAerospaceResearch.FARAeroComponents
         )
         {
             // The live vessel is read here (transforms, rigidbodies, the atmosphere functions), which only the main
-            // thread may do.
+            // thread may do; another thread predicts from a snapshot (FARAPI.CaptureVesselSnapshot).
             if (!MainThread.IsMainThread)
             {
                 if (!loggedOffMainThread)
                 {
                     loggedOffMainThread = true;
-                    FARLogAnyThread.Warning("FARVesselAero.SimulateAeroProperties called off the main thread; returning zero.");
+                    FARLogAnyThread.Warning("FARVesselAero.SimulateAeroProperties called off the main thread; returning zero. " +
+                                            "Use FARAPI.CaptureVesselSnapshot and FARAPI.CalculateSnapshotAeroForcesAt.");
                 }
 
                 aeroForce = aeroTorque = Vector3.zero;
@@ -328,7 +345,6 @@ namespace FerramAerospaceResearch.FARAeroComponents
             }
 
             var center = new FARCenterQuery();
-            var dummy = new FARCenterQuery();
 
             //Calculate main gas properties
             GasProperties properties =
@@ -389,17 +405,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                                                                   velocityWorldVector,
                                                                   center);
 
-                    // Every wing first: a wing reads its neighbours' values on the slot as it computes.
-                    foreach (FARWingAerodynamicModel curWing in _legacyWingModels)
-                        curWing?.BeginPredictionState();
-
-                    foreach (FARWingAerodynamicModel curWing in _legacyWingModels)
-                        if (curWing != null)
-                            center.AddForce(curWing.transform.position,
-                                            curWing.PrecomputeCenterOfLift(velocityWorldVector,
-                                                                           machNumber,
-                                                                           properties.Density,
-                                                                           dummy));
+                    SimulateWings(_legacyWingModels, true, velocityWorldVector, machNumber, properties.Density, center);
                 }
                 finally
                 {
@@ -412,6 +418,314 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
             lock (lastSimResultsLock)
                 lastSimResults = new CachedSimResults(velocityWorldVector, position, aeroForce, aeroTorque);
+        }
+
+        /// <summary>
+        /// The wings at one condition on the calling thread's prediction slot, each from the state the flight left
+        /// (slot 0's, or the snapshot's capture of it), its force added at its part's position.
+        /// </summary>
+        private static void SimulateWings(
+            IList<FARWingAerodynamicModel> wings,
+            bool live,
+            Vector3 velocity,
+            float machNumber,
+            double density,
+            FARCenterQuery center
+        )
+        {
+            // live: the vessel's wing list, where a destroyed wing is found with Unity's == null and each wing's
+            // prediction state is started here, every wing before any is computed (a wing reads its neighbours'
+            // values on the slot). From a snapshot the wings are the captured ones (C# references, given their
+            // captured state beforehand), and no Unity call is made.
+            if (live)
+                foreach (FARWingAerodynamicModel w in wings)
+                    w?.BeginPredictionState();
+
+            var dummy = new FARCenterQuery();
+            foreach (FARWingAerodynamicModel w in wings)
+            {
+                if (IsMissing(w, live))
+                    continue;
+                Vector3 position = live ? w.transform.position : w.SolveGeom.Value.Position;
+                center.AddForce(position, w.PrecomputeCenterOfLift(velocity, machNumber, density, dummy));
+            }
+        }
+
+        private static bool IsMissing(FARWingAerodynamicModel w, bool live)
+        {
+            return live ? w == null : ReferenceEquals(w, null);
+        }
+
+        private static bool loggedSnapshotOffMainThread;
+        private static bool loggedSnapshotAtmosphere;
+        private static readonly HashSet<string> loggedSnapshotExceptions = new HashSet<string>();
+
+        /// <summary>
+        ///     The vessel's aerodynamic model as it stands now, for predictions on any thread; null when there is none
+        ///     yet (not voxelized) or off the main thread. See <see cref="FARVesselSnapshot" />.
+        /// </summary>
+        internal FARVesselSnapshot CaptureSnapshot()
+        {
+            if (!MainThread.IsMainThread)
+            {
+                if (!loggedSnapshotOffMainThread)
+                {
+                    loggedSnapshotOffMainThread = true;
+                    FARLogAnyThread.Warning("FARAPI.CaptureVesselSnapshot called off the main thread; returning null.");
+                }
+
+                return null;
+            }
+
+            if (!enabled || !vessel || _vehicleAero == null || _currentAeroSections == null || _legacyWingModels == null)
+                return null;
+
+            FARAeroUtil.EnsureCurves();
+            CelestialBody body = vessel.mainBody;
+            var snapshot = new FARVesselSnapshot
+            {
+                Vessel = vessel,
+                CaptureUT = Planetarium.GetUniversalTime(),
+                Aero = this,
+                AeroVersion = SnapshotVersion,
+                Body = body,
+                CenterOfMass = vessel.CoM,
+                Length = Length,
+                AdiabaticIndex = FARAeroUtil.CurrentAdiabaticIndex,
+                VesselAdiabaticIndex = FARAtmosphere.GetAdiabaticIndex(vessel),
+                ExternalTemperature = vessel.externalTemperature,
+                BodyData = FARAeroUtil.currentBodyData
+            };
+
+            // Sections and the part modules they apply force to.
+            var sections = new List<FARAeroSection>(_currentAeroSections.Count);
+            var modules = new HashSet<FARAeroPartModule>(ObjectReferenceEqualityComparer<FARAeroPartModule>.Default);
+            foreach (FARAeroSection section in _currentAeroSections)
+            {
+                if (section is null)
+                    continue;
+                sections.Add(section);
+                section.CollectAeroModules(modules);
+            }
+
+            var moduleList = new List<FARAeroPartModule>(modules.Count);
+            var moduleStates = new List<FARAeroPartModule.SnapshotState>(modules.Count);
+            bool forceModifiers = false;
+            foreach (FARAeroPartModule m in modules)
+            {
+                if (m == null || m.part == null || m.part.partTransform == null)
+                    continue;
+                moduleList.Add(m);
+                moduleStates.Add(m.CaptureSnapshotState());
+                forceModifiers |= m.AeroForceModifier != null;
+            }
+
+            snapshot.Sections = sections.ToArray();
+            snapshot.Modules = moduleList.ToArray();
+            snapshot.ModuleStates = moduleStates.ToArray();
+
+            // Every wing on the vessel (a wing reads its neighbours' state), and the ones whose forces are summed.
+            var wings = new List<FARWingAerodynamicModel>();
+            var wingStates = new List<FARWingAerodynamicModel.SnapshotState>();
+            foreach (Part p in vessel.parts)
+            {
+                if (p == null || p.partTransform == null)
+                    continue;
+                foreach (PartModule pm in p.Modules)
+                {
+                    if (!(pm is FARWingAerodynamicModel w) || w == null)
+                        continue;
+                    wings.Add(w);
+                    wingStates.Add(w.CaptureSnapshotState());
+                }
+            }
+
+            var simulated = new List<FARWingAerodynamicModel>(_legacyWingModels.Count);
+            foreach (FARWingAerodynamicModel w in _legacyWingModels)
+                if (w != null && wings.Contains(w))
+                    simulated.Add(w);
+
+            snapshot.Wings = wings.ToArray();
+            snapshot.WingStates = wingStates.ToArray();
+            snapshot.SimulatedWings = simulated.ToArray();
+            snapshot.GeometryVersion = snapshot.WingGeometryVersion();
+
+            // The atmosphere: the default functions reproduced for the body (checked against the live ones here),
+            // custom functions called as they are.
+            snapshot.CustomPressure = FARAtmosphere.PressureIsCustom;
+            snapshot.CustomTemperature = FARAtmosphere.TemperatureIsCustom;
+            snapshot.CustomAdiabaticIndex = FARAtmosphere.AdiabaticIndexIsCustom;
+            snapshot.CustomGasConstant = FARAtmosphere.GasConstantIsCustom;
+            snapshot.CustomThreadSafe = FARAtmosphere.PropertiesThreadSafe;
+            snapshot.PressureFunction = FARAtmosphere.PredictionPressureFunction;
+            snapshot.TemperatureFunction = FARAtmosphere.PredictionTemperatureFunction;
+            snapshot.AdiabaticIndexFunction = FARAtmosphere.PredictionAdiabaticIndexFunction;
+            snapshot.GasConstantFunction = FARAtmosphere.PredictionGasConstantFunction;
+
+            bool anyCustom = snapshot.CustomPressure || snapshot.CustomTemperature || snapshot.CustomAdiabaticIndex ||
+                             snapshot.CustomGasConstant;
+            bool allCustom = snapshot.CustomPressure && snapshot.CustomTemperature && snapshot.CustomAdiabaticIndex &&
+                             snapshot.CustomGasConstant;
+            var atmosphere = new AtmosphereSnapshot(body);
+            snapshot.Atmosphere = atmosphere.IsExact ? atmosphere : null;
+            if (!atmosphere.IsExact && !allCustom)
+                WarnSnapshotAtmosphere(body, "its curves use weighted tangents or a looping wrap mode");
+            if (snapshot.Atmosphere != null && !CheckAtmosphere(snapshot, body))
+                snapshot.Atmosphere = null;
+            snapshot.OffMainThread = (allCustom || snapshot.Atmosphere != null) &&
+                                     (!anyCustom || snapshot.CustomThreadSafe) &&
+                                     !forceModifiers;
+            return snapshot;
+        }
+
+        // The reproduced default atmosphere against the live one at the vessel and halfway up the atmosphere.
+        private bool CheckAtmosphere(FARVesselSnapshot snapshot, CelestialBody body)
+        {
+            double ut = snapshot.CaptureUT;
+            var points = new List<Vector3d> {vessel.CurrentPosition()};
+            if (body.atmosphere)
+                points.Add(vessel.CurrentPosition(body.atmosphereDepth * 0.5));
+            foreach (Vector3d point in points)
+            {
+                if (snapshot.AtmosphereMatchesLive(point, ut, out string difference))
+                    continue;
+                WarnSnapshotAtmosphere(body, difference);
+                return false;
+            }
+
+            return true;
+        }
+
+        private static void WarnSnapshotAtmosphere(CelestialBody body, string why)
+        {
+            if (loggedSnapshotAtmosphere)
+                return;
+            loggedSnapshotAtmosphere = true;
+            FARLogger.Warning($"Vessel snapshot: the atmosphere of {body.bodyName} could not be reproduced exactly " +
+                              $"({why}); predictions from its snapshots run on the main thread only.");
+        }
+
+        /// <summary>
+        ///     The aerodynamic force and torque (about the captured center of mass) from a snapshot, at a velocity (world
+        ///     frame of the capture), a place and a time. Any thread when the snapshot allows it; false when it does not,
+        ///     when the snapshot is stale (before or after the solve), or when the solve failed. With control inputs
+        ///     (pitch, yaw, roll; all NaN: none) every control surface is deflected as it would be for them
+        ///     (FARControllableSurface.ApplySnapshotControls); a NaN among others counts as 0.
+        /// </summary>
+        internal bool SimulateSnapshot(
+            FARVesselSnapshot snapshot,
+            Vector3 velocityWorldVector,
+            Vector3d latLonAltitude,
+            double ut,
+            out Vector3 aeroForce,
+            out Vector3 aeroTorque,
+            double pitch = double.NaN,
+            double yaw = double.NaN,
+            double roll = double.NaN
+        )
+        {
+            bool controls = !(double.IsNaN(pitch) && double.IsNaN(yaw) && double.IsNaN(roll));
+            aeroForce = aeroTorque = Vector3.zero;
+            bool mainThread = MainThread.IsMainThread;
+            if (!mainThread && !snapshot.OffMainThread)
+                return false;
+            if (!snapshot.IsCurrent)
+                return false;
+
+            try
+            {
+                if (!snapshot.TryGetGasProperties(latLonAltitude, ut, mainThread, out GasProperties properties))
+                    return false;
+                if (properties.Pressure <= 0 || properties.Temperature <= 0)
+                    return StillCurrent(snapshot);
+
+                float velocityMag = velocityWorldVector.magnitude;
+                float machNumber = (float)(velocityMag / properties.SpeedOfSound);
+
+                var center = new FARCenterQuery();
+                SimThreadContext.PredictionCall call = SimThreadContext.BeginPrediction(velocityWorldVector);
+                if (call == null)
+                    return false;
+                try
+                {
+                    call.Stamp = SimThreadContext.NewStamp();
+                    call.AdiabaticIndex = snapshot.AdiabaticIndex;
+                    call.VesselAdiabaticIndex = snapshot.VesselAdiabaticIndex;
+                    call.BodyData = snapshot.BodyData;
+                    call.ExternalTemperature = snapshot.ExternalTemperature;
+
+                    // Inside the call, so the viscosity is the captured body's.
+                    float reynoldsNumber = (float)FARAeroUtil.CalculateReynoldsNumber(properties.Density,
+                                                                                      snapshot.Length,
+                                                                                      velocityMag,
+                                                                                      machNumber,
+                                                                                      properties.Temperature,
+                                                                                      properties.AdiabaticIndex);
+                    float reynoldsPerLength = reynoldsNumber / (float)snapshot.Length;
+                    float skinFriction = (float)FARAeroUtil.SkinFrictionDrag(reynoldsNumber, machNumber);
+                    float pseudoKnudsenNumber = machNumber / (reynoldsNumber + machNumber);
+
+                    for (int i = 0; i < snapshot.Modules.Length; i++)
+                        snapshot.Modules[i].InstallSnapshotState(in snapshot.ModuleStates[i], call.Stamp);
+                    for (int i = 0; i < snapshot.Wings.Length; i++)
+                    {
+                        snapshot.Wings[i].BeginPredictionState();
+                        snapshot.Wings[i].InstallSnapshotState(in snapshot.WingStates[i], call.Stamp);
+                    }
+
+                    if (controls)
+                        foreach (FARWingAerodynamicModel w in snapshot.Wings)
+                            if (w is FARControllableSurface surface)
+                                surface.ApplySnapshotControls(double.IsNaN(pitch) ? 0 : pitch,
+                                                              double.IsNaN(yaw) ? 0 : yaw,
+                                                              double.IsNaN(roll) ? 0 : roll,
+                                                              velocityWorldVector,
+                                                              properties.Density);
+
+                    foreach (FARAeroSection section in snapshot.Sections)
+                        section.PredictionCalculateAeroForces((float)properties.Density,
+                                                              machNumber,
+                                                              reynoldsPerLength,
+                                                              pseudoKnudsenNumber,
+                                                              skinFriction,
+                                                              velocityWorldVector,
+                                                              center);
+
+                    SimulateWings(snapshot.SimulatedWings, false, velocityWorldVector, machNumber, properties.Density, center);
+                }
+                finally
+                {
+                    SimThreadContext.EndPrediction(call);
+                }
+
+                aeroForce = center.force;
+                aeroTorque = center.TorqueAt(snapshot.CenterOfMass);
+            }
+            catch (Exception e)
+            {
+                // A snapshot that went stale mid-solve can be read while the voxel thread refills its sections; an
+                // exception from a current one is a bug, logged once per exception type (from the main thread).
+                if (snapshot.IsCurrent)
+                {
+                    bool first;
+                    lock (loggedSnapshotExceptions)
+                        first = loggedSnapshotExceptions.Add(e.GetType().FullName ?? "?");
+                    if (first)
+                        FARLogAnyThread.Exception(e, "while predicting from a vessel snapshot");
+                }
+
+                aeroForce = aeroTorque = Vector3.zero;
+                return false;
+            }
+
+            return StillCurrent(snapshot);
+        }
+
+        private static bool StillCurrent(FARVesselSnapshot snapshot)
+        {
+            // Every read of the snapshot's parts is done before the version is read again.
+            Thread.MemoryBarrier();
+            return snapshot.IsCurrent;
         }
 
 
@@ -450,6 +764,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
         {
             if (v != vessel)
                 return;
+            BumpSnapshotVersion();
             if (_vehicleAero == null)
             {
                 _vehicleAero = new VehicleAerodynamics();
@@ -587,6 +902,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         public override void OnUnloadVessel()
         {
+            BumpSnapshotVersion();
             Unsubscribe();
 
             base.OnUnloadVessel();
@@ -594,6 +910,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         private void OnDestroy()
         {
+            BumpSnapshotVersion();
             Unsubscribe();
             DisableModule();
         }

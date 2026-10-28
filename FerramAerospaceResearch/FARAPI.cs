@@ -45,6 +45,7 @@ Copyright 2022, Michael Ferrara, aka Ferram4
 using System;
 using ferram4;
 using FerramAerospaceResearch.FARAeroComponents;
+using FerramAerospaceResearch.Threading;
 using FerramAerospaceResearch.FARGUI.FARFlightGUI;
 using UnityEngine;
 
@@ -353,6 +354,8 @@ namespace FerramAerospaceResearch
         )
         {
             aeroForce = aeroTorque = Vector3.zero;
+            if (!OnMainThread())
+                return;
             if (vessel == null)
             {
                 FARLogger.Error("API Error: attempted to simulate aerodynamics of null vessel");
@@ -368,6 +371,121 @@ namespace FerramAerospaceResearch
             }
 
             vesselAero.SimulateAeroProperties(out aeroForce, out aeroTorque, velocityWorldVector, altitude);
+        }
+
+        private static bool loggedOffMainThread;
+
+        private static bool OnMainThread()
+        {
+            if (MainThread.IsMainThread)
+                return true;
+            if (!loggedOffMainThread)
+            {
+                loggedOffMainThread = true;
+                // Off the main thread by definition: logged from it.
+                FARLogAnyThread.Warning("FARAPI.CalculateVesselAeroForces called off the main thread; returning zero. " +
+                                        "Use CaptureVesselSnapshot on the main thread and CalculateSnapshotAeroForcesAt " +
+                                        "on any thread.");
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        ///     Takes the vessel's aerodynamic model as it stands now, for predictions on any thread with
+        ///     <see cref="CalculateSnapshotAeroForcesAt" />. Main thread only (null otherwise), and null when the vessel has
+        ///     no FAR aerodynamics or has not been voxelized yet. The snapshot holds the voxel sections, the wings and
+        ///     control surfaces with their parts' geometry, shielding and deflection, the body parts' geometry, the
+        ///     center of mass and the body's atmosphere, so a prediction from it reads no live game state and gives the
+        ///     same answer on any thread.
+        ///
+        ///     The atmosphere: FAR's default functions are reproduced for the body from its curves and constants, and
+        ///     checked against the live functions at capture (to a relative 1e-5; a body
+        ///     whose atmosphere is not reproduced keeps its snapshots' predictions on the main thread, with a warning). A custom function registered
+        ///     through FARAtmosphere is called as it is: on any thread when it was set with threadSafe true, otherwise
+        ///     only on the main thread. <see cref="FARVesselSnapshot.OffMainThread" /> says which applies; a part's
+        ///     AeroForceModifier likewise keeps predictions on the main thread.
+        ///
+        ///     A snapshot is stale once the vessel's aerodynamic model changes (a re-voxelization, a part added,
+        ///     removed or destroyed, a wing rebuilt, the vessel unloaded): <see cref="FARVesselSnapshot.IsCurrent" />
+        ///     turns false and predictions from it return false. Take a new one then.
+        /// </summary>
+        public static FARVesselSnapshot CaptureVesselSnapshot(Vessel vessel)
+        {
+            if (vessel == null)
+                return null;
+            if (!MainThread.IsMainThread)
+            {
+                FARLogAnyThread.Warning("FARAPI.CaptureVesselSnapshot called off the main thread; returning null.");
+                return null;
+            }
+
+            FARVesselAero vesselAero = vessel.GetComponent<FARVesselAero>();
+            return vesselAero == null ? null : vesselAero.CaptureSnapshot();
+        }
+
+        /// <summary>
+        ///     Calculates the forces and torque on a snapshot of a vessel at a given condition, at the center of mass
+        ///     as captured, with the atmosphere at a given place and time. Callable from any thread (see
+        ///     <see cref="FARVesselSnapshot.OffMainThread" />); several threads may predict from one snapshot at once.
+        ///     Predictions from the live vessel and from a snapshot of it agree to float rounding: the snapshot
+        ///     transforms directions with the captured rotation where the live path asks Unity.
+        /// </summary>
+        /// <param name="snapshot">From <see cref="CaptureVesselSnapshot" /></param>
+        /// <param name="aeroForce">Total aerodynamic force, in kN, world frame of the capture</param>
+        /// <param name="aeroTorque">Total aerodynamic torque about the captured center of mass, in kN * m</param>
+        /// <param name="velocityWorldVector">
+        ///     Velocity relative to the atmosphere in the world frame of the capture, for the vessel's orientation at
+        ///     capture, m/s
+        /// </param>
+        /// <param name="latLonAltitude">Latitude and longitude (deg, body-fixed) and altitude (m)</param>
+        /// <param name="ut">Universal time the vessel is at that point</param>
+        /// <returns>
+        ///     False, with zero force and torque, when the snapshot is stale, when this thread may not predict from it,
+        ///     or when the prediction failed.
+        /// </returns>
+        public static bool CalculateSnapshotAeroForcesAt(
+            FARVesselSnapshot snapshot,
+            out Vector3 aeroForce,
+            out Vector3 aeroTorque,
+            Vector3 velocityWorldVector,
+            Vector3d latLonAltitude,
+            double ut
+        )
+        {
+            aeroForce = aeroTorque = Vector3.zero;
+            if (snapshot == null || ReferenceEquals(snapshot.Aero, null))
+                return false;
+            return snapshot.Aero.SimulateSnapshot(snapshot, velocityWorldVector, latLonAltitude, ut, out aeroForce, out aeroTorque);
+        }
+
+        /// <summary>
+        ///     <see cref="CalculateSnapshotAeroForcesAt" /> with every control surface deflected for the given control
+        ///     inputs instead of as it was at capture: the deflection FAR's control surfaces take for those inputs once
+        ///     settled (no blending toward it), with the dynamic deflection factor of the simulated speed and density, the
+        ///     surface's settings as captured, and flaps and spoilers as captured. Lets a caller evaluate the vessel at
+        ///     another stick position from one snapshot - a trim solve, say - on any thread.
+        /// </summary>
+        /// <param name="pitch">Pitch input, -1..1</param>
+        /// <param name="yaw">Yaw input, -1..1</param>
+        /// <param name="roll">Roll input, -1..1</param>
+        public static bool CalculateSnapshotAeroForcesWithControlsAt(
+            FARVesselSnapshot snapshot,
+            out Vector3 aeroForce,
+            out Vector3 aeroTorque,
+            Vector3 velocityWorldVector,
+            Vector3d latLonAltitude,
+            double ut,
+            float pitch,
+            float yaw,
+            float roll
+        )
+        {
+            aeroForce = aeroTorque = Vector3.zero;
+            if (snapshot == null || ReferenceEquals(snapshot.Aero, null))
+                return false;
+            return snapshot.Aero.SimulateSnapshot(snapshot, velocityWorldVector, latLonAltitude, ut, out aeroForce, out aeroTorque,
+                                                  pitch, yaw, roll);
         }
 
         /// <summary>

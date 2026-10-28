@@ -95,6 +95,18 @@ namespace ferram4
         // Working wing centroid in world space
         public Vector3d CurWingCentroid;
 
+        // The wing's live state captured with a vessel snapshot, installed on the slot for one snapshot prediction:
+        // valid while CaptureStamp is that prediction's stamp (SimThreadContext.SnapshotStamp).
+        public long CaptureStamp;
+        public FrozenPartTransform CapturedGeom;
+        public double CapturedRbMass;
+        public double CapturedFixedDeltaTime;
+        public bool CapturedShielded;
+        public double CapturedSubmergedPortion;
+        public double CapturedSubmergedLiftScalar;
+        public double CapturedSubmergedDragScalar;
+        public Vector3d CapturedVelocity;
+
         /// <summary>
         /// Every field from another slot's (the flight's): the state a flight prediction starts from, the one it
         /// found when it ran on the flight's own.
@@ -127,6 +139,8 @@ namespace ferram4
             ParallelInPlaneLocal = src.ParallelInPlaneLocal;
             AerodynamicCenter = src.AerodynamicCenter;
             CurWingCentroid = src.CurWingCentroid;
+            // Nothing captured for a snapshot prediction is on the slot until it is installed.
+            CaptureStamp = 0;
         }
     }
 }

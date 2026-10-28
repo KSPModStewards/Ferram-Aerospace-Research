@@ -252,9 +252,111 @@ namespace ferram4
         /// A prediction flies the surface as it is deflected now: the control state (deflection, deflected normal,
         /// control mapping) is the flight's, slot 0's, and its shielding the flight's.
         /// </summary>
+        internal override SnapshotState CaptureSnapshotState()
+        {
+            SnapshotState state = base.CaptureSnapshotState();
+            // The flight's control state (slot 0) and its shielding, which flight writes to the instance.
+            var control = new ControlSurfaceScratch();
+            ControlSurfaceScratch flight = _ctrlScratchSlots[0];
+            if (flight != null)
+                control.CopyControlStateFrom(flight);
+            control.IsShielded = isShielded;
+            control.Settings = new ControlSurfaceSettings
+            {
+                PitchAxis = pitchaxis,
+                YawAxis = yawaxis,
+                RollAxis = rollaxis,
+                BrakeRudder = brakeRudder,
+                MaxDeflect = maxdeflect,
+                PitchAxisDueToAoA = pitchaxisDueToAoA,
+                CtrlSurfFrac = ctrlSurfFrac,
+                IsDynamicDeflection = isDynamicDeflection,
+                Deflects = animated && movableSection is not null && part.isControllable,
+                DynamicControlStartSpeed = dynamicControlStartSpeed,
+                Exponent = exponent,
+                MinControl = minControl,
+                AtmDensityASL = vessel != null && vessel.lastBody != null ? vessel.lastBody.atmDensityASL : 1.0,
+                AreaExposedFactor = NUFAR_areaExposedFactor,
+                TotalExposedAreaFactor = NUFAR_totalExposedAreaFactor,
+                S = S
+            };
+            state.Control = control;
+            return state;
+        }
+
+        /// <summary>
+        /// Inside a snapshot prediction, after the captured state is installed: deflects the surface as
+        /// AoAOffsetFromControl would for these control inputs (-1..1), held rather than blended toward, at the simulated
+        /// airflow (velocity, world frame of the capture) and density, from the settings captured with the snapshot. The
+        /// flap and spoiler deflection stays as captured; the deflected normal and the shielding follow as
+        /// DeflectionAnimation and CheckShielded set them. Reads no live state; any thread.
+        /// </summary>
+        internal void ApplySnapshotControls(double pitch, double yaw, double roll, Vector3d velocity, double density)
+        {
+            ControlSurfaceScratch sc = _ctrlScratch;
+            ControlSurfaceSettings st = sc.Settings;
+            // a surface flight does not move stays as captured
+            if (st == null || !st.Deflects)
+                return;
+            double desired = 0;
+            if (density > 0)
+            {
+                if (!st.PitchAxis.NearlyEqual(0))
+                    desired += sc.PitchLocation * pitch * st.PitchAxis * 0.01;
+                if (!st.YawAxis.NearlyEqual(0))
+                    desired += sc.YawLocation * yaw * st.YawAxis * 0.01;
+                if (!st.RollAxis.NearlyEqual(0))
+                    desired += sc.RollLocation * roll * st.RollAxis * 0.01;
+                if (!st.BrakeRudder.NearlyEqual(0))
+                    desired += sc.BrakeRudderLocation * Math.Max(0.0, sc.BrakeRudderSide * yaw) * st.BrakeRudder * 0.01;
+                desired *= st.MaxDeflect;
+                if (!st.PitchAxisDueToAoA.NearlyEqual(0) && velocity.magnitude > 5)
+                {
+                    // the angle the surface would be at undeflected, as AoAOffsetFromControl takes it
+                    double aoa = FARMathUtil.rad2deg * base.CalculateAoA(velocity);
+                    if (double.IsNaN(aoa))
+                        aoa = 0;
+                    desired += aoa * st.PitchAxisDueToAoA * 0.01;
+                }
+
+                desired *= sc.AoAsign;
+                double factor = 1;
+                double speed = velocity.magnitude;
+                if (density > 0.01 && st.IsDynamicDeflection && speed > 0)
+                    factor = Math.Pow(st.DynamicControlStartSpeed / speed, st.Exponent) / (density / st.AtmDensityASL);
+                desired *= factor.Clamp(st.MinControl, 1);
+                desired = desired.Clamp(-Math.Abs(st.MaxDeflect), Math.Abs(st.MaxDeflect));
+            }
+
+            sc.AoAdesiredControl = desired;
+            sc.AoAcurrentControl = desired;
+            sc.AoAoffset = sc.AoAcurrentFlap + desired;
+            sc.lastAoAoffset = sc.AoAoffset;
+            double radAoAoffset = sc.AoAoffset * FARMathUtil.deg2rad * st.CtrlSurfFrac;
+            Vector3d dn = sc.deflectedNormal;
+            dn.y = Math.Sin(radAoAoffset);
+            double tmp = 1 - dn.y * dn.y;
+            if (tmp < 0)
+                tmp = 0;
+            dn.z = Math.Sqrt(tmp);
+            sc.deflectedNormal = dn;
+            if (st.AreaExposedFactor < 0.1 * st.S && !st.TotalExposedAreaFactor.NearlyEqual(0))
+                sc.IsShielded = Math.Abs(sc.AoAoffset) <= 5;
+        }
+
+        internal override void InstallSnapshotState(in SnapshotState state, long stamp)
+        {
+            base.InstallSnapshotState(in state, stamp);
+            if (state.Control != null)
+                _ctrlScratch.CopyControlStateFrom(state.Control);
+        }
+
         internal override void BeginPredictionState()
         {
             base.BeginPredictionState();
+            // A snapshot prediction installs the captured control state next; the flight's slot is not read then.
+            if (SimThreadContext.SnapshotStamp != 0)
+                return;
             ControlSurfaceScratch flight = _ctrlScratchSlots[0];
             ControlSurfaceScratch sc = _ctrlScratch;
             if (flight != null)
@@ -832,9 +934,16 @@ namespace ferram4
         public override double CalculateAoA(Vector3d velocity)
         {
             // Use the vector computed by DeflectionAnimation
-            Vector3d perp = SimGeom.HasValue
-                                ? SimGeom.Value.TransformDirection(deflectedNormal)
-                                : part_transform.TransformDirection(deflectedNormal);
+            Vector3d perp;
+            if (SimThreadContext.LiveOnly)
+                perp = part_transform.TransformDirection(deflectedNormal);
+            else
+            {
+                FrozenPartTransform? g = SolveGeom;
+                perp = g.HasValue
+                           ? g.Value.TransformDirection(deflectedNormal)
+                           : part_transform.TransformDirection(deflectedNormal);
+            }
             double PerpVelocity = Vector3d.Dot(perp, velocity.normalized);
             return Math.Asin(PerpVelocity.Clamp(-1, 1));
         }

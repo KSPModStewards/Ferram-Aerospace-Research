@@ -124,6 +124,10 @@ namespace FerramAerospaceResearch
         {
             get
             {
+                // A prediction that carries its own (a snapshot's, captured on the main thread) reads no game state.
+                double? call = SimThreadContext.Prediction?.AdiabaticIndex;
+                if (call.HasValue)
+                    return call.Value;
                 double? sweep = SimAdiabaticIndexOverride;
                 if (sweep.HasValue && SimThreadContext.InSweep)
                     return sweep.Value;
@@ -546,13 +550,16 @@ namespace FerramAerospaceResearch
 
         public static double CalculateCurrentViscosity(double tempInK)
         {
-            double visc = currentBodyData.ReferenceViscosity; //get viscosity
+            // A prediction that carries the body's settings (a snapshot's, captured on the main thread) reads no
+            // game state.
+            BodySettings bodyData = SimThreadContext.Prediction?.BodyData ?? currentBodyData;
+            double visc = bodyData.ReferenceViscosity; //get viscosity
 
-            double tempRat = tempInK / currentBodyData.ReferenceTemperature;
+            double tempRat = tempInK / bodyData.ReferenceTemperature;
             tempRat *= tempRat * tempRat;
             tempRat = Math.Sqrt(tempRat);
 
-            visc *= currentBodyData.ReferenceTemperature + 110;
+            visc *= bodyData.ReferenceTemperature + 110;
             visc /= tempInK + 110;
             visc *= tempRat;
 

@@ -341,7 +341,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 if (velLocal.sqrMagnitude.NearlyEqual(0.0f))
                     continue;
 
-                Vector3 angVelLocal = aeroModule.partLocalAngVel;
+                Vector3 angVelLocal = aeroModule.SolveAngularVelocity;
 
                 //some transform issue here, needs investigation
                 velLocal += Vector3.Cross(data.centroidPartSpace, angVelLocal);
@@ -455,7 +455,17 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     torqueVector -= dampingMoment * nonAxialAngLocalVel +
                                     axialAngLocalVel * (rollDampingMoment * axialAngLocalVel.magnitude) / 0.001f;
 
-                if (aeroModule.AeroForceModifier is not null)
+                // Another mod's delegate, called with the live part. A snapshot prediction takes the one the part had
+                // at capture (a snapshot with one predicts on the main thread only); a sweep worker none
+                // (BeginParallelSweep refuses a vessel that has one; this covers one set while the sweep runs).
+                Func<Part, Vector3, Vector3> forceModifier = aeroModule.AeroForceModifier;
+                if (SimThreadContext.SnapshotStamp != 0)
+                    forceModifier = aeroModule.TryGetSnapshotState(out FARAeroPartModule.SnapshotState captured)
+                                        ? captured.ForceModifier
+                                        : null;
+                else if (SimThreadContext.InSweep)
+                    forceModifier = null;
+                if (forceModifier is not null)
                 {
                     float velLocalForceMagnitude = Vector3.Dot(forceVector, velLocalNorm);
                     Vector3 velParallelForce = velLocalForceMagnitude * velLocalNorm; // anti-drag
@@ -466,7 +476,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                         y = velNormalForce.magnitude,
                         z = torqueVector.magnitude,
                     };
-                    float3 newLocalForce = aeroModule.AeroForceModifier(aeroModule.part, localForce);
+                    float3 newLocalForce = forceModifier(aeroModule.part, localForce);
                     float3 multiplier = newLocalForce / localForce;
 
                     forceVector = velParallelForce * multiplier.x + velNormalForce * multiplier.y;
@@ -499,6 +509,14 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
                 return c;
             }
+        }
+
+        /// <summary>The part modules this section applies force to (for a vessel snapshot). Main thread.</summary>
+        internal void CollectAeroModules(ICollection<FARAeroPartModule> into)
+        {
+            foreach (PartData data in partData)
+                if (!(data.aeroModule is null) && !into.Contains(data.aeroModule))
+                    into.Add(data.aeroModule);
         }
 
         public void PredictionCalculateAeroForces(

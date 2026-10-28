@@ -197,6 +197,8 @@
     <Compile Include="FARThreading\ThreadBarrier.cs" />
     <Compile Include="FARAtmosphere.cs" />
     <Compile Include="FARLogAnyThread.cs" />
+    <Compile Include="FARAtmosphereSnapshot.cs" />
+    <Compile Include="FARVesselSnapshot.cs" />
     <Compile Include="LEGACYferram4\FARWingAerodynamicModel.cs" />
     <Compile Include="LEGACYferram4\FARWingInteraction.cs" />
     <Compile Include="LEGACYferram4\Scratch\FrozenPartTransform.cs" />

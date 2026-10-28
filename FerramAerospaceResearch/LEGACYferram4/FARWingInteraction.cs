@@ -179,6 +179,24 @@ namespace ferram4
             sc.CopyFrom(_scratchSlots[0] ?? new WingInteractionScratch());
         }
 
+        /// <summary>A copy of the flight's state (slot 0's), for a vessel snapshot. Main thread.</summary>
+        internal WingInteractionScratch CaptureSeed()
+        {
+            var seed = new WingInteractionScratch();
+            seed.CopyFrom(_scratchSlots[0] ?? new WingInteractionScratch());
+            return seed;
+        }
+
+        /// <summary>Starts the calling thread's slot (a snapshot prediction's) from the captured flight state.</summary>
+        internal void InstallSeed(WingInteractionScratch seed)
+        {
+            int s = SimThreadContext.Slot;
+            WingInteractionScratch sc = _scratchSlots[s];
+            if (sc == null)
+                _scratchSlots[s] = sc = new WingInteractionScratch();
+            sc.CopyFrom(seed ?? new WingInteractionScratch());
+        }
+
         internal WingInteractionScratch _scratch
         {
             get
@@ -823,7 +841,10 @@ namespace ferram4
                 {
                     if (wingModule == null)
                     {
+                        // A snapshot prediction on another thread may be reading the lists.
+                        parentWingModule.BumpGeometryVersion();
                         HandleNullPart(wingModules, associatedInfluences, i);
+                        parentWingModule.BumpGeometryVersion();
                         i--;
                         continue;
                     }
@@ -840,12 +861,8 @@ namespace ferram4
                 if (wingModule.GetShielded())
                     continue;
 
-                Vector3 wingForward = wingModule.SimGeom.HasValue
-                                          ? wingModule.SimGeom.Value.Forward
-                                          : wingModule.transform.forward;
-                Vector3 parentForward = parentWingModule.SimGeom.HasValue
-                                            ? parentWingModule.SimGeom.Value.Forward
-                                            : parentWingModule.transform.forward;
+                Vector3 wingForward = wingModule.SolveForward;
+                Vector3 parentForward = parentWingModule.SolveForward;
                 double tmp = Vector3.Dot(wingForward, parentForward);
 
                 // the neighbour's values on this slot (its GetMAC, Getb_2, ... read the same scratch)
@@ -877,6 +894,9 @@ namespace ferram4
         {
             if (ReferenceEquals(wingModule, null))
                 return true;
+            // A snapshot prediction takes the wings captured with the snapshot, on whichever thread it runs.
+            if (SimThreadContext.SnapshotStamp != 0)
+                return !wingModule.CapturedForSolve;
             return MainThread.IsMainThread && wingModule == null;
         }
 

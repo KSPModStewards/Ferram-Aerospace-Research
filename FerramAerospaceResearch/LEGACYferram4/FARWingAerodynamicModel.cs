@@ -337,7 +337,8 @@ namespace ferram4
         /// <summary>
         /// Starts this wing's scratch on the calling thread's slot (a prediction's) from the flight's, slot 0's, as
         /// the prediction found it when it ran on the flight's state; nothing a previous prediction left is carried
-        /// into this one. Main thread.
+        /// into this one. A snapshot prediction installs the flight's state as it was captured instead
+        /// (<see cref="InstallSnapshotState" />): the flight's slot is not read then.
         /// </summary>
         internal virtual void BeginPredictionState()
         {
@@ -345,6 +346,8 @@ namespace ferram4
             WingScratch sc = _scratchSlots[s];
             if (sc == null)
                 _scratchSlots[s] = sc = new WingScratch();
+            if (SimThreadContext.SnapshotStamp != 0)
+                return;
             sc.CopyFrom(_scratchSlots[0] ?? NewScratch());
             wingInteraction?.BeginPredictionState();
         }
@@ -356,13 +359,125 @@ namespace ferram4
         }
 
         /// <summary>
+        /// The live state the solve reads from the part and the game, captured on the main thread with a vessel
+        /// snapshot so a snapshot prediction can run on any thread.
+        /// </summary>
+        internal struct SnapshotState
+        {
+            public FrozenPartTransform Geom;
+            public double RbMass;
+            public double FixedDeltaTime;
+            public bool Shielded;
+            public double SubmergedPortion;
+            public double SubmergedLiftScalar;
+            public double SubmergedDragScalar;
+            public Vector3d Velocity;
+            public WingScratch Seed;
+            public WingInteractionScratch InteractionSeed;
+            public ControlSurfaceScratch Control;
+        }
+
+        /// <summary>
+        /// Captures what the solve reads live from this wing's part, and the flight's state a prediction starts from.
+        /// Main thread.
+        /// </summary>
+        internal virtual SnapshotState CaptureSnapshotState()
+        {
+            var seed = new WingScratch();
+            seed.CopyFrom(_scratchSlots[0] ?? NewScratch());
+            return new SnapshotState
+            {
+                Geom = new FrozenPartTransform(part_transform),
+                RbMass = part.rb != null ? part.rb.mass : part.mass,
+                FixedDeltaTime = TimeWarp.fixedDeltaTime,
+                Shielded = isShielded,
+                SubmergedPortion = part.submergedPortion,
+                SubmergedLiftScalar = part.submergedLiftScalar,
+                SubmergedDragScalar = part.submergedDragScalar,
+                // A packed vessel's parts have no rigidbody (GetVelocity reads it); they move with the vessel.
+                Velocity = part.Rigidbody != null ? GetVelocity() : vessel.srf_velocity,
+                Seed = seed,
+                InteractionSeed = wingInteraction?.CaptureSeed()
+            };
+        }
+
+        /// <summary>
+        /// Puts captured state on the calling thread's slot for the snapshot prediction with this stamp, after
+        /// <see cref="BeginPredictionState" />.
+        /// </summary>
+        internal virtual void InstallSnapshotState(in SnapshotState state, long stamp)
+        {
+            WingScratch sc = _scratch;
+            sc.CopyFrom(state.Seed);
+            wingInteraction?.InstallSeed(state.InteractionSeed);
+            sc.CapturedGeom = state.Geom;
+            sc.CapturedRbMass = state.RbMass;
+            sc.CapturedFixedDeltaTime = state.FixedDeltaTime;
+            sc.CapturedShielded = state.Shielded;
+            sc.CapturedSubmergedPortion = state.SubmergedPortion;
+            sc.CapturedSubmergedLiftScalar = state.SubmergedLiftScalar;
+            sc.CapturedSubmergedDragScalar = state.SubmergedDragScalar;
+            sc.CapturedVelocity = state.Velocity;
+            sc.CaptureStamp = stamp;
+        }
+
+        /// <summary>This slot's scratch, and whether it holds the state captured for the current snapshot prediction.</summary>
+        private bool SnapshotInstalled(out WingScratch sc)
+        {
+            long stamp = SimThreadContext.SnapshotStamp;
+            if (stamp == 0)
+            {
+                sc = null;
+                return false;
+            }
+
+            sc = _scratch;
+            return sc.CaptureStamp == stamp;
+        }
+
+        /// <summary>
+        /// The geometry the solve reads: the snapshot's inside a snapshot prediction, the sweep's frozen copy during a
+        /// parallel sweep, else none (the live transform).
+        /// </summary>
+        internal FrozenPartTransform? SolveGeom
+        {
+            get
+            {
+                if (SimThreadContext.LiveOnly)
+                    return null;
+                return SnapshotInstalled(out WingScratch sc) ? sc.CapturedGeom : SweepGeom;
+            }
+        }
+
+        /// <summary>The wing's forward (normal) direction as the solve sees it.</summary>
+        internal Vector3 SolveForward
+        {
+            get
+            {
+                if (SimThreadContext.LiveOnly)
+                    return transform.forward;
+                FrozenPartTransform? g = SolveGeom;
+                return g.HasValue ? g.Value.Forward : transform.forward;
+            }
+        }
+
+        /// <summary>
+        /// Inside a snapshot prediction, whether this wing was captured with the snapshot: a wing that was not (it
+        /// was destroyed, or added since) is left out, as the flight leaves out a destroyed neighbour.
+        /// </summary>
+        internal bool CapturedForSolve
+        {
+            get { return SnapshotInstalled(out WingScratch _); }
+        }
+
+        /// <summary>
         /// Shielded state as the solve should see it. Plain wings use the (sweep-invariant) instance
         /// field; control surfaces override this to read the per-thread value, since they rewrite
         /// shielded state from their deflection every trim step and the instance field would race.
         /// </summary>
         public virtual bool GetShielded()
         {
-            return isShielded;
+            return SnapshotInstalled(out WingScratch sc) ? sc.CapturedShielded : isShielded;
         }
 
         public double GetRawAoAmax()
@@ -377,6 +492,10 @@ namespace ferram4
         {
             if (!HighLogic.LoadedSceneIsFlight)
                 return _scratch.velocityEditor;
+            // A snapshot prediction reads the part's velocity as captured (a neighbour reads it for its angle of
+            // attack): the live one is the rigidbody's, which only the main thread may read.
+            if (SnapshotInstalled(out WingScratch sc))
+                return sc.CapturedVelocity;
             return base.GetVelocity();
         }
 
@@ -551,8 +670,11 @@ namespace ferram4
 
         public Vector3 WingCentroid()
         {
-            if (SimGeom.HasValue)
-                return SimGeom.Value.TransformDirection(localWingCentroid) + SimGeom.Value.Position;
+            if (SimThreadContext.LiveOnly)
+                return part_transform.TransformDirection(localWingCentroid) + part.partTransform.position;
+            FrozenPartTransform? g = SolveGeom;
+            if (g.HasValue)
+                return g.Value.TransformDirection(localWingCentroid) + g.Value.Position;
             return part_transform.TransformDirection(localWingCentroid) + part.partTransform.position;
         }
 
@@ -622,21 +744,60 @@ namespace ferram4
             }
         }
 
+        private long geometryVersion;
+
+        /// <summary>
+        /// Changes whenever something a prediction reads from this wing is rebuilt on the main thread (its geometry,
+        /// its neighbour lists and exposures): bumped before and after each rebuild, so a snapshot prediction that
+        /// overlaps one sees it changed. Any thread.
+        /// </summary>
+        internal long GeometryVersion => Interlocked.Read(ref geometryVersion);
+
+        /// <summary>Marks a rebuild of wing state predictions read (see <see cref="GeometryVersion"/>). Main thread.</summary>
+        internal void BumpGeometryVersion()
+        {
+            Interlocked.Increment(ref geometryVersion);
+        }
+
         public void StartInitialization()
         {
-            MathAndFunctionInitialization();
-            aeroModule = part.GetComponent<FARAeroPartModule>();
+            // One bump pair around the whole rebuild: between the geometry's and the neighbours' own pairs, a new
+            // interaction with empty neighbour lists replaces the old one, and a snapshot prediction running in that
+            // gap alone would see no version change.
+            BumpGeometryVersion();
+            try
+            {
+                MathAndFunctionInitialization();
+                aeroModule = part.GetComponent<FARAeroPartModule>();
 
-            if (aeroModule == null)
-                FARLogger.Error("Could not find FARAeroPartModule on same part as FARWingAerodynamicModel!");
+                if (aeroModule == null)
+                    FARLogger.Error("Could not find FARAeroPartModule on same part as FARWingAerodynamicModel!");
 
-            OnWingAttach();
-            massScaleReady = true;
-            wingInteraction = new FARWingInteraction(this, part, rootMidChordOffsetFromOrig, srfAttachNegative);
-            UpdateThisWingInteractions();
+                OnWingAttach();
+                massScaleReady = true;
+                wingInteraction = new FARWingInteraction(this, part, rootMidChordOffsetFromOrig, srfAttachNegative);
+                UpdateThisWingInteractions();
+            }
+            finally
+            {
+                BumpGeometryVersion();
+            }
         }
 
         public void MathAndFunctionInitialization()
+        {
+            BumpGeometryVersion();
+            try
+            {
+                MathAndFunctionInitializationCore();
+            }
+            finally
+            {
+                BumpGeometryVersion();
+            }
+        }
+
+        private void MathAndFunctionInitializationCore()
         {
             S = b_2_actual * MAC_actual;
 
@@ -693,12 +854,20 @@ namespace ferram4
 
         public void UpdateThisWingInteractions()
         {
-            if (VesselPartList == null)
-                VesselPartList = GetShipPartList();
-            if (wingInteraction == null)
-                wingInteraction = new FARWingInteraction(this, part, rootMidChordOffsetFromOrig, srfAttachNegative);
+            BumpGeometryVersion();
+            try
+            {
+                if (VesselPartList == null)
+                    VesselPartList = GetShipPartList();
+                if (wingInteraction == null)
+                    wingInteraction = new FARWingInteraction(this, part, rootMidChordOffsetFromOrig, srfAttachNegative);
 
-            wingInteraction.UpdateWingInteraction(VesselPartList, nonSideAttach == 1);
+                wingInteraction.UpdateWingInteraction(VesselPartList, nonSideAttach == 1);
+            }
+            finally
+            {
+                BumpGeometryVersion();
+            }
         }
 
         public virtual void FixedUpdate()
@@ -905,7 +1074,9 @@ namespace ferram4
         {
             double v_scalar = velocity.magnitude;
 
-            Vector3 forward = SimGeom.HasValue ? SimGeom.Value.Forward : part_transform.forward;
+            bool snapshot = SnapshotInstalled(out WingScratch captured);
+            FrozenPartTransform? geom = snapshot ? captured.CapturedGeom : SweepGeom;
+            Vector3 forward = geom.HasValue ? geom.Value.Forward : part_transform.forward;
             Vector3d velocity_normalized = velocity / v_scalar;
 
             double q = density * v_scalar * v_scalar * 0.0005; //dynamic pressure, q
@@ -916,8 +1087,8 @@ namespace ferram4
             _scratch.perp = Vector3d.Cross(forward, _scratch.ParallelInPlane).normalized;
             _scratch.liftDirection = Vector3d.Cross(_scratch.perp, velocity).normalized;
 
-            _scratch.ParallelInPlaneLocal = SimGeom.HasValue
-                                                ? SimGeom.Value.InverseTransformDirection(_scratch.ParallelInPlane)
+            _scratch.ParallelInPlaneLocal = geom.HasValue
+                                                ? geom.Value.InverseTransformDirection(_scratch.ParallelInPlane)
                                                 : part_transform.InverseTransformDirection(_scratch.ParallelInPlane);
 
             // Calculate the adjusted AC position (uses ParallelInPlane)
@@ -930,7 +1101,9 @@ namespace ferram4
                                                                          _scratch.effective_MAC,
                                                                          v_scalar,
                                                                          MachNumber,
+                                                                         SimThreadContext.Prediction?.ExternalTemperature ??
                                                                          vessel.externalTemperature,
+                                                                         SimThreadContext.Prediction?.VesselAdiabaticIndex ??
                                                                          FARAtmosphere.GetAdiabaticIndex(vessel))
                                           : 0.005;
 
@@ -942,18 +1115,21 @@ namespace ferram4
 
             //lift and drag vectors
             Vector3d L, D;
-            if (failureForceScaling >= 1 && part.submergedPortion > 0)
+            double submergedPortion = snapshot ? captured.CapturedSubmergedPortion : part.submergedPortion;
+            if (failureForceScaling >= 1 && submergedPortion > 0)
             {
+                double submergedLiftScalar = snapshot ? captured.CapturedSubmergedLiftScalar : part.submergedLiftScalar;
+                double submergedDragScalar = snapshot ? captured.CapturedSubmergedDragScalar : part.submergedDragScalar;
                 //lift; submergedDynPreskPa handles lift
                 L = _scratch.liftDirection *
                     (_scratch.Cl * S) *
                     q *
-                    (part.submergedPortion * part.submergedLiftScalar + 1 - part.submergedPortion);
+                    (submergedPortion * submergedLiftScalar + 1 - submergedPortion);
                 //drag is parallel to velocity vector
                 D = -velocity_normalized *
                     (_scratch.Cd * S) *
                     q *
-                    (part.submergedPortion * part.submergedDragScalar + 1 - part.submergedPortion);
+                    (submergedPortion * submergedDragScalar + 1 - submergedPortion);
             }
             else
             {
@@ -965,35 +1141,36 @@ namespace ferram4
 
             // Arrow display touches Unity objects (ArrowPointer create/destroy); skip it on the
             // frozen sweep path, which may run off the main thread.
-            if (updateAeroArrows && !SimGeom.HasValue)
+            if (updateAeroArrows && !geom.HasValue)
                 UpdateAeroDisplay(L, D);
 
             Vector3d force = L + D;
             if (double.IsNaN(force.sqrMagnitude) || double.IsNaN(_scratch.AerodynamicCenter.sqrMagnitude))
             {
-                FARLogger.Warning("Error: Aerodynamic force = " +
-                                  force.magnitude +
-                                  " AC Loc = " +
-                                  _scratch.AerodynamicCenter.magnitude +
-                                  " AoA = " +
-                                  AoA +
-                                  "\n\rMAC = " +
-                                  _scratch.effective_MAC +
-                                  " B_2 = " +
-                                  _scratch.effective_b_2 +
-                                  " sweepAngle = " +
-                                  _scratch.cosSweepAngle +
-                                  "\n\rMidChordSweep = " +
-                                  MidChordSweep +
-                                  " MidChordSweepSideways = " +
-                                  MidChordSweepSideways +
-                                  "\n\r at " +
-                                  part.name);
+                FARLogAnyThread.Warning("Error: Aerodynamic force = " +
+                                        force.magnitude +
+                                        " AC Loc = " +
+                                        _scratch.AerodynamicCenter.magnitude +
+                                        " AoA = " +
+                                        AoA +
+                                        "\n\rMAC = " +
+                                        _scratch.effective_MAC +
+                                        " B_2 = " +
+                                        _scratch.effective_b_2 +
+                                        " sweepAngle = " +
+                                        _scratch.cosSweepAngle +
+                                        "\n\rMidChordSweep = " +
+                                        MidChordSweep +
+                                        " MidChordSweepSideways = " +
+                                        MidChordSweepSideways +
+                                        "\n\r at " +
+                                        (part.partInfo != null ? part.partInfo.name : "?"));
                 force = _scratch.AerodynamicCenter = Vector3d.zero;
             }
 
-            double rbMass = SimGeom.HasValue ? simRbMass : part.rb.mass;
-            double fixedDt = SimGeom.HasValue ? simFixedDeltaTime : TimeWarp.fixedDeltaTime;
+            bool sweep = !snapshot && SweepGeom.HasValue;
+            double rbMass = snapshot ? captured.CapturedRbMass : sweep ? simRbMass : part.rb.mass;
+            double fixedDt = snapshot ? captured.CapturedFixedDeltaTime : sweep ? simFixedDeltaTime : TimeWarp.fixedDeltaTime;
             double numericalControlFactor = rbMass * v_scalar * 0.67 / (force.magnitude * fixedDt);
             force *= Math.Min(numericalControlFactor, 1);
 
@@ -1084,7 +1261,14 @@ namespace ferram4
 
         public virtual double CalculateAoA(Vector3d velocity)
         {
-            Vector3 forward = SimGeom.HasValue ? SimGeom.Value.Forward : part_transform.forward;
+            Vector3 forward;
+            if (SimThreadContext.LiveOnly)
+                forward = part_transform.forward;
+            else
+            {
+                FrozenPartTransform? g = SolveGeom;
+                forward = g.HasValue ? g.Value.Forward : part_transform.forward;
+            }
             double PerpVelocity = Vector3d.Dot(forward, velocity.normalized);
             return Math.Asin(PerpVelocity.Clamp(-1, 1));
         }
