@@ -166,6 +166,19 @@ namespace ferram4
         private readonly WingInteractionScratch[] _scratchSlots =
             new WingInteractionScratch[SimThreadContext.MaxSlots];
 
+        /// <summary>
+        /// Starts the calling thread's slot (a prediction's) from the flight's, slot 0's. The wing's lift slope reads
+        /// ARFactor before the orientation update refreshes it, so a stale slot would carry the last call into this one.
+        /// </summary>
+        internal void BeginPredictionState()
+        {
+            int s = SimThreadContext.Slot;
+            WingInteractionScratch sc = _scratchSlots[s];
+            if (sc == null)
+                _scratchSlots[s] = sc = new WingInteractionScratch();
+            sc.CopyFrom(_scratchSlots[0] ?? new WingInteractionScratch());
+        }
+
         internal WingInteractionScratch _scratch
         {
             get

@@ -94,5 +94,39 @@ namespace ferram4
 
         // Working wing centroid in world space
         public Vector3d CurWingCentroid;
+
+        /// <summary>
+        /// Every field from another slot's (the flight's): the state a flight prediction starts from, the one it
+        /// found when it ran on the flight's own.
+        /// </summary>
+        public void CopyFrom(WingScratch src)
+        {
+            velocityEditor = src.velocityEditor;
+            rho = src.rho;
+            Cl = src.Cl;
+            Cd = src.Cd;
+            stall = src.stall;
+            minStall = src.minStall;
+            rawAoAmax = src.rawAoAmax;
+            AoAmax = src.AoAmax;
+            rawLiftSlope = src.rawLiftSlope;
+            liftslope = src.liftslope;
+            cosSweepAngle = src.cosSweepAngle;
+            effective_b_2 = src.effective_b_2;
+            effective_MAC = src.effective_MAC;
+            effective_AR = src.effective_AR;
+            transformed_AR = src.transformed_AR;
+            ClIncrementFromRear = src.ClIncrementFromRear;
+            e = src.e;
+            piARe = src.piARe;
+            zeroLiftCdIncrement = src.zeroLiftCdIncrement;
+            FinalLiftSlope = src.FinalLiftSlope;
+            ParallelInPlane = src.ParallelInPlane;
+            perp = src.perp;
+            liftDirection = src.liftDirection;
+            ParallelInPlaneLocal = src.ParallelInPlaneLocal;
+            AerodynamicCenter = src.AerodynamicCenter;
+            CurWingCentroid = src.CurWingCentroid;
+        }
     }
 }

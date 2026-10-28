@@ -335,6 +335,27 @@ namespace ferram4
         }
 
         /// <summary>
+        /// Starts this wing's scratch on the calling thread's slot (a prediction's) from the flight's, slot 0's, as
+        /// the prediction found it when it ran on the flight's state; nothing a previous prediction left is carried
+        /// into this one. Main thread.
+        /// </summary>
+        internal virtual void BeginPredictionState()
+        {
+            int s = SimThreadContext.Slot;
+            WingScratch sc = _scratchSlots[s];
+            if (sc == null)
+                _scratchSlots[s] = sc = new WingScratch();
+            sc.CopyFrom(_scratchSlots[0] ?? NewScratch());
+            wingInteraction?.BeginPredictionState();
+        }
+
+        /// <summary>A scratch as a slot's first is made, for a wing the flight has not evaluated yet.</summary>
+        private WingScratch NewScratch()
+        {
+            return new WingScratch {rawAoAmax = rawAoAmax, transformed_AR = b_2_actual / MAC_actual};
+        }
+
+        /// <summary>
         /// Shielded state as the solve should see it. Plain wings use the (sweep-invariant) instance
         /// field; control surfaces override this to read the per-thread value, since they rewrite
         /// shielded state from their deflection every trim step and the instance field would race.

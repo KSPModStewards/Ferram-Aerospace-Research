@@ -47,6 +47,7 @@ using ferram4;
 using FerramAerospaceResearch.FARGUI.FARFlightGUI;
 using FerramAerospaceResearch.FARPartGeometry;
 using FerramAerospaceResearch.FARThreading;
+using FerramAerospaceResearch.Threading;
 using UnityEngine;
 
 namespace FerramAerospaceResearch.FARAeroComponents
@@ -88,6 +89,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
         private VehicleAerodynamics _vehicleAero;
         private VesselIntakeRamDrag _vesselIntakeRamDrag;
         private CachedSimResults lastSimResults;
+        // Predictions can come from more than one thread; the memo is read and written whole under this lock.
+        private readonly object lastSimResultsLock = new object();
         public VehicleExposure Exposure { get; private set; }
 
         internal VehicleAerodynamics VehicleAero
@@ -284,6 +287,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 m.ApplyForces();
         }
 
+        private static bool loggedOffMainThread;
+        private static bool loggedNoSlot;
+
         public void SimulateAeroProperties(
             out Vector3 aeroForce,
             out Vector3 aeroTorque,
@@ -291,16 +297,33 @@ namespace FerramAerospaceResearch.FARAeroComponents
             double altitude
         )
         {
+            // The live vessel is read here (transforms, rigidbodies, the atmosphere functions), which only the main
+            // thread may do.
+            if (!MainThread.IsMainThread)
+            {
+                if (!loggedOffMainThread)
+                {
+                    loggedOffMainThread = true;
+                    FARLogAnyThread.Warning("FARVesselAero.SimulateAeroProperties called off the main thread; returning zero.");
+                }
+
+                aeroForce = aeroTorque = Vector3.zero;
+                return;
+            }
+
             Vector3d position = vessel.CurrentPosition(altitude);
 
-            if (velocityWorldVector.NearlyEqual(lastSimResults.VelocityVector) &&
+            CachedSimResults memo;
+            lock (lastSimResultsLock)
+                memo = lastSimResults;
+            if (velocityWorldVector.NearlyEqual(memo.VelocityVector) &&
                 (FARAtmosphere.IsCustom
                      // Custom atmospheres are not guaranteed to be independent of latitude and longitude
-                     ? position.NearlyEqual(lastSimResults.Position)
-                     : altitude.NearlyEqual(lastSimResults.Position.z)))
+                     ? position.NearlyEqual(memo.Position)
+                     : altitude.NearlyEqual(memo.Position.z)))
             {
-                aeroForce = lastSimResults.Force;
-                aeroTorque = lastSimResults.Torque;
+                aeroForce = memo.Force;
+                aeroTorque = memo.Torque;
                 return;
             }
 
@@ -334,28 +357,61 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
             if (_currentAeroSections != null)
             {
-                foreach (FARAeroSection curSection in _currentAeroSections)
-                    curSection?.PredictionCalculateAeroForces((float)properties.Density,
-                                                              machNumber,
-                                                              reynoldsPerLength,
-                                                              pseudoKnudsenNumber,
-                                                              skinFriction,
-                                                              velocityWorldVector,
-                                                              center);
+                // Everything the prediction computes goes to a slot of its own. The wings, their interactions and the
+                // control surfaces keep their working state per slot, and slot 0 is the flight's: evaluating on it
+                // overwrote the lift slope, stall, aerodynamic center and neighbour values the next physics frame
+                // reads, so any caller (a trajectory predictor, an autopilot) changed how the vessel flew, and each
+                // prediction started from whatever the last one left. The slot starts from the flight's state, the
+                // one a prediction found on slot 0 before any other prediction had run.
+                SimThreadContext.PredictionCall call = SimThreadContext.BeginPrediction(velocityWorldVector);
+                if (call == null)
+                {
+                    // Only when a prediction is made from inside another on the main thread and every other slot is
+                    // busy: the main thread does not wait for other threads.
+                    if (!loggedNoSlot)
+                    {
+                        loggedNoSlot = true;
+                        FARLogger.Warning("FARVesselAero.SimulateAeroProperties: no prediction slot free for a nested call; returning zero.");
+                    }
 
-                foreach (FARWingAerodynamicModel curWing in _legacyWingModels)
-                    if (curWing != null)
-                        center.AddForce(curWing.transform.position,
-                                        curWing.PrecomputeCenterOfLift(velocityWorldVector,
-                                                                       machNumber,
-                                                                       properties.Density,
-                                                                       dummy));
+                    aeroForce = aeroTorque = Vector3.zero;
+                    return;
+                }
+
+                try
+                {
+                    foreach (FARAeroSection curSection in _currentAeroSections)
+                        curSection?.PredictionCalculateAeroForces((float)properties.Density,
+                                                                  machNumber,
+                                                                  reynoldsPerLength,
+                                                                  pseudoKnudsenNumber,
+                                                                  skinFriction,
+                                                                  velocityWorldVector,
+                                                                  center);
+
+                    // Every wing first: a wing reads its neighbours' values on the slot as it computes.
+                    foreach (FARWingAerodynamicModel curWing in _legacyWingModels)
+                        curWing?.BeginPredictionState();
+
+                    foreach (FARWingAerodynamicModel curWing in _legacyWingModels)
+                        if (curWing != null)
+                            center.AddForce(curWing.transform.position,
+                                            curWing.PrecomputeCenterOfLift(velocityWorldVector,
+                                                                           machNumber,
+                                                                           properties.Density,
+                                                                           dummy));
+                }
+                finally
+                {
+                    SimThreadContext.EndPrediction(call);
+                }
             }
 
             aeroForce = center.force;
             aeroTorque = center.TorqueAt(vessel.CoM);
 
-            lastSimResults = new CachedSimResults(velocityWorldVector, position, aeroForce, aeroTorque);
+            lock (lastSimResultsLock)
+                lastSimResults = new CachedSimResults(velocityWorldVector, position, aeroForce, aeroTorque);
         }
 
 

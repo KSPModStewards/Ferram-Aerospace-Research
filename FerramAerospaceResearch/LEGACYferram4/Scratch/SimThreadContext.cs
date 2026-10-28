@@ -14,6 +14,8 @@ Fast per-thread slot assignment for the parallel editor sweep.
 using System;
 using System.Collections.Concurrent;
 using System.Threading;
+using FerramAerospaceResearch.Threading;
+using UnityEngine;
 
 // ReSharper disable once CheckNamespace
 namespace ferram4
@@ -41,14 +43,28 @@ namespace ferram4
         /// <summary>Upper bound the scratch arrays are sized to. The pool only uses ~concurrency of them.</summary>
         public const int MaxSlots = 64;
 
+        /// <summary>
+        /// Slots kept for flight predictions (FARVesselAero.SimulateAeroProperties): the top of the range, never slot 0,
+        /// and never handed out by the sweep pool, so a prediction cannot touch the flight's state or a sweep's. The
+        /// last of them is the main thread's alone, so the main thread never waits for another thread's prediction.
+        /// </summary>
+        public const int PredictionSlots = 16;
+
+        /// <summary>The prediction slot kept for the main thread.</summary>
+        public const int MainThreadPredictionSlot = MaxSlots - 1;
+
         [ThreadStatic] private static int slot;
         [ThreadStatic] private static SlotPool heldFrom;
+        [ThreadStatic] private static PredictionCall prediction;
+
+        // Only the main thread reads or writes this.
+        private static bool mainThreadSlotInUse;
 
         /// <summary>
         /// A set of slots handed out one per concurrent unit of work. Taking one waits while all are in use,
         /// so two live workers never share a slot.
         /// </summary>
-        private sealed class SlotPool
+        internal sealed class SlotPool
         {
             private readonly ConcurrentStack<int> free = new ConcurrentStack<int>();
             private readonly SemaphoreSlim available;
@@ -67,6 +83,16 @@ namespace ferram4
                 return s;
             }
 
+            /// <summary>A free slot without waiting, or false when all are in use.</summary>
+            public bool TryTake(out int s)
+            {
+                s = 0;
+                if (!available.Wait(0))
+                    return false;
+                free.TryPop(out s);
+                return true;
+            }
+
             public void Give(int s)
             {
                 free.Push(s);
@@ -75,6 +101,77 @@ namespace ferram4
         }
 
         private static SlotPool sweepPool = new SlotPool(1, 1);
+        // Other threads' prediction slots: all of PredictionSlots but the main thread's.
+        private static readonly SlotPool predictionPool = new SlotPool(MaxSlots - PredictionSlots, PredictionSlots - 1);
+
+        /// <summary>
+        /// The flight prediction the calling thread is inside, or null, with the airflow it simulates.
+        /// </summary>
+        public sealed class PredictionCall
+        {
+            public Vector3d Velocity;
+            internal int Slot;
+            internal bool OnMainThreadSlot;
+            internal int PreviousSlot;
+            internal SlotPool PreviousHeldFrom;
+            internal PredictionCall Previous;
+        }
+
+        public static PredictionCall Prediction => prediction;
+
+        /// <summary>
+        /// Moves the calling thread onto a prediction slot for the duration of one prediction; pair with
+        /// <see cref="EndPrediction"/> in a finally. The main thread takes the slot kept for it, or, inside a
+        /// prediction it is already making, a free one of the others without waiting; it gets null rather than wait
+        /// for another thread. Another thread waits while all of theirs are in use.
+        /// </summary>
+        public static PredictionCall BeginPrediction(Vector3d velocity)
+        {
+            int s;
+            bool mainSlot = false;
+            if (MainThread.IsMainThread)
+            {
+                if (!mainThreadSlotInUse)
+                {
+                    s = MainThreadPredictionSlot;
+                    mainThreadSlotInUse = mainSlot = true;
+                }
+                else if (!predictionPool.TryTake(out s))
+                {
+                    return null;
+                }
+            }
+            else
+            {
+                s = predictionPool.Take();
+            }
+
+            var call = new PredictionCall
+            {
+                Velocity = velocity,
+                Slot = s,
+                OnMainThreadSlot = mainSlot,
+                PreviousSlot = slot,
+                PreviousHeldFrom = heldFrom,
+                Previous = prediction
+            };
+            slot = s;
+            heldFrom = null;
+            prediction = call;
+            return call;
+        }
+
+        /// <summary>Puts the calling thread back on the slot it had before <see cref="BeginPrediction"/>.</summary>
+        public static void EndPrediction(PredictionCall call)
+        {
+            slot = call.PreviousSlot;
+            heldFrom = call.PreviousHeldFrom;
+            prediction = call.Previous;
+            if (call.OnMainThreadSlot)
+                mainThreadSlotInUse = false;
+            else
+                predictionPool.Give(call.Slot);
+        }
 
         /// <summary>The calling thread's current slot; 0 when it holds none (serial contexts).</summary>
         public static int Slot => slot;
@@ -83,18 +180,18 @@ namespace ferram4
 
         /// <summary>
         /// Whether the calling thread holds a sweep slot (between <see cref="AcquireSlot"/> and
-        /// <see cref="ReleaseSlot"/>). Only then does the solve read the
+        /// <see cref="ReleaseSlot"/>), outside any prediction it makes there. Only then does the solve read the
         /// sweep's frozen state (a part's SimGeom, the editor CoM and facility, the adiabatic index override); the
         /// main thread's own evaluations during a sweep (the center-of-lift marker, the serial tabs) read the live
         /// game as they do outside one.
         /// </summary>
-        public static bool InSweep => inSweep;
+        public static bool InSweep => inSweep && prediction == null;
 
         /// <summary>
         /// How many slots a sweep hands out: one per possible concurrent worker plus a small margin. They are
         /// slots 1 to SweepPoolSize, so an array indexed by a sweep worker's slot needs SweepPoolSize + 1 entries.
         /// </summary>
-        public static int SweepPoolSize => Math.Max(1, Math.Min(MaxSlots - 1, Environment.ProcessorCount + 2));
+        public static int SweepPoolSize => Math.Max(1, Math.Min(MaxSlots - 1 - PredictionSlots, Environment.ProcessorCount + 2));
 
         /// <summary>
         /// A new pool for a sweep, slots 1 to <see cref="SweepPoolSize"/>. Main thread, before the parallel loop

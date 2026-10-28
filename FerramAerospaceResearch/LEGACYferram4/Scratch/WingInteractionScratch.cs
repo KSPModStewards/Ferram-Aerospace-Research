@@ -39,5 +39,22 @@ namespace ferram4
         public double EffectiveUpstreamAoA;
         public double EffectiveUpstreamCd0;
         public double EffectiveUpstreamInfluence;
+
+        /// <summary>Every field from another slot's (the flight's): the state a flight prediction starts from.</summary>
+        public void CopyFrom(WingInteractionScratch src)
+        {
+            ARFactor = src.ARFactor;
+            HasWingsUpstream = src.HasWingsUpstream;
+            EffectiveUpstreamMAC = src.EffectiveUpstreamMAC;
+            EffectiveUpstreamb_2 = src.EffectiveUpstreamb_2;
+            EffectiveUpstreamArea = src.EffectiveUpstreamArea;
+            EffectiveUpstreamLiftSlope = src.EffectiveUpstreamLiftSlope;
+            EffectiveUpstreamStall = src.EffectiveUpstreamStall;
+            EffectiveUpstreamCosSweepAngle = src.EffectiveUpstreamCosSweepAngle;
+            EffectiveUpstreamAoAMax = src.EffectiveUpstreamAoAMax;
+            EffectiveUpstreamAoA = src.EffectiveUpstreamAoA;
+            EffectiveUpstreamCd0 = src.EffectiveUpstreamCd0;
+            EffectiveUpstreamInfluence = src.EffectiveUpstreamInfluence;
+        }
     }
 }

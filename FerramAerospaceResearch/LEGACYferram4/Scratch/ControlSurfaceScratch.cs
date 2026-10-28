@@ -62,5 +62,26 @@ namespace ferram4
         // reads it (SetState, wing interaction) to decide whether to skip the surface. It must be
         // per-thread on the parallel path or those reads race. Seeded from the instance value.
         public bool IsShielded;
+
+        /// <summary>The deflection, control mapping and shielding of another slot (the flight's), for a prediction.</summary>
+        public void CopyControlStateFrom(ControlSurfaceScratch src)
+        {
+            AoAcurrentControl = src.AoAcurrentControl;
+            AoAcurrentFlap = src.AoAcurrentFlap;
+            AoAoffset = src.AoAoffset;
+            AoAdesiredControl = src.AoAdesiredControl;
+            AoAdesiredFlap = src.AoAdesiredFlap;
+            deflectedNormal = src.deflectedNormal;
+            lastAoAoffset = src.lastAoAoffset;
+            PitchLocation = src.PitchLocation;
+            YawLocation = src.YawLocation;
+            RollLocation = src.RollLocation;
+            BrakeRudderLocation = src.BrakeRudderLocation;
+            BrakeRudderSide = src.BrakeRudderSide;
+            AoAsign = src.AoAsign;
+            flapLocation = src.flapLocation;
+            spoilerLocation = src.spoilerLocation;
+            IsShielded = src.IsShielded;
+        }
     }
 }

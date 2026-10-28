@@ -248,6 +248,23 @@ namespace ferram4
             }
         }
 
+        /// <summary>
+        /// A prediction flies the surface as it is deflected now: the control state (deflection, deflected normal,
+        /// control mapping) is the flight's, slot 0's, and its shielding the flight's.
+        /// </summary>
+        internal override void BeginPredictionState()
+        {
+            base.BeginPredictionState();
+            ControlSurfaceScratch flight = _ctrlScratchSlots[0];
+            ControlSurfaceScratch sc = _ctrlScratch;
+            if (flight != null)
+                sc.CopyControlStateFrom(flight);
+            else
+                sc.CopyControlStateFrom(new ControlSurfaceScratch());
+            // Flight writes the shield state to the instance (CheckShielded), not to slot 0's scratch.
+            sc.IsShielded = isShielded;
+        }
+
         // A control surface also reads the root part's transform and its parent's position;
         // snapshot those alongside the base part transform for the off-thread sweep.
         private FrozenPartTransform? simRootGeom;
@@ -657,17 +674,23 @@ namespace ferram4
             if (!(NUFAR_areaExposedFactor < 0.1 * S) || NUFAR_totalExposedAreaFactor.NearlyEqual(0))
                 return;
 
-            // During the parallel sweep write the per-thread value; the instance field is shared and
-            // read by the solve on other threads, so writing it here would race.
-            if (SimGeom.HasValue)
+            // A sweep worker or a prediction writes its slot's value (the one GetShielded reads there); the
+            // instance field is the flight's and the main thread's, shared with every other thread.
+            if (SlotShielding)
                 _ctrlScratch.IsShielded = Math.Abs(AoAoffset) <= 5;
             else
                 isShielded = Math.Abs(AoAoffset) <= 5;
         }
 
+        // Whether the shield state lives in the slot's scratch: on a sweep worker and inside a prediction.
+        private bool SlotShielding
+        {
+            get { return SweepGeom.HasValue || SimThreadContext.Prediction != null; }
+        }
+
         public override bool GetShielded()
         {
-            return SimGeom.HasValue ? _ctrlScratch.IsShielded : isShielded;
+            return SlotShielding ? _ctrlScratch.IsShielded : isShielded;
         }
 
         public void CalculateSurfaceFunctions()
