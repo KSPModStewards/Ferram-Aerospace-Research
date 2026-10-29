@@ -262,10 +262,10 @@ namespace FerramAerospaceResearch
 
         private static void ModelOptionsWindow(int windowID)
         {
-            bool whole = GUILayout.Toggle(FARDebugValues.wholeWingAspectRatio, "Whole-wing aspect ratio");
-            GUILayout.Label(whole
-                                ? "Each wing panel takes the aspect ratio of the whole wing it is part of."
-                                : "Each wing panel keeps its own aspect ratio (upstream FAR).");
+            bool whole = OptionToggle(FARDebugValues.wholeWingAspectRatio,
+                                      "Whole-wing aspect ratio",
+                                      "Each wing panel takes the aspect ratio of the whole wing it is part of.",
+                                      "Each wing panel keeps its own aspect ratio (old behavior).");
             if (whole != FARDebugValues.wholeWingAspectRatio)
             {
                 FARDebugValues.wholeWingAspectRatio = whole;
@@ -276,6 +276,14 @@ namespace FerramAerospaceResearch
             if (GUILayout.Button("Close"))
                 modelOptions = false;
             GUI.DragWindow();
+        }
+
+        // a model option's toggle and what its current setting does
+        private static bool OptionToggle(bool value, string title, string whenOn, string whenOff)
+        {
+            value = GUILayout.Toggle(value, title);
+            GUILayout.Label(value ? whenOn : whenOff);
+            return value;
         }
 
         // the editor (or KSC) not clicked through the window
