@@ -70,6 +70,12 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
         public double range;
         public double endurance;
 
+        /// <summary>Aggregate fuel burn rate of the engines' burning resources, kg/s.</summary>
+        public double avgFuelBurn;
+
+        /// <summary>Remaining mass of the engines' burning resources, kg.</summary>
+        public double fuelRemaining;
+
         public double ballisticCoeff;
         public double termVelEst;
 

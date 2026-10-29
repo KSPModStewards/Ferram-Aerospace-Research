@@ -47,6 +47,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using ferram4;
 using UnityEngine;
+using FerramAerospaceResearch.Threading;
 
 namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
 {
@@ -59,39 +60,47 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             _instantCondition = instantConditionSim;
         }
 
-        public StabilityDerivOutput CalculateStabilityDerivs(
-            CelestialBody body,
-            double alt,
-            double machNumber,
-            int flapSetting,
-            bool spoilers,
-            double alpha,
-            double beta,
-            double phi
-        )
+        /// <summary>
+        /// Vehicle mass, CoM and moments of inertia. Flight-condition-independent, and it reads Unity part
+        /// transforms and Rigidbody inertia tensors (main-thread only), so a stability sweep computes it
+        /// ONCE on the main thread and reuses it for every (Mach, altitude) cell - which also removes two
+        /// per-cell part loops that the old code re-ran for every cell.
+        /// </summary>
+        public readonly struct VehicleProperties
         {
-            GasProperties properties = FARAtmosphere.GetGasProperties(body,
-                                                                      new Vector3d(0, 0, alt),
-                                                                      Planetarium.GetUniversalTime());
+            public readonly Vector3d CoM;
+            public readonly double Mass; // kg
+            public readonly double Ix, Iy, Iz, Ixy, Iyz, Ixz;
 
-            double density = properties.Density;
-            double sspeed = properties.SpeedOfSound;
-            double u0 = sspeed * machNumber;
-            double q = u0 * u0 * density * 0.5f;
+            /// <summary>
+            /// The wings that set the reference area, MAC and span: each physical part's wing, in ship order (whether
+            /// shielded is decided per evaluation).
+            /// </summary>
+            public readonly FARWingAerodynamicModel[] AreaWings;
 
-            var stabDerivOutput = new StabilityDerivOutput
+            public VehicleProperties(Vector3d com, double mass,
+                                     double ix, double iy, double iz, double ixy, double iyz, double ixz,
+                                     FARWingAerodynamicModel[] areaWings)
             {
-                nominalVelocity = u0,
-                altitude = alt,
-                body = body
-            };
+                AreaWings = areaWings;
+                CoM = com;
+                Mass = mass;
+                Ix = ix;
+                Iy = iy;
+                Iz = iz;
+                Ixy = ixy;
+                Iyz = iyz;
+                Ixz = ixz;
+            }
+        }
+
+        /// <summary>Main-thread only (reads Unity transforms / Rigidbody tensors). See <see cref="VehicleProperties" />.</summary>
+        public VehicleProperties ComputeVehicleProperties(int flapSetting, bool spoilers)
+        {
+            var input = new InstantConditionSimInput(0, 0, 0, 0, 0, 0, 0, 0, flapSetting, spoilers);
 
             Vector3d CoM = Vector3d.zero;
             double mass = 0;
-
-            double MAC = 0;
-            double b = 0;
-            double area = 0;
 
             double Ix = 0;
             double Iy = 0;
@@ -100,11 +109,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             double Iyz = 0;
             double Ixz = 0;
 
-            var input = new InstantConditionSimInput(alpha, beta, phi, 0, 0, 0, machNumber, 0, flapSetting, spoilers);
-            var pertOutput = new InstantConditionSimOutput();
-
-            _instantCondition.GetClCdCmSteady(input, out InstantConditionSimOutput nominalOutput, true);
-
+            var areaWings = new List<FARWingAerodynamicModel>();
             List<Part> partsList = EditorLogic.SortedShipList;
             foreach (Part p in partsList)
             {
@@ -118,14 +123,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                 CoM += partMass * (Vector3d)p.transform.TransformPoint(p.CoMOffset);
                 mass += partMass;
                 FARWingAerodynamicModel w = p.GetComponent<FARWingAerodynamicModel>();
-                if (w == null)
+                if (w != null)
+                    areaWings.Add(w);
+                if (w == null || w.isShielded)
                     continue;
-                if (w.isShielded)
-                    continue;
-
-                area += w.S;
-                MAC += w.GetMAC() * w.S;
-                b += w.Getb_2() * w.S;
                 if (w is FARControllableSurface controllableSurface)
                     controllableSurface.SetControlStateEditor(CoM,
                                                               p.transform.up,
@@ -136,21 +137,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                                                               input.spoilers);
             }
 
-            if (area.NearlyEqual(0))
-            {
-                area = _instantCondition._maxCrossSectionFromBody;
-                MAC = _instantCondition._bodyLength;
-                b = 1;
-            }
-
-            MAC /= area;
-            b /= area;
             CoM /= mass;
             mass *= 1000;
-
-            stabDerivOutput.b = b;
-            stabDerivOutput.MAC = MAC;
-            stabDerivOutput.area = area;
 
             foreach (Part p in partsList)
             {
@@ -233,13 +221,87 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             Iy *= 1000;
             Iz *= 1000;
 
-            stabDerivOutput.stabDerivs[0] = Ix;
-            stabDerivOutput.stabDerivs[1] = Iy;
-            stabDerivOutput.stabDerivs[2] = Iz;
+            return new VehicleProperties(CoM, mass, Ix, Iy, Iz, Ixy, Iyz, Ixz, areaWings.ToArray());
+        }
 
-            stabDerivOutput.stabDerivs[24] = Ixy;
-            stabDerivOutput.stabDerivs[25] = Iyz;
-            stabDerivOutput.stabDerivs[26] = Ixz;
+        /// <summary>
+        /// Per-cell stability derivatives at one (Mach, altitude), given the vehicle mass properties from
+        /// <see cref="ComputeVehicleProperties" />. The aero solve reads only thread-local sim state
+        /// (per <see cref="SimThreadContext" />) and the frozen geometry snapshot, so this is safe to call
+        /// from parallel-sweep worker threads.
+        /// </summary>
+        public StabilityDerivOutput CalculateStabilityDerivs(
+            in VehicleProperties props,
+            CelestialBody body,
+            double alt,
+            double machNumber,
+            double density,
+            double sspeed,
+            int flapSetting,
+            bool spoilers,
+            double alpha,
+            double beta,
+            double phi
+        )
+        {
+            // density and sspeed are sampled on the main thread and passed in (FARAtmosphere/Planetarium
+            // are main-thread only), so this is safe to run on a parallel-sweep worker.
+            double u0 = sspeed * machNumber;
+            double q = u0 * u0 * density * 0.5f;
+
+            var stabDerivOutput = new StabilityDerivOutput
+            {
+                nominalVelocity = u0,
+                altitude = alt,
+                body = body
+            };
+
+            Vector3d CoM = props.CoM;
+            double mass = props.Mass;
+            double Ix = props.Ix;
+            double Iy = props.Iy;
+            double Iz = props.Iz;
+
+            var input = new InstantConditionSimInput(alpha, beta, phi, 0, 0, 0, machNumber, 0, flapSetting, spoilers);
+            var pertOutput = new InstantConditionSimOutput();
+
+            _instantCondition.GetClCdCmSteady(input, out InstantConditionSimOutput nominalOutput, true);
+
+            // The reference MAC and span are the wings' effective (interaction-adjusted) values, which the
+            // nominal evaluation above has just set for this point (in this thread's slot). Summed here, after
+            // it, as the code before the parallel sweep did; summed with the mass properties they would be
+            // whatever state the previous evaluation left.
+            double area = 0, MAC = 0, b = 0;
+            foreach (FARWingAerodynamicModel w in props.AreaWings)
+            {
+                if (w == null || w.GetShielded())
+                    continue;
+                area += w.S;
+                MAC += w.GetMAC() * w.S;
+                b += w.Getb_2() * w.S;
+            }
+
+            if (area.NearlyEqual(0))
+            {
+                area = _instantCondition._maxCrossSectionFromBody;
+                MAC = _instantCondition._bodyLength;
+                b = 1;
+            }
+
+            MAC /= area;
+            b /= area;
+
+            stabDerivOutput.b = b;
+            stabDerivOutput.MAC = MAC;
+            stabDerivOutput.area = area;
+
+            stabDerivOutput.stabDerivs[0] = props.Ix;
+            stabDerivOutput.stabDerivs[1] = props.Iy;
+            stabDerivOutput.stabDerivs[2] = props.Iz;
+
+            stabDerivOutput.stabDerivs[24] = props.Ixy;
+            stabDerivOutput.stabDerivs[25] = props.Iyz;
+            stabDerivOutput.stabDerivs[26] = props.Ixz;
 
             //This is the effect of gravity
             double effectiveG = InstantConditionSim.CalculateAccelerationDueToGravity(body, alt);
@@ -264,7 +326,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             // if stable AoA doesn't exist, calculate derivatives at 0 incidence
             if (!optResult.Converged)
             {
-                FARLogger.Info("Stable angle of attack not found, calculating derivatives at 0 incidence instead");
+                // Never log off the main thread (a parallel sweep's workers): FARLogger routes to Unity's
+                // log handler / debug console (TextMeshPro), which is main-thread-only and crashes the
+                // process natively when driven from a worker (and this fires per cell).
+                if (MainThread.IsMainThread)
+                    FARLogger.Info("Stable angle of attack not found, calculating derivatives at 0 incidence instead");
                 alpha = 0;
                 _instantCondition.FunctionIterateForAlpha(alpha);
                 calls += 1;
@@ -288,16 +354,19 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             if (Math.Abs((nominalOutput.Cl - neededCl) / neededCl) > 0.1)
                 stabDerivOutput.stableAoAState = nominalOutput.Cl > neededCl ? "<" : ">";
 
-            FARLogger.Info("Cl needed: " +
-                           neededCl.ToString(CultureInfo.InvariantCulture) +
-                           ", AoA: " +
-                           stabDerivOutput.stableAoA.ToString(CultureInfo.InvariantCulture) +
-                           ", Cl: " +
-                           nominalOutput.Cl.ToString(CultureInfo.InvariantCulture) +
-                           ", Cd: " +
-                           nominalOutput.Cd.ToString(CultureInfo.InvariantCulture) +
-                           ", function calls: " +
-                           calls.ToString());
+            // Per-cell solver trace: must stay off worker threads (see above), which also keeps it from
+            // flooding the log thousands of times over a sweep.
+            if (MainThread.IsMainThread)
+                FARLogger.Info("Cl needed: " +
+                               neededCl.ToString(CultureInfo.InvariantCulture) +
+                               ", AoA: " +
+                               stabDerivOutput.stableAoA.ToString(CultureInfo.InvariantCulture) +
+                               ", Cl: " +
+                               nominalOutput.Cl.ToString(CultureInfo.InvariantCulture) +
+                               ", Cd: " +
+                               nominalOutput.Cd.ToString(CultureInfo.InvariantCulture) +
+                               ", function calls: " +
+                               calls.ToString());
 
             //vert vel derivs
             pertOutput.Cl = (pertOutput.Cl - nominalOutput.Cl) / (2 * FARMathUtil.deg2rad);

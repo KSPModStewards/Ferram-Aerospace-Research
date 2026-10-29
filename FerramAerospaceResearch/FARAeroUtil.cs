@@ -65,6 +65,15 @@ namespace FerramAerospaceResearch
         private static FloatCurve prandtlMeyerAngle;
         public static double maxPrandtlMeyerTurnAngle;
 
+        // The curves the aero solve evaluates, as exact copies any thread can evaluate (see ExactCurve). Every
+        // slot uses these, flight included, so every slot computes the same numbers.
+        // Built once under curveLock and read without it by any thread: volatile, so a reader never sees the
+        // reference before the curve it points to.
+        private static volatile ExactCurve prandtlMeyerMachExact;
+        private static volatile ExactCurve prandtlMeyerAngleExact;
+        private static volatile ExactCurve dragPseudoReynoldsExact;
+        private static readonly object curveLock = new object();
+
         public static double massPerWingAreaSupported;
         public static double massStressPower;
         public static bool AJELoaded;
@@ -105,10 +114,24 @@ namespace FerramAerospaceResearch
             }
         }
 
+        // Set on the main thread for the duration of a parallel heatmap sweep. The adiabatic index is
+        // constant for a given body during a sweep, and computing it live calls Planetarium/atmosphere
+        // (main-thread only), so the sweep snapshots it once and every worker (a thread holding a sweep
+        // slot, SimThreadContext.InSweep) reads the snapshot. The main thread keeps computing it live.
+        public static double? SimAdiabaticIndexOverride;
+
         public static double CurrentAdiabaticIndex
         {
             get
             {
+                // A prediction that carries its own (a snapshot's, captured on the main thread) reads no game state.
+                double? call = SimThreadContext.Prediction?.AdiabaticIndex;
+                if (call.HasValue)
+                    return call.Value;
+                double? sweep = SimAdiabaticIndexOverride;
+                if (sweep.HasValue && SimThreadContext.InSweep)
+                    return sweep.Value;
+
                 double ut = Planetarium.fetch.time;
                 if (HighLogic.LoadedSceneIsEditor)
                 {
@@ -127,11 +150,46 @@ namespace FerramAerospaceResearch
         {
             get
             {
-                if (prandtlMeyerMach != null)
+                lock (curveLock)
+                {
+                    BuildPrandtlMeyerCurves();
                     return prandtlMeyerMach;
-                FARLogger.Info("Prandtl-Meyer Expansion Curves Initialized");
-                prandtlMeyerMach = new FloatCurve();
-                prandtlMeyerAngle = new FloatCurve();
+                }
+            }
+        }
+
+        public static FloatCurve PrandtlMeyerAngle
+        {
+            get
+            {
+                lock (curveLock)
+                {
+                    BuildPrandtlMeyerCurves();
+                    return prandtlMeyerAngle;
+                }
+            }
+        }
+
+        // The exact Prandtl-Meyer curve asked for, built for the current adiabatic index if it is not there (at first
+        // use, or after UpdateCurrentActiveBody discarded the last body's).
+        private static ExactCurve PrandtlMeyerExact(bool mach)
+        {
+            lock (curveLock)
+            {
+                BuildPrandtlMeyerCurves();
+                return mach ? prandtlMeyerMachExact : prandtlMeyerAngleExact;
+            }
+        }
+
+        private static void BuildPrandtlMeyerCurves()
+        {
+            lock (curveLock)
+            {
+                if (prandtlMeyerMachExact != null && prandtlMeyerAngleExact != null && prandtlMeyerMach != null)
+                    return;
+                FARLogAnyThread.Info("Prandtl-Meyer Expansion Curves Initialized");
+                var machCurve = new FloatCurve();
+                var angleCurve = new FloatCurve();
                 double M = 1;
                 double gamma = CurrentAdiabaticIndex;
 
@@ -153,11 +211,11 @@ namespace FerramAerospaceResearch
                     nu_mach = mach / nu_mach;
                     nu_mach *= FARMathUtil.rad2deg;
 
-                    prandtlMeyerMach.Add((float)M, (float)nu, (float)nu_mach, (float)nu_mach);
+                    machCurve.Add((float)M, (float)nu, (float)nu_mach, (float)nu_mach);
 
                     nu_mach = 1 / nu_mach;
 
-                    prandtlMeyerAngle.Add((float)nu, (float)M, (float)nu_mach, (float)nu_mach);
+                    angleCurve.Add((float)nu, (float)M, (float)nu_mach, (float)nu_mach);
 
                     M += M switch
                     {
@@ -170,58 +228,60 @@ namespace FerramAerospaceResearch
 
                 maxPrandtlMeyerTurnAngle = gamma_ - 1;
                 maxPrandtlMeyerTurnAngle *= 90;
-                return prandtlMeyerMach;
+
+                prandtlMeyerMach = machCurve;
+                prandtlMeyerAngle = angleCurve;
+                prandtlMeyerMachExact = new ExactCurve(machCurve);
+                prandtlMeyerAngleExact = new ExactCurve(angleCurve);
             }
         }
 
-        public static FloatCurve PrandtlMeyerAngle
+        /// <summary>Prandtl-Meyer angle (deg) for a Mach number; any thread.</summary>
+        public static float PrandtlMeyerMachEval(float mach)
+        {
+            // One read of the field: a body change on the main thread can discard it at any moment.
+            ExactCurve c = prandtlMeyerMachExact ?? PrandtlMeyerExact(true);
+            return c.Evaluate(mach);
+        }
+
+        /// <summary>Mach number for a Prandtl-Meyer angle (deg); any thread.</summary>
+        public static float PrandtlMeyerAngleEval(float nu)
+        {
+            ExactCurve c = prandtlMeyerAngleExact ?? PrandtlMeyerExact(false);
+            return c.Evaluate(nu);
+        }
+
+        /// <summary>PhysicsGlobals.DragCurvePseudoReynolds as an exact copy any thread can evaluate.</summary>
+        public static ExactCurve DragPseudoReynolds
         {
             get
             {
-                if (prandtlMeyerAngle != null)
-                    return prandtlMeyerAngle;
-                FARLogger.Info("Prandtl-Meyer Expansion Curves Initialized");
-                prandtlMeyerMach = new FloatCurve();
-                prandtlMeyerAngle = new FloatCurve();
-                double M = 1;
-                double gamma = CurrentAdiabaticIndex;
-                double gamma_ = Math.Sqrt((gamma + 1) / (gamma - 1));
-
-                while (M < 250)
-                {
-                    double mach = Math.Sqrt(M * M - 1);
-
-                    double nu = Math.Atan(mach / gamma_);
-                    nu *= gamma_;
-                    nu -= Math.Atan(mach);
-                    nu *= FARMathUtil.rad2deg;
-
-                    double nu_mach = (gamma - 1) / 2;
-                    nu_mach *= M * M;
-                    nu_mach++;
-                    nu_mach *= M;
-                    nu_mach = mach / nu_mach;
-                    nu_mach *= FARMathUtil.rad2deg;
-
-                    prandtlMeyerMach.Add((float)M, (float)nu, (float)nu_mach, (float)nu_mach);
-
-                    nu_mach = 1 / nu_mach;
-
-                    prandtlMeyerAngle.Add((float)nu, (float)M, (float)nu_mach, (float)nu_mach);
-
-                    M += M switch
-                    {
-                        < 3 => 0.1,
-                        < 10 => 0.5,
-                        < 25 => 2,
-                        _ => 25
-                    };
-                }
-
-                maxPrandtlMeyerTurnAngle = gamma_ - 1;
-                maxPrandtlMeyerTurnAngle *= 90;
-                return prandtlMeyerAngle;
+                ExactCurve c = dragPseudoReynoldsExact;
+                if (c != null)
+                    return c;
+                lock (curveLock)
+                    return dragPseudoReynoldsExact ??= new ExactCurve(PhysicsGlobals.DragCurvePseudoReynolds);
             }
+        }
+
+        /// <summary>
+        /// Builds every curve the aero solve evaluates, so that none is first built on a worker thread (a curve is
+        /// created from Unity objects), and takes a new copy of the stock pseudo-Reynolds curve if its keys changed
+        /// (a Physics.cfg reload). Main thread; called before a parallel sweep and when a vessel snapshot is taken.
+        /// Harmless to call again.
+        /// </summary>
+        public static void EnsureCurves()
+        {
+            _ = PrandtlMeyerExact(true);
+            FloatCurve stock = PhysicsGlobals.DragCurvePseudoReynolds;
+            lock (curveLock)
+            {
+                ExactCurve c = dragPseudoReynoldsExact;
+                if (c == null || !c.Matches(stock.Curve))
+                    dragPseudoReynoldsExact = new ExactCurve(stock);
+            }
+            FARAeroComponents.FARAeroSection.GenerateCrossFlowDragCurve();
+            FARWingInteraction.GenerateCamberCurves();
         }
 
         // ReSharper disable once UnusedMember.Global
@@ -482,13 +542,16 @@ namespace FerramAerospaceResearch
 
         public static double CalculateCurrentViscosity(double tempInK)
         {
-            double visc = currentBodyData.ReferenceViscosity; //get viscosity
+            // A prediction that carries the body's settings (a snapshot's, captured on the main thread) reads no
+            // game state.
+            BodySettings bodyData = SimThreadContext.Prediction?.BodyData ?? currentBodyData;
+            double visc = bodyData.ReferenceViscosity; //get viscosity
 
-            double tempRat = tempInK / currentBodyData.ReferenceTemperature;
+            double tempRat = tempInK / bodyData.ReferenceTemperature;
             tempRat *= tempRat * tempRat;
             tempRat = Math.Sqrt(tempRat);
 
-            visc *= currentBodyData.ReferenceTemperature + 110;
+            visc *= bodyData.ReferenceTemperature + 110;
             visc /= tempInK + 110;
             visc *= tempRat;
 
@@ -584,8 +647,17 @@ namespace FerramAerospaceResearch
             currentBodyData = FARAeroData.AtmosphericConfiguration[prevBodyIndex];
             currentBody = body;
 
-            prandtlMeyerMach = null;
-            prandtlMeyerAngle = null;
+            // The curves depend on the body's adiabatic index: rebuild them (the exact copies every slot evaluates
+            // included) for the new body, here on the main thread, so that no worker builds them (a FloatCurve is a
+            // Unity object).
+            lock (curveLock)
+            {
+                prandtlMeyerMach = null;
+                prandtlMeyerAngle = null;
+                prandtlMeyerMachExact = null;
+                prandtlMeyerAngleExact = null;
+                BuildPrandtlMeyerCurves();
+            }
         }
 
         //Based on NASA Contractor Report 187173, Exact and Approximate Oblique Shock Equations for Real-Time Applications

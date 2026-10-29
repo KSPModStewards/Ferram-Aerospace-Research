@@ -68,7 +68,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             int numPoints,
             int flapSetting,
             bool spoilers,
-            CelestialBody body
+            CelestialBody body,
+            double altitude
         )
         {
             FARAeroUtil.UpdateCurrentActiveBody(body);
@@ -83,19 +84,33 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
 
             var input = new InstantConditionSimInput(aoAdegrees, 0, 0, 0, 0, 0, 0, pitch, flapSetting, spoilers);
 
-            for (int i = 0; i < numPoints; i++)
+            // When the shared viscous toggle is on, feed the sim the real skin-friction/Reynolds condition
+            // for this flight point. Mach changes each step here, so the condition is rebuilt per point.
+            bool viscous = EditorSimManager.UseAccurateViscousCalc;
+            try
             {
-                input.machNumber = i / (double)numPoints * (upperBound - lowerBound) + lowerBound;
+                for (int i = 0; i < numPoints; i++)
+                {
+                    input.machNumber = i / (double)numPoints * (upperBound - lowerBound) + lowerBound;
 
-                if (input.machNumber.NearlyEqual(0))
-                    input.machNumber = 0.001;
+                    if (input.machNumber.NearlyEqual(0))
+                        input.machNumber = 0.001;
 
-                _instantCondition.GetClCdCmSteady(input, out InstantConditionSimOutput output, i == 0);
-                AlphaValues[i] = input.machNumber;
-                ClValues[i] = output.Cl;
-                CdValues[i] = output.Cd;
-                CmValues[i] = output.Cm;
-                LDValues[i] = output.Cl * 0.1 / output.Cd;
+                    if (viscous)
+                        _instantCondition.AeroCondition =
+                            SimAeroCondition.ForFlightPoint(body, altitude, input.machNumber, _instantCondition._bodyLength);
+
+                    _instantCondition.GetClCdCmSteady(input, out InstantConditionSimOutput output, i == 0);
+                    AlphaValues[i] = input.machNumber;
+                    ClValues[i] = output.Cl;
+                    CdValues[i] = output.Cd;
+                    CmValues[i] = output.Cm;
+                    LDValues[i] = output.Cl * 0.1 / output.Cd;
+                }
+            }
+            finally
+            {
+                _instantCondition.AeroCondition = null;
             }
 
             var data = new GraphData {xValues = AlphaValues};
@@ -115,7 +130,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             int numPoints,
             int flapSetting,
             bool spoilers,
-            CelestialBody body
+            CelestialBody body,
+            double altitude
         )
         {
             if (machNumber.NearlyEqual(0))
@@ -138,33 +154,45 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             var CmValues2 = new double[numPoints];
             var LDValues2 = new double[numPoints];
 
-            for (int i = 0; i < 2 * numPoints; i++)
+            // Mach is fixed across this sweep, so the viscous condition (if enabled) is set once.
+            if (EditorSimManager.UseAccurateViscousCalc)
+                _instantCondition.AeroCondition =
+                    SimAeroCondition.ForFlightPoint(body, altitude, machNumber, _instantCondition._bodyLength);
+
+            try
             {
-                double angle;
-                if (i < numPoints)
-                    angle = i / (double)numPoints * (upperBound - lowerBound) + lowerBound;
-                else
-                    angle = (i - (double)numPoints + 1) / numPoints * (lowerBound - upperBound) + upperBound;
-
-                input.alpha = angle;
-
-                _instantCondition.GetClCdCmSteady(input, out InstantConditionSimOutput output, i == 0);
-
-                if (i < numPoints)
+                for (int i = 0; i < 2 * numPoints; i++)
                 {
-                    AlphaValues[i] = angle;
-                    ClValues[i] = output.Cl;
-                    CdValues[i] = output.Cd;
-                    CmValues[i] = output.Cm;
-                    LDValues[i] = output.Cl * 0.1 / output.Cd;
+                    double angle;
+                    if (i < numPoints)
+                        angle = i / (double)numPoints * (upperBound - lowerBound) + lowerBound;
+                    else
+                        angle = (i - (double)numPoints + 1) / numPoints * (lowerBound - upperBound) + upperBound;
+
+                    input.alpha = angle;
+
+                    _instantCondition.GetClCdCmSteady(input, out InstantConditionSimOutput output, i == 0);
+
+                    if (i < numPoints)
+                    {
+                        AlphaValues[i] = angle;
+                        ClValues[i] = output.Cl;
+                        CdValues[i] = output.Cd;
+                        CmValues[i] = output.Cm;
+                        LDValues[i] = output.Cl * 0.1 / output.Cd;
+                    }
+                    else
+                    {
+                        ClValues2[numPoints * 2 - 1 - i] = output.Cl;
+                        CdValues2[numPoints * 2 - 1 - i] = output.Cd;
+                        CmValues2[numPoints * 2 - 1 - i] = output.Cm;
+                        LDValues2[numPoints * 2 - 1 - i] = output.Cl * 0.1 / output.Cd;
+                    }
                 }
-                else
-                {
-                    ClValues2[numPoints * 2 - 1 - i] = output.Cl;
-                    CdValues2[numPoints * 2 - 1 - i] = output.Cd;
-                    CmValues2[numPoints * 2 - 1 - i] = output.Cm;
-                    LDValues2[numPoints * 2 - 1 - i] = output.Cl * 0.1 / output.Cd;
-                }
+            }
+            finally
+            {
+                _instantCondition.AeroCondition = null;
             }
 
             var data = new GraphData {xValues = AlphaValues};

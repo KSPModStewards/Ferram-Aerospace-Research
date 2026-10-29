@@ -44,6 +44,7 @@ Copyright 2022, Michael Ferrara, aka Ferram4
 
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using ferram4;
 using FerramAerospaceResearch.FARAeroComponents;
 using UnityEngine;
@@ -52,16 +53,85 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
 {
     internal class InstantConditionSim
     {
-        private readonly InstantConditionSimInput iterationInput = new InstantConditionSimInput();
+        // Per-call solver state is thread-local so the parallel heatmap sweep can trim
+        // independent (Mach, altitude) cells concurrently against the one sim instance. The
+        // single-threaded tabs use the calling (main) thread's state, unchanged.
+        // Per-thread-slot solver state (see SimThreadContext); array indexing replaces ThreadLocal,
+        // which was too slow under Mono to leave on the hot path.
+        private readonly InstantConditionSimInput[] _iterationInputSlots =
+            new InstantConditionSimInput[SimThreadContext.MaxSlots];
+
+        private InstantConditionSimInput iterationInput
+        {
+            get
+            {
+                int s = SimThreadContext.Slot;
+                InstantConditionSimInput v = _iterationInputSlots[s];
+                if (v == null)
+                {
+                    v = new InstantConditionSimInput();
+                    _iterationInputSlots[s] = v;
+                }
+
+                return v;
+            }
+        }
+
         private List<FARAeroSection> _currentAeroSections;
         private List<FARAeroPartModule> _currentAeroModules;
         private List<FARWingAerodynamicModel> _wingAerodynamicModel;
 
+        internal List<FARWingAerodynamicModel> WingModels => _wingAerodynamicModel;
+
         public double _maxCrossSectionFromBody;
         public double _bodyLength;
 
-        private double neededCl;
-        public InstantConditionSimOutput iterationOutput;
+        private readonly double[] _neededClSlots = new double[SimThreadContext.MaxSlots];
+
+        private double neededCl
+        {
+            get => _neededClSlots[SimThreadContext.Slot];
+            set => _neededClSlots[SimThreadContext.Slot] = value;
+        }
+
+        private readonly InstantConditionSimOutput[] _iterationOutputSlots =
+            new InstantConditionSimOutput[SimThreadContext.MaxSlots];
+
+        public InstantConditionSimOutput iterationOutput
+        {
+            get => _iterationOutputSlots[SimThreadContext.Slot];
+            set => _iterationOutputSlots[SimThreadContext.Slot] = value;
+        }
+
+        // Sweep snapshot: geometry the aero solve reads from the main-thread-only Unity API,
+        // captured once so worker threads can read plain data. Active only during a parallel sweep.
+        private bool _simActive;
+        private Vector3d _simCoM;
+        private EditorFacility _simEditorFacility;
+
+        /// <summary>
+        /// Real viscous conditions for the point being simulated, or null to keep the historical
+        /// fixed constants.
+        ///
+        /// This sim evaluates forces with a unit velocity vector and density 2 so that q works out
+        /// to exactly 1 and forces read as coefficients. That destroys the Reynolds number, so both
+        /// the wing model and the aero sections fall back to a hardcoded skin friction of 0.005.
+        /// Measured against flight, that is roughly double the true value at sea-level Reynolds and
+        /// below it at low Reynolds — drag comes out ~2x high near the ground and low at altitude.
+        ///
+        /// Setting this makes a caller's sweep use the real numbers. It is deliberately opt-in and
+        /// defaults to null so Static Analysis and the stability derivative tabs keep their existing
+        /// behaviour. Callers must clear it when done: it is instance state, and leaving it set
+        /// would silently change results for whatever runs next.
+        /// </summary>
+        private readonly SimAeroCondition?[] _aeroConditionSlots =
+            new SimAeroCondition?[SimThreadContext.MaxSlots];
+
+        public SimAeroCondition? AeroCondition
+        {
+            get => _aeroConditionSlots[SimThreadContext.Slot];
+            set => _aeroConditionSlots[SimThreadContext.Slot] = value;
+        }
 
         public bool Ready
         {
@@ -109,31 +179,46 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             Vector3d up = Vector3.up;
             Vector3d right = Vector3.right;
 
-            Vector3d CoM = Vector3d.zero;
+            Vector3d CoM;
 
-            if (EditorDriver.editorFacility == EditorFacility.VAB)
+            // During a parallel sweep the ship's CoM and editor facility are fixed, so they are
+            // snapshotted once on the main thread and a sweep worker reads the snapshot (the loop
+            // below reads Unity part transforms, which are main-thread-only). Everywhere else,
+            // the main thread's own evaluations during a sweep included, recompute them live
+            // exactly as before.
+            bool sweep = _simActive && SimThreadContext.InSweep;
+            EditorFacility facility = sweep ? _simEditorFacility : EditorDriver.editorFacility;
+            if (facility == EditorFacility.VAB)
             {
                 forward = Vector3.up;
                 up = -Vector3.forward;
             }
 
-            double mass = 0;
-            List<Part> partsList = EditorLogic.SortedShipList;
-            foreach (Part p in partsList)
+            if (sweep)
             {
-                if (FARAeroUtil.IsNonphysical(p))
-                    continue;
-
-                double partMass = p.mass;
-                if (p.Resources.Count > 0)
-                    partMass += p.GetResourceMass();
-
-                // If you want to use GetModuleMass, you need to start from p.partInfo.mass, not p.mass
-                CoM += partMass * (Vector3d)p.transform.TransformPoint(p.CoMOffset);
-                mass += partMass;
+                CoM = _simCoM;
             }
+            else
+            {
+                CoM = Vector3d.zero;
+                double mass = 0;
+                List<Part> partsList = EditorLogic.SortedShipList;
+                foreach (Part p in partsList)
+                {
+                    if (FARAeroUtil.IsNonphysical(p))
+                        continue;
 
-            CoM /= mass;
+                    double partMass = p.mass;
+                    if (p.Resources.Count > 0)
+                        partMass += p.GetResourceMass();
+
+                    // If you want to use GetModuleMass, you need to start from p.partInfo.mass, not p.mass
+                    CoM += partMass * (Vector3d)p.transform.TransformPoint(p.CoMOffset);
+                    mass += partMass;
+                }
+
+                CoM /= mass;
+            }
 
             // Rodhern: The original reference directions (velocity, liftVector, sideways) did not form an orthonormal
             //  basis. That in turn produced some counterintuitive calculation results, such as coupled yaw and pitch
@@ -174,12 +259,25 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             angVel += up * (sinPhi * alphaDot - cosAlpha * cosPhi * betaDot);
 
 
+            double? skinFriction = AeroCondition?.SkinFriction;
+            double? condReynoldsPerLength = AeroCondition?.ReynoldsPerLength;
+
             foreach (FARWingAerodynamicModel w in _wingAerodynamicModel)
             {
                 if (!(w && w.part))
                     continue;
 
-                w.ComputeForceEditor(velocity, input.machNumber, 2);
+                // Skin friction from THIS wing's own chord (MAC), the way flight computes it. A single
+                // vehicle-length value understates wing skin friction badly, since a wing chord is far
+                // shorter than the fuselage (higher Reynolds -> lower Cf), which under-predicts wing
+                // profile drag. Reynolds/length is length-independent, so scale it by the wing's MAC.
+                double wingMAC = w.GetMAC();
+                double? wingSkinFriction = condReynoldsPerLength > 0 && wingMAC > 0
+                                               ? FARAeroUtil.SkinFrictionDrag(condReynoldsPerLength.Value * wingMAC,
+                                                                              input.machNumber)
+                                               : skinFriction;
+
+                w.ComputeForceEditor(velocity, input.machNumber, 2, wingSkinFriction);
 
                 if (clear)
                     w.EditorClClear(reset_stall);
@@ -196,14 +294,22 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                                                               0,
                                                               input.flaps,
                                                               input.spoilers);
-                else if (w.isShielded)
+                else if (w.GetShielded())
                     continue;
 
-                Vector3d force = w.ComputeForceEditor(vel.normalized, input.machNumber, 2) * 1000;
+                Vector3d force = w.ComputeForceEditor(vel.normalized, input.machNumber, 2, wingSkinFriction) * 1000;
 
                 output.Cl += -Vector3d.Dot(force, liftDown);
                 output.Cy += Vector3d.Dot(force, sideways);
                 output.Cd += -Vector3d.Dot(force, velocity);
+
+                output.WingCl += -Vector3d.Dot(force, liftDown);
+                output.WingCd += -Vector3d.Dot(force, velocity);
+
+                // Cd split accumulates area-weighted coefficients directly (the force above already
+                // resolves to Cd*S, so these are on the same scale and sum to the wing Cd contribution).
+                output.WingCdInduced += w.GetCdInduced() * w.S;
+                output.WingCdProfile += w.GetCdProfile() * w.S;
 
                 Vector3d moment = -Vector3d.Cross(relPos, force);
 
@@ -216,13 +322,19 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                 b_2 += w.Getb_2() * w.S;
             }
 
+            // Density stays 2 with a unit velocity vector: that is what makes q exactly 1, so these
+            // forces come out as coefficients. Only the viscous terms are substituted.
+            float reynoldsPerLength = AeroCondition.HasValue ? (float)AeroCondition.Value.ReynoldsPerLength : 10000;
+            float pseudoKnudsen = AeroCondition.HasValue ? (float)AeroCondition.Value.PseudoKnudsen : 0;
+            var sectionSkinFriction = (float)(skinFriction ?? 0.005);
+
             var center = new FARCenterQuery();
             foreach (FARAeroSection aeroSection in _currentAeroSections)
                 aeroSection.PredictionCalculateAeroForces(2,
                                                           (float)input.machNumber,
-                                                          10000,
-                                                          0,
-                                                          0.005f,
+                                                          reynoldsPerLength,
+                                                          pseudoKnudsen,
+                                                          sectionSkinFriction,
                                                           velocity.normalized,
                                                           center);
 
@@ -231,6 +343,9 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             output.Cl += -Vector3d.Dot(centerForce, liftDown);
             output.Cy += Vector3d.Dot(centerForce, sideways);
             output.Cd += -Vector3d.Dot(centerForce, velocity);
+
+            output.BodyCl += -Vector3d.Dot(centerForce, liftDown);
+            output.BodyCd += -Vector3d.Dot(centerForce, velocity);
 
             Vector3d centerMoment = -center.TorqueAt(CoM) * 1000;
 
@@ -255,6 +370,13 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             output.Cy *= recipArea;
             output.Cn *= recipArea / b_2;
             output.C_roll *= recipArea / b_2;
+
+            output.WingCl *= recipArea;
+            output.WingCd *= recipArea;
+            output.BodyCl *= recipArea;
+            output.BodyCd *= recipArea;
+            output.WingCdInduced *= recipArea;
+            output.WingCdProfile *= recipArea;
         }
 
         public void SetState(double machNumber, double Cl, Vector3d CoM, double pitch, int flapSetting, bool spoilers)
@@ -273,7 +395,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
 
             foreach (FARWingAerodynamicModel w in _wingAerodynamicModel)
             {
-                if (w.isShielded)
+                if (w.GetShielded())
                     continue;
 
                 if (w is FARControllableSurface controllableSurface)
@@ -289,9 +411,127 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
 
         public double FunctionIterateForAlpha(double alpha)
         {
-            iterationInput.alpha = alpha;
-            GetClCdCmSteady(iterationInput, out iterationOutput, true, true);
-            return iterationOutput.Cl - neededCl;
+            // iterationInput/iterationOutput are thread-local (properties); take a local for the
+            // `out` argument, then publish it back to the thread-local slot.
+            InstantConditionSimInput input = iterationInput;
+            input.alpha = alpha;
+            GetClCdCmSteady(input, out InstantConditionSimOutput output, true, true);
+            iterationOutput = output;
+            return output.Cl - neededCl;
+        }
+
+        /// <summary>
+        /// Begins a parallel sweep: snapshots the main-thread-only geometry the aero solve reads
+        /// (ship CoM, editor facility, every wing and body-section part transform) into plain data
+        /// so the trim can run on worker threads, which read it while they hold a sweep slot
+        /// (SimThreadContext.AcquireSlot). Must be called on the main thread, paired with
+        /// <see cref="EndParallelSweep" /> in a finally.
+        /// Returns false, having set up nothing, when a part carries an AeroForceModifier (a delegate
+        /// another mod sets, called with the live part, which may read game state): run the sweep
+        /// serially then.
+        /// </summary>
+        /// <summary>
+        /// Whether a sweep may run on worker threads: false when a part carries an AeroForceModifier,
+        /// which is called with the live part and may read game state. Main thread.
+        /// </summary>
+        public bool CanSweepInParallel
+        {
+            get
+            {
+                if (_currentAeroModules != null)
+                    foreach (FARAeroPartModule m in _currentAeroModules)
+                        if (m != null && m.AeroForceModifier != null)
+                            return false;
+                return true;
+            }
+        }
+
+        public bool BeginParallelSweep()
+        {
+            if (!CanSweepInParallel)
+                return false;
+
+            _simEditorFacility = EditorDriver.editorFacility;
+            _simCoM = ComputeEditorCoM();
+
+            // The aero solve reads shared static state that is unsafe to touch concurrently: the
+            // adiabatic index (which calls Planetarium/atmosphere) is snapshotted here on the main thread
+            // for the workers (FARAeroUtil.SimAdiabaticIndexOverride), and every curve the solve evaluates
+            // is built here (the solve evaluates their exact, thread-safe copies, see ExactCurve).
+            FARAeroUtil.SimAdiabaticIndexOverride = null;
+            double gamma = FARAeroUtil.CurrentAdiabaticIndex;
+            var warmBody = FARAeroUtil.CurrentBody;
+
+            FARAeroUtil.EnsureCurves();
+
+            FARAeroUtil.SimAdiabaticIndexOverride = gamma;
+
+            if (_wingAerodynamicModel != null)
+                foreach (FARWingAerodynamicModel w in _wingAerodynamicModel)
+                    if (w && w.part)
+                        w.SetSimGeometry(true);
+
+            if (_currentAeroModules != null)
+                foreach (FARAeroPartModule m in _currentAeroModules)
+                    if (m != null)
+                        m.SetSimGeometry(true);
+
+            // New slot epoch: the main thread takes slot 0 on its next scratch access (the warm-up cell)
+            // and each worker takes the next slot on its first access.
+            SimThreadContext.BeginSweep();
+
+            _simActive = true;
+            return true;
+        }
+
+        /// <summary>Releases the sweep snapshot, restoring the live-transform path. Main thread only.</summary>
+        public void EndParallelSweep()
+        {
+            _simActive = false;
+            FARAeroUtil.SimAdiabaticIndexOverride = null;
+
+            // Clear every slot's viscous AeroCondition. The sweep's main-thread warm-up cell sets it
+            // with no paired EndCell, so without this the accuracy skin-friction/Reynolds terms would
+            // linger on the main thread's slot and leak into FAR's own static/stability tabs, which
+            // must run on the null-condition (original) path. Workers have already joined here.
+            for (int i = 0; i < _aeroConditionSlots.Length; i++)
+                _aeroConditionSlots[i] = null;
+
+            if (_wingAerodynamicModel != null)
+                foreach (FARWingAerodynamicModel w in _wingAerodynamicModel)
+                    if (w && w.part)
+                        w.SetSimGeometry(false);
+
+            if (_currentAeroModules != null)
+                foreach (FARAeroPartModule m in _currentAeroModules)
+                    if (m != null)
+                        m.SetSimGeometry(false);
+        }
+
+        private static Vector3d ComputeEditorCoM()
+        {
+            Vector3d CoM = Vector3d.zero;
+            double mass = 0;
+            List<Part> partsList = EditorLogic.SortedShipList;
+            if (partsList == null)
+                return CoM;
+
+            foreach (Part p in partsList)
+            {
+                if (FARAeroUtil.IsNonphysical(p))
+                    continue;
+
+                double partMass = p.mass;
+                if (p.Resources.Count > 0)
+                    partMass += p.GetResourceMass();
+
+                CoM += partMass * (Vector3d)p.transform.TransformPoint(p.CoMOffset);
+                mass += partMass;
+            }
+
+            if (mass > 0)
+                CoM /= mass;
+            return CoM;
         }
     }
 }

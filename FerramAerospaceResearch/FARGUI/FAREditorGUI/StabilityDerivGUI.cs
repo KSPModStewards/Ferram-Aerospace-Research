@@ -120,6 +120,12 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
+            bool viscous = GUILayout.Toggle(EditorSimManager.UseAccurateViscousCalc, "More accurate aerodynamics");
+            if (viscous != EditorSimManager.UseAccurateViscousCalc)
+                EditorSimManager.UseAccurateViscousCalc = viscous;
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
             GUI.enabled = !EditorGUI.Instance.VoxelizationUpdateQueued;
             if (GUILayout.Button(Localizer.Format("FAREditorStabDerivCalcButton"),
                                  GUILayout.Width(250.0F),
@@ -393,17 +399,36 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
             if (FARAtmosphere.GetPressure(body, new Vector3d(0, 0, altitudeDouble), Planetarium.GetUniversalTime()) > 0)
             {
-                stabDerivOutput =
-                    simManager.StabDerivCalculator.CalculateStabilityDerivs(body,
-                                                                            altitudeDouble,
-                                                                            machDouble,
-                                                                            flapsettingInt,
-                                                                            spoilersDeployedBool,
-                                                                            0,
-                                                                            0,
-                                                                            0);
-                simManager.vehicleData = stabDerivOutput;
-                SetAngleVectors(stabDerivOutput.stableAoA);
+                try
+                {
+                    // When the shared viscous toggle is on, solve at the real flight-point skin
+                    // friction / Reynolds; always cleared below so other tabs stay on the default path.
+                    if (EditorSimManager.UseAccurateViscousCalc)
+                        simManager.SetAeroCondition(simManager.MakeAeroCondition(body, altitudeDouble, machDouble));
+
+                    var stabProps =
+                        simManager.StabDerivCalculator.ComputeVehicleProperties(flapsettingInt, spoilersDeployedBool);
+                    GasProperties stabGas =
+                        FARAtmosphere.GetGasProperties(body, new Vector3d(0, 0, altitudeDouble), Planetarium.GetUniversalTime());
+                    stabDerivOutput =
+                        simManager.StabDerivCalculator.CalculateStabilityDerivs(stabProps,
+                                                                                body,
+                                                                                altitudeDouble,
+                                                                                machDouble,
+                                                                                stabGas.Density,
+                                                                                stabGas.SpeedOfSound,
+                                                                                flapsettingInt,
+                                                                                spoilersDeployedBool,
+                                                                                0,
+                                                                                0,
+                                                                                0);
+                    simManager.vehicleData = stabDerivOutput;
+                    SetAngleVectors(stabDerivOutput.stableAoA);
+                }
+                finally
+                {
+                    simManager.SetAeroCondition(null);
+                }
             }
             else
             {

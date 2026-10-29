@@ -156,6 +156,8 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
             if (activeFlightDataSections[7])
             {
                 labelStringBuilder.AppendLine(Localizer.Format("FARFlightData7"));
+                labelStringBuilder.AppendLine("Fuel burn:");
+                labelStringBuilder.AppendLine("Fuel remaining:");
                 labelStringBuilder.AppendLine();
             }
 
@@ -275,6 +277,10 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                 dataStringBuilder.Concat((float)infoParameters.range, 2);
                 dataStringBuilder.Append(" ");
                 dataStringBuilder.AppendLine(Localizer.Format("FARUnitkM"));
+                dataStringBuilder.Concat((float)infoParameters.avgFuelBurn, 3);
+                dataStringBuilder.AppendLine(" kg/s");
+                dataStringBuilder.Concat((float)infoParameters.fuelRemaining, 1);
+                dataStringBuilder.AppendLine(" kg");
                 dataStringBuilder.AppendLine();
             }
 

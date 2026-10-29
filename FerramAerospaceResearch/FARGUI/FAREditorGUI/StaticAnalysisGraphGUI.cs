@@ -61,6 +61,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         private double lastMaxBounds, lastMinBounds;
         private bool isMachMode;
 
+        // Altitude (km) used only when the shared accurate-viscous toggle is on — the viscous condition
+        // (skin friction / Reynolds) depends on it. Ignored on the original hardcoded path.
+        private string _altitude = "0";
+
         private GraphInputs aoASweepInputs, machSweepInputs;
         private GUIDropDown<int> flapSettingDropdown;
         private GUIDropDown<CelestialBody> bodySettingDropdown;
@@ -205,6 +209,17 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                                   ? Localizer.Format("FAREditorStabDerivSDeploy")
                                                   : Localizer.Format("FAREditorStabDerivSRetract"));
 
+            bool viscous = GUILayout.Toggle(EditorSimManager.UseAccurateViscousCalc, "More accurate aerodynamics");
+            if (viscous != EditorSimManager.UseAccurateViscousCalc)
+                EditorSimManager.UseAccurateViscousCalc = viscous;
+
+            // Altitude only matters for the viscous condition; show it when that path is active.
+            if (viscous)
+            {
+                GUILayout.Label("Altitude (km)");
+                _altitude = GUILayout.TextField(_altitude, GUILayout.ExpandWidth(true));
+            }
+
             GUILayout.EndVertical();
         }
 
@@ -260,6 +275,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
                 double otherInput = double.Parse(input.otherInput);
 
+                double altitudeMeters = 0;
+                if (double.TryParse(_altitude, NumberStyles.Float, CultureInfo.InvariantCulture, out double altKm))
+                    altitudeMeters = altKm * 1000;
+
                 SweepSim sim = simManager.SweepSim;
                 if (sim.IsReady())
                 {
@@ -273,7 +292,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                                    (int)numPts,
                                                    input.flapSetting,
                                                    input.spoilers,
-                                                   bodySettingDropdown.ActiveSelection);
+                                                   bodySettingDropdown.ActiveSelection,
+                                                   altitudeMeters);
                         SetAngleVectors(pitchSetting, pitchSetting);
                     }
                     else
@@ -285,7 +305,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                                       (int)numPts,
                                                       input.flapSetting,
                                                       input.spoilers,
-                                                      bodySettingDropdown.ActiveSelection);
+                                                      bodySettingDropdown.ActiveSelection,
+                                                      altitudeMeters);
                         SetAngleVectors(lowerBound, upperBound);
                     }
 

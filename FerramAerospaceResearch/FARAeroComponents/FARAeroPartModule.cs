@@ -67,6 +67,111 @@ namespace FerramAerospaceResearch.FARAeroComponents
         public Vector3 partLocalVelNorm;
         public Vector3 partLocalAngVel;
 
+        // Snapshot of this part's transform and CoM offset, non-null only while a heatmap sweep
+        // is running. When set, the parallel body-section force evaluation (SimulatedForceContext)
+        // reads geometry from it instead of the Unity Transform, which is main-thread-only.
+        public ferram4.FrozenPartTransform? SimGeom;
+        public Vector3 SimCoMOffset;
+
+        /// <summary>
+        /// SimGeom on a sweep worker (SimThreadContext.InSweep), else none: the main thread's own evaluations during
+        /// a sweep read the live transform, as they do outside one.
+        /// </summary>
+        public ferram4.FrozenPartTransform? SweepGeom
+        {
+            get { return ferram4.SimThreadContext.InSweep ? SimGeom : null; }
+        }
+
+        /// <summary>
+        /// Captures (or, with capture=false, releases) the transform snapshot the parallel sweep
+        /// reads from. Must be called on the main thread.
+        /// </summary>
+        public void SetSimGeometry(bool capture)
+        {
+            if (!capture)
+            {
+                SimGeom = null;
+                return;
+            }
+
+            SimGeom = new ferram4.FrozenPartTransform(part.partTransform);
+            SimCoMOffset = part.CoMOffset;
+        }
+
+        /// <summary>
+        /// The live state the body-section forces read from this part, captured on the main thread with a vessel
+        /// snapshot so a snapshot prediction can run on any thread.
+        /// </summary>
+        internal struct SnapshotState
+        {
+            public ferram4.FrozenPartTransform Geom;
+            public Vector3 CoMOffset;
+            public Vector3 AngularVelocity;
+
+            // The part's AeroForceModifier at capture: one set later does not reach the snapshot's predictions.
+            public Func<Part, Vector3, Vector3> ForceModifier;
+        }
+
+        // Per prediction slot (the top PredictionSlots, the only ones that predict from snapshots), allocated with the
+        // part's first capture: most parts are never captured.
+        private SnapshotState[] slotSnapshotState;
+        private long[] slotSnapshotStamp;
+
+        private static int PredictionIndex(int slot)
+        {
+            return slot - (ferram4.SimThreadContext.MaxSlots - ferram4.SimThreadContext.PredictionSlots);
+        }
+
+        /// <summary>Captures what the section forces read live from this part. Main thread.</summary>
+        internal SnapshotState CaptureSnapshotState()
+        {
+            if (slotSnapshotStamp == null)
+            {
+                slotSnapshotState = new SnapshotState[ferram4.SimThreadContext.PredictionSlots];
+                slotSnapshotStamp = new long[ferram4.SimThreadContext.PredictionSlots];
+            }
+
+            return new SnapshotState
+            {
+                Geom = new ferram4.FrozenPartTransform(part.partTransform),
+                CoMOffset = part.CoMOffset,
+                AngularVelocity = partLocalAngVel,
+                ForceModifier = AeroForceModifier
+            };
+        }
+
+        /// <summary>Puts captured state on the calling thread's slot for the snapshot prediction with this stamp.</summary>
+        internal void InstallSnapshotState(in SnapshotState state, long stamp)
+        {
+            int i = PredictionIndex(ferram4.SimThreadContext.Slot);
+            slotSnapshotState[i] = state;
+            slotSnapshotStamp[i] = stamp;
+        }
+
+        /// <summary>
+        /// Inside a snapshot prediction, this part's captured state when it was captured with the snapshot. False
+        /// outside one, and for a part that was not captured.
+        /// </summary>
+        internal bool TryGetSnapshotState(out SnapshotState state)
+        {
+            long stamp = ferram4.SimThreadContext.SnapshotStamp;
+            int i = PredictionIndex(ferram4.SimThreadContext.Slot);
+            if (stamp != 0 && slotSnapshotStamp != null && i >= 0 && slotSnapshotStamp[i] == stamp)
+            {
+                state = slotSnapshotState[i];
+                return true;
+            }
+
+            state = default;
+            return false;
+        }
+
+        /// <summary>The part's angular velocity (part frame) as the section forces take it: the captured one in a snapshot prediction.</summary>
+        internal Vector3 SolveAngularVelocity
+        {
+            get { return TryGetSnapshotState(out SnapshotState state) ? state.AngularVelocity : partLocalAngVel; }
+        }
+
         private Vector3 worldSpaceVelNorm;
         public Vector3 worldSpaceAeroForce;
         public Vector3 worldSpaceTorque;
