@@ -1,0 +1,5 @@
+<Project>
+  <Target Name="FARPostBuild" AfterTargets="Build" Condition=" '$(PostBuildCommand)' != '' ">
+    <Exec Command="$(PostBuildCommand) &quot;$(TargetPath)&quot;" WorkingDirectory="$(MSBuildThisFileDirectory)" />
+  </Target>
+</Project>
