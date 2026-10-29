@@ -90,12 +90,16 @@ namespace FerramAerospaceResearch.RealChuteLite
         public float autoCutSpeed = 0.5f;
 
         [KSPField(guiName = "RCLSettingMinPres", isPersistant = true, guiActive = true, guiActiveEditor = true),
-         UI_FloatRange(stepIncrement = 0.01f, maxValue = 0.5f, minValue = 0.01f)]
+         UI_FloatRange(stepIncrement = 0.01f, maxValue = 0.75f, minValue = 0.01f)]
         public float minAirPressureToOpen = 0.01f;
 
         [KSPField(guiName = "RCLSettingAlt", isPersistant = true, guiActive = true, guiActiveEditor = true),
          UI_FloatRange(stepIncrement = 50f, maxValue = 5000f, minValue = 50f)]
         public float deployAltitude = 700;
+
+        [KSPField(guiName = "RCLSettingDelopyMode", isPersistant = true, guiActive = true, guiActiveEditor = true),
+         UI_Cycle(stateNames = new string[] { "RCLDeployModeSafe", "RCLDeployModeRisky", "RCLDeployModeImmediate" })]
+        public int deployMode = 0;
 
         [KSPField]
         public string capName = "cap", canopyName = "canopy";
@@ -268,6 +272,10 @@ namespace FerramAerospaceResearch.RealChuteLite
             get { return atmPressure >= minAirPressureToOpen; }
         }
 
+        public bool SafetyCheck {
+            get { return deployMode >= (int) safeState; }
+        }
+
         //If the parachute can deploy
         public bool CanDeploy
         {
@@ -386,6 +394,20 @@ namespace FerramAerospaceResearch.RealChuteLite
             get { return repack ??= Events["GUIRepack"]; }
         }
 
+        private string DeployModeStr
+        {
+            get {
+                if (deployMode == 0) {
+                    return Localizer.Format("RCLDeployModeSafe");
+                } else if (deployMode == 1) {
+                    return Localizer.Format("RCLDeployModeRisky");
+                } else {
+                    return Localizer.Format("RCLDeployModeImmediate");
+                }
+
+            }
+        }
+
         //Not needed
         public Callback<Rect> GetDrawModulePanelCallback()
         {
@@ -413,19 +435,20 @@ namespace FerramAerospaceResearch.RealChuteLite
                 massDelta = tmpPartMass - part.partInfo.partPrefab.mass;
 
             var b = new StringBuilder();
-            b.Append(Localizer.Format("RCLModuleInfo0", caseMass));
-            b.Append(Localizer.Format("RCLModuleInfo1", maxSpares));
-            b.Append(Localizer.Format("RCLModuleInfo2", autoCutSpeed));
-            b.AppendLine(Localizer.Format("RCLModuleInfo3", materialName));
-            b.Append(Localizer.Format("RCLModuleInfo4", staticCd));
-            b.Append(Localizer.Format("RCLModuleInfo5", maxTemp + absoluteZero));
-            b.Append(Localizer.Format("RCLModuleInfo6", preDeployedDiameter));
-            b.Append(Localizer.Format("RCLModuleInfo7", deployedDiameter));
-            b.Append(Localizer.Format("RCLModuleInfo8", minAirPressureToOpen));
-            b.Append(Localizer.Format("RCLModuleInfo9", deployAltitude));
-            b.Append(Localizer.Format("RCLModuleInfo10",
+            b.Append(Localizer.Format("RCLModuleInfoCaseMass", caseMass));
+            b.Append(Localizer.Format("RCLModuleInfoSpares", maxSpares));
+            b.Append(Localizer.Format("RCLModuleInfoMaterialAutocutSpeed", autoCutSpeed));
+            b.AppendLine(Localizer.Format("RCLModuleInfoMaterial", materialName));
+            b.Append(Localizer.Format("RCLModuleInfoDragCoefficient", staticCd));
+            b.Append(Localizer.Format("RCLModuleInfoMaxTemp", maxTemp + absoluteZero));
+            b.Append(Localizer.Format("RCLModuleInfoPredeployedDiameter", preDeployedDiameter));
+            b.Append(Localizer.Format("RCLModuleInfoDeployedDiameter", deployedDiameter));
+            b.Append(Localizer.Format("RCLModuleInfoMinDeploymentPressure", minAirPressureToOpen));
+            b.Append(Localizer.Format("RCLModuleInfoDeploymentAltitude", deployAltitude));
+            b.Append(Localizer.Format("RCLModuleInfoDeploymentMode", DeployModeStr));
+            b.Append(Localizer.Format("RCLModuleInfoPredeploymentSpeed",
                                       Math.Round(1 / semiDeploymentSpeed, 1, MidpointRounding.AwayFromZero)));
-            b.Append(Localizer.Format("RCLModuleInfo11",
+            b.Append(Localizer.Format("RCLModuleInfoDeploymentSpeed",
                                       Math.Round(1 / deploymentSpeed, 1, MidpointRounding.AwayFromZero)));
 
             return b.ToString();
@@ -661,6 +684,7 @@ namespace FerramAerospaceResearch.RealChuteLite
                 var module = (RealChuteFAR)p.Modules["RealChuteFAR"];
                 module.minAirPressureToOpen = minAirPressureToOpen;
                 module.deployAltitude = deployAltitude;
+                module.deployMode = deployMode;
             }
         }
 
@@ -963,6 +987,17 @@ namespace FerramAerospaceResearch.RealChuteLite
                 //Deployment altitude slider
                 deployAltitude = GUILayout.HorizontalSlider(deployAltitude, 50, 10000);
 
+            //Deployment mode selection
+            GUILayout.Label(Localizer.Format("RCLGUIDeploymentMode", DeployModeStr));
+            if (HighLogic.LoadedSceneIsFlight)
+                //Deployment mode grid
+                deployMode = GUILayout.SelectionGrid(deployMode, new string[] {
+                    Localizer.Format("RCLDeployModeSafe"),
+                    Localizer.Format("RCLDeployModeRisky"),
+                    Localizer.Format("RCLDeployModeImmediate")
+                }, 3);
+
+
             //Other labels
             b = new StringBuilder();
             b.AppendLine(Localizer.Format("RCLGUI15",
@@ -1106,7 +1141,7 @@ namespace FerramAerospaceResearch.RealChuteLite
                         case DeploymentStates.STOWED:
                         {
                             part.stackIcon.SetIconColor(XKCDColors.LightCyan);
-                            if (PressureCheck && RandomDeployment)
+                            if (SafetyCheck && PressureCheck && RandomDeployment)
                                 PreDeploy();
                             break;
                         }
