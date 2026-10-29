@@ -45,7 +45,7 @@ jobs:
         id: package-mod
         run: echo "archive=$(python -m buildtools package)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: FerramAerospaceResearch
           path: ${{ steps.package-mod.outputs.archive }}
