@@ -149,6 +149,13 @@ namespace FerramAerospaceResearch.FARPartGeometry
             }
         }
 
+        /// <summary>Parts whose extent moves with deployment and must not set the voxel size or place the grid (see CreateVoxel).</summary>
+        private static bool SetsNoVoxelSize(Part part)
+        {
+            return part.Modules.Contains<ModuleWheelBase>() ||
+                   part.Modules.Contains("KSPWheelBase");
+        }
+
         public static VehicleVoxel CreateNewVoxel(
             List<GeometryPartModule> geoModules,
             int elementCount,
@@ -173,6 +180,11 @@ namespace FerramAerospaceResearch.FARPartGeometry
         {
             var min = new Vector3d(double.PositiveInfinity, double.PositiveInfinity, double.PositiveInfinity);
             var max = new Vector3d(double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity);
+            // The bounds without the landing gear: the voxel size and the grid's center are derived from these, so
+            // that a gear leg does not coarsen every part's voxels. The grid itself still covers the full bounds:
+            // gear will get finer voxels than before.
+            var minFixed = min;
+            var maxFixed = max;
 
             partPriorities = new Dictionary<Part, int>(ObjectReferenceEqualityComparer<Part>.Default);
             //Determine bounds and "overriding parts" from geoModules
@@ -205,6 +217,11 @@ namespace FerramAerospaceResearch.FARPartGeometry
 
                 min = Vector3d.Min(min, minBounds);
                 max = Vector3d.Max(max, maxBounds);
+                if (m.part is null || !SetsNoVoxelSize(m.part))
+                {
+                    minFixed = Vector3d.Min(minFixed, minBounds);
+                    maxFixed = Vector3d.Max(maxFixed, maxBounds);
+                }
 
                 if (!(m.part is null))
                     partPriorities.Add(m.part, PartPriorityLevel(m));
@@ -220,15 +237,31 @@ namespace FerramAerospaceResearch.FARPartGeometry
                 return;
             }
 
-            double elementVol = Volume / elementCount;
+            Vector3d sizeFixed = maxFixed - minFixed;
+            double volumeFixed = sizeFixed.x * sizeFixed.y * sizeFixed.z;
+            if (double.IsInfinity(volumeFixed) || double.IsNaN(volumeFixed) || volumeFixed <= 0)
+                volumeFixed = Volume;   // nothing but wheels: size from the full bounds
+
+            double elementVol = volumeFixed / elementCount;
             ElementSize = Math.Pow(elementVol, 1d / 3d);
             invElementSize = 1 / ElementSize;
 
+            // The grid is centered on the fixed parts too, so that a gear leg does not slide the lattice under every
+            // other part, and the center is snapped to the element grid of the vessel frame's origin (the root part).
+            // The grid is then sized to reach the full bounds from that center, so nothing is left outside it.
+            Vector3d center = volumeFixed == Volume ? (max + min) * 0.5 : (maxFixed + minFixed) * 0.5;
+            center = new Vector3d(Math.Round(center.x * invElementSize) * ElementSize,
+                                  Math.Round(center.y * invElementSize) * ElementSize,
+                                  Math.Round(center.z * invElementSize) * ElementSize);
+            var span = new Vector3d(2 * Math.Max(max.x - center.x, center.x - min.x),
+                                    2 * Math.Max(max.y - center.y, center.y - min.y),
+                                    2 * Math.Max(max.z - center.z, center.z - min.z));
+
             double tmp = 0.125 * invElementSize;
 
-            xLength = (int)Math.Ceiling(size.x * tmp) + 2;
-            yLength = (int)Math.Ceiling(size.y * tmp) + 2;
-            zLength = (int)Math.Ceiling(size.z * tmp) + 2;
+            xLength = (int)Math.Ceiling(span.x * tmp) + 2;
+            yLength = (int)Math.Ceiling(span.y * tmp) + 2;
+            zLength = (int)Math.Ceiling(span.z * tmp) + 2;
 
             lock (clearedChunks) //make sure that we can actually voxelize without breaking the memory limits
             {
@@ -253,9 +286,7 @@ namespace FerramAerospaceResearch.FARPartGeometry
                 z = zLength * 4 * ElementSize
             };
 
-            Vector3d center = (max + min) * 0.5f; //Center of the vessel
-
-            //This places the center of the voxel at the center of the vehicle to achieve maximum symmetry
+            //This places the center of the voxel at the center of the vehicle's fixed parts to achieve maximum symmetry
             LocalLowerRightCorner = center - extents;
             Bounds = new Bounds(center, 2 * extents);
 
