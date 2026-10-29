@@ -1,7 +1,7 @@
 # Ferram Aerospace Research Continued v0.16.1.2 "Marangoni"
 
-[![Build](https://github.com/dkavolis/Ferram-Aerospace-Research/actions/workflows/package.yml/badge.svg?branch=master)](https://github.com/dkavolis/Ferram-Aerospace-Research/actions/workflows/package.yml)  
-Download latest build [here](https://nightly.link/dkavolis/Ferram-Aerospace-Research/workflows/package/master/FerramAerospaceResearch.zip)  
+[![Build](https://github.com/KSPModStewards/Ferram-Aerospace-Research/actions/workflows/package.yml/badge.svg?branch=master)](https://github.com/KSPModStewards/Ferram-Aerospace-Research/actions/workflows/package.yml)  
+Download latest build [here](https://nightly.link/KSPModStewards/Ferram-Aerospace-Research/workflows/package/master/FerramAerospaceResearch.zip)  
 
 =========================  
 Aerodynamics model for Kerbal Space Program

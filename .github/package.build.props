@@ -1,5 +1,0 @@
-<Project>
-    <PropertyGroup>
-        <KSP_DIR_BUILD>$(SolutionDir)/b/1.12</KSP_DIR_BUILD>
-    </PropertyGroup>
-</Project>
