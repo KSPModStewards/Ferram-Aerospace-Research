@@ -62,6 +62,53 @@ For control surfaces, use above but replace `FARWingAerodynamicModel` with `FARC
 
 Set all the other winglet/control surface values to zero
 
+## Development on Linux
+
+If developing on Linux, you will need the following tools:
+
+- [Mono 6](https://www.mono-project.com/download/stable/)
+- [msbuild](https://learn.microsoft.com/en-us/visualstudio/msbuild/msbuild?view=visualstudio)
+- Python 3
+
+You can also use the included [flake.nix](./flake.nix) to manage your development environment, either using direnv or by running `nix develop`.
+
+You will need an installation of Kerbal Space Program with the following addons:
+
+- [Harmony](https://github.com/KSPModdingLibs/HarmonyKSP)
+- [Burst](https://github.com/KSPModdingLibs/KSPBurst)
+    - On Linux, only the non-compiler version works
+- [ModuleManager](https://ksp.sarbian.com/jenkins/job/ModuleManager/)
+- [ModularFlightIntegrator](https://ksp.sarbian.com/jenkins/job/ModularFlightIntegrator/)
+
+You can also install these via CKAN.
+
+Create a file called `Directory.Build.props.user` with the following content:
+
+```
+<Project>
+  <PropertyGroup>
+    <KSP_DIR_BUILD>your/path/to/Kerbal Space Program</KSP_DIR_BUILD>
+    <KSP_DATA_DIRNAME>KSP_Data</KSP_DATA_DIRNAME>
+  </PropertyGroup>
+</Project>
+```
+
+and replace `your/path/to/Kerbal Space Program`.
+
+Download the git submodules:
+
+```bash
+git submodule update --init --recursive
+```
+
+Now, simply run:
+
+```bash
+msbuild
+```
+
+It should result in FAR being installed into your `GameData`.
+
 ## CHANGELOG
 
 0.16.1.2V "Marangoni"------------------------------------  
