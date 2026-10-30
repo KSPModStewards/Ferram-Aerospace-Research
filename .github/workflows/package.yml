@@ -18,13 +18,16 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
-          python-version: 3.x
+          python-version: "3.12"
 
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.x
 
       - uses: KSPModdingLibs/KSPBuildTools/.github/actions/setup-ckan@1.1.1
+        with:
+          # Install dependencies whole, they are bundled in the zip
+          ckan-filters: ""
 
       # Build references and the dependencies bundled in the zip
       - uses: KSPModdingLibs/KSPBuildTools/.github/actions/install-dependencies@1.1.1
@@ -43,7 +46,9 @@ jobs:
 
       - name: Package
         id: package-mod
-        run: echo "archive=$(python -m buildtools package)" >> "$GITHUB_OUTPUT"
+        run: |
+          archive=$(python -m buildtools package)
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v6
         with:

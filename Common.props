@@ -3,6 +3,8 @@
     <TargetFramework>net48</TargetFramework>
     <LangVersion>10</LangVersion>
     <Configurations>Debug;Release;Profiling;Editor</Configurations>
+    <!-- The SDK defaults Configuration after this file, OutputPath needs it now -->
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <OutputPath>$(MSBuildThisFileDirectory)bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <DebugType>portable</DebugType>

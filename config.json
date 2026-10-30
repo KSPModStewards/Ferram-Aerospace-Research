@@ -7,7 +7,7 @@
         "ModDir": "$(SolutionDir)/$(ModDirRelative)",
         "PluginDir": "$(ModDir)/Plugins",
         "AssetDir": "$(ModDir)/Assets",
-        "KSP_DIR_INSTALL": "C:/Zaidimai/KSP 1.12",
+        "KSP_DIR_INSTALL": "$(KSP_DIR_BUILD)",
         "KSPGameData": "$(KSP_DIR_INSTALL)/GameData",
         "GameDir": "$(KSPGameData)/$(ModName)",
         "VersionMajor": 0,
