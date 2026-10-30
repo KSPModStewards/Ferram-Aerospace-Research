@@ -7,9 +7,8 @@
         "ModDir": "$(SolutionDir)/$(ModDirRelative)",
         "PluginDir": "$(ModDir)/Plugins",
         "AssetDir": "$(ModDir)/Assets",
-        "KSP_DIR_INSTALL": "$(KSP_DIR_BUILD)",
+        "KSP_DIR_INSTALL": "",
         "KSPGameData": "$(KSP_DIR_INSTALL)/GameData",
-        "GameDir": "$(KSPGameData)/$(ModName)",
         "VersionMajor": 0,
         "VersionMinor": 16,
         "VersionBuild": 1,
@@ -42,25 +41,6 @@
                 "destination": "$(AssetDir)"
             }
         ],
-        "[FerramAerospaceResearch]": {
-            "clean": [
-                "$(GameDir)"
-            ],
-            "install": [
-                {
-                    "source": "$(TargetDir)/$(TargetName).*",
-                    "destination": "$(PluginDir)"
-                },
-                {
-                    "source": "$(AssetBundleDir)/*.far",
-                    "destination": "$(AssetDir)"
-                },
-                {
-                    "source": "GameData/$(ModName)",
-                    "destination": "$(GameDir)"
-                }
-            ]
-        },
         "|Editor": {
             "install": []
         },
