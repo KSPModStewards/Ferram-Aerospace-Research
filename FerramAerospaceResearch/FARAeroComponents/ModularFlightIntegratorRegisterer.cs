@@ -106,6 +106,10 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         private static void UpdateAerodynamics(ModularFlightIntegrator fi, Part part)
         {
+            if (part.submergedPortion > 0 &&
+                part.FindModuleImplementingFast<FARAeroPartModule>() is FARAeroPartModule aeroModule)
+                aeroModule.ApplyWaterDrag();
+
             //FIXME Proper model for airbrakes
             if (part.Modules.Contains<ModuleAeroSurface>() ||
                  (ModUtils.IsBDArmoryInstalled &&
@@ -170,7 +174,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
                    p.waterAngularDragMultiplier *
                    p.submergedPortion;
 
-            p.rb.angularDrag = (float)(p.angularDrag * tmp * PhysicsGlobals.AngularDragMultiplier);
+            //PartBuoyancy clears angularDragByFI when it applies its own angular drag to slow floating parts
+            if (p.angularDragByFI || p.submergedPortion <= 0)
+                p.rb.angularDrag = (float)(p.angularDrag * tmp * PhysicsGlobals.AngularDragMultiplier);
 
             tmp = Math.Max(fi.pseudoReDragMult, 1);
             //dyn pres adjusted for submersion

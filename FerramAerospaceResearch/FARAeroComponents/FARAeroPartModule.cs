@@ -513,17 +513,25 @@ namespace FerramAerospaceResearch.FARAeroComponents
         }
 
         //just to make water drag work in some possibly sane way
-        public void FixedUpdate()
+        //PartBuoyancy sets rb.drag to BuoyancyWaterDragSlow plus extra drag on splashdown, replace only the base value
+        //must run after PartBuoyancy.FixedUpdate
+        public void ApplyWaterDrag()
         {
             if (waterSlowDragNew <= 0 || !vessel || part.submergedPortion <= 0)
                 return;
-            PhysicsGlobals.BuoyancyWaterDragSlow = Math.Max(hackWaterDragVal, 0f);
+            float drag = Math.Max(hackWaterDragVal, 0f);
             hackWaterDragVal = 0;
 
             float vel = partLocalVel.magnitude;
 
             if (vel < PhysicsGlobals.BuoyancyWaterDragMinVel || vel > vessel.srfSpeed * minVelVesselMultNew)
-                PhysicsGlobals.BuoyancyWaterDragSlow += waterSlowDragNew;
+                drag += waterSlowDragNew;
+
+            drag -= PhysicsGlobals.BuoyancyWaterDragSlow;
+            if (part.rb != null)
+                part.rb.drag = Math.Max(part.rb.drag + drag, 0f);
+            if (part.servoRb != null)
+                part.servoRb.drag = Math.Max(part.servoRb.drag + drag, 0f);
         }
 
         public void AddLocalForce(Vector3 localForce, Vector3 localLocation)
