@@ -6,6 +6,7 @@ using System.Text;
 using FerramAerospaceResearch.PartExtensions;
 using KSP.Localization;
 using KSP.UI.Screens;
+using KSPCommunityFixes;
 using UnityEngine;
 using Random = System.Random;
 
@@ -594,8 +595,8 @@ namespace FerramAerospaceResearch.RealChuteLite
             {
                 var parachutes = new List<RealChuteFAR>();
                 if (HighLogic.LoadedSceneIsEditor)
-                    parachutes.AddRange(EditorLogic.SortedShipList.Where(p => p.Modules.Contains<RealChuteFAR>())
-                                                   .Select(p => p.Modules.GetModule<RealChuteFAR>()));
+                    parachutes.AddRange(EditorLogic.SortedShipList.Where(p => p.HasModuleImplementingFast<RealChuteFAR>())
+                                                   .Select(p => p.FindModuleImplementingFast<RealChuteFAR>()));
                 else if (HighLogic.LoadedSceneIsFlight)
                     parachutes.AddRange(vessel.FindPartModulesImplementing<RealChuteFAR>());
                 if (parachutes.Count > 1 && parachutes.Exists(p => p.visible))
@@ -658,7 +659,7 @@ namespace FerramAerospaceResearch.RealChuteLite
         {
             foreach (Part p in part.symmetryCounterparts)
             {
-                var module = (RealChuteFAR)p.Modules["RealChuteFAR"];
+                var module = p.FindModuleImplementingFast<RealChuteFAR>();
                 module.minAirPressureToOpen = minAirPressureToOpen;
                 module.deployAltitude = deployAltitude;
             }
@@ -1267,7 +1268,7 @@ namespace FerramAerospaceResearch.RealChuteLite
 
             Part prefab = part.partInfo.partPrefab;
             massDelta = prefab == null ? 0 : TotalMass - prefab.mass;
-            shieldedCanDeploy = prefab.FindModuleImplementing<RealChuteFAR>().shieldedCanDeploy;
+            shieldedCanDeploy = prefab.FindModuleImplementingFast<RealChuteFAR>().shieldedCanDeploy;
         }
 
         public override void OnActive()

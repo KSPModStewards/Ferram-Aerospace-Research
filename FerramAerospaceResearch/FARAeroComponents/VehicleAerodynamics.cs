@@ -1,5 +1,5 @@
 /*
-Ferram Aerospace Research v0.16.1.2 "Marangoni"
+Ferram Aerospace Research v0.16.2.0 "Maskell"
 =========================
 Aerodynamics model for Kerbal Space Program
 
@@ -49,6 +49,7 @@ using ferram4;
 using FerramAerospaceResearch.FARPartGeometry;
 using FerramAerospaceResearch.FARPartGeometry.GeometryModification;
 using FerramAerospaceResearch.FARThreading;
+using KSPCommunityFixes;
 using UnityEngine;
 
 namespace FerramAerospaceResearch.FARAeroComponents
@@ -223,23 +224,17 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 Part p = aeroModule.part;
                 if (!p)
                     continue;
-                if (p.Modules.Contains<FARWingAerodynamicModel>())
+                if (p.FindModuleImplementingFast<FARWingAerodynamicModel>() is FARWingAerodynamicModel w)
                 {
-                    var w = p.Modules.GetModule<FARWingAerodynamicModel>();
-                    if (w is null)
-                        continue;
                     w.isShielded = false;
                     w.NUFAR_ClearExposedAreaFactor();
                     _legacyWingModels.Add(w);
                 }
-                else if (p.Modules.Contains<FARControllableSurface>())
+                else if (p.FindModuleImplementingFast<FARControllableSurface>() is FARControllableSurface c)
                 {
-                    FARWingAerodynamicModel w = p.Modules.GetModule<FARControllableSurface>();
-                    if (w is null)
-                        continue;
-                    w.isShielded = false;
-                    w.NUFAR_ClearExposedAreaFactor();
-                    _legacyWingModels.Add(w);
+                    c.isShielded = false;
+                    c.NUFAR_ClearExposedAreaFactor();
+                    _legacyWingModels.Add(c);
                 }
             }
 
@@ -440,7 +435,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     continue;
 
                 // Could be left null if a launch clamp
-                var geoModule = p.Modules.GetModule<GeometryPartModule>();
+                var geoModule = p.FindModuleImplementingFast<GeometryPartModule>();
 
                 hitParts.Add(p);
 
@@ -448,9 +443,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 Vector3 candVector = Vector3.zero;
 
                 //intakes are probably pointing in the direction we're gonna be going in
-                if (p.Modules.Contains<ModuleResourceIntake>())
+                if (p.FindModuleImplementingFast<ModuleResourceIntake>() is ModuleResourceIntake intake)
                 {
-                    var intake = p.Modules.GetModule<ModuleResourceIntake>();
                     Transform intakeTrans = p.FindModelTransform(intake.intakeTransformName);
                     if (!(intakeTrans is null))
                         candVector = intakeTrans.TransformDirection(Vector3.forward);
@@ -458,9 +452,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 //aggregate wings for later calc...
                 else if (geoModule == null ||
                          geoModule.IgnoreForMainAxis ||
-                         p.Modules.Contains<FARWingAerodynamicModel>() ||
-                         p.Modules.Contains<FARControllableSurface>() ||
-                         p.Modules.Contains<ModuleWheelBase>() ||
+                         p.HasModuleImplementingFast<FARWingAerodynamicModel>() ||
+                         p.HasModuleImplementingFast<FARControllableSurface>() ||
+                         p.HasModuleImplementingFast<ModuleWheelBase>() ||
                          p.Modules.Contains("KSPWheelBase"))
                 {
                     continue;
@@ -500,10 +494,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     hitParts.Add(q);
 
                     //intakes are probably pointing in the direction we're gonna be going in
-                    if (q.Modules.Contains<ModuleResourceIntake>())
+                    if (q.FindModuleImplementingFast<ModuleResourceIntake>() is ModuleResourceIntake intake2)
                     {
-                        var intake = q.Modules.GetModule<ModuleResourceIntake>();
-                        Transform intakeTrans = q.FindModelTransform(intake.intakeTransformName);
+                        Transform intakeTrans = q.FindModelTransform(intake2.intakeTransformName);
                         if (!(intakeTrans is null))
                             candVector += intakeTrans.TransformDirection(Vector3.forward);
                     }
@@ -1457,12 +1450,10 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     if (key is null)
                         continue;
 
-                    if (!key.Modules.Contains<FARAeroPartModule>())
+                    if (!(key.FindModuleImplementingFast<FARAeroPartModule>() is FARAeroPartModule m))
                         continue;
 
-                    var m = key.Modules.GetModule<FARAeroPartModule>();
-                    if (!(m is null))
-                        includedModules.Add(m);
+                    includedModules.Add(m);
 
                     if (_moduleAndAreasDict.ContainsKey(m))
                         _moduleAndAreasDict[m] += areas;

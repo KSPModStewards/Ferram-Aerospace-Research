@@ -1,207 +1,60 @@
-<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-    <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
-    <PropertyGroup>
-        <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-        <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-        <ProjectGuid>{8E4E9138-A949-4DED-A08C-4CE3442887B4}</ProjectGuid>
-        <OutputType>Library</OutputType>
-        <AppDesignerFolder>Properties</AppDesignerFolder>
-        <RootNamespace>FerramAerospaceResearch</RootNamespace>
-        <AssemblyName>FerramAerospaceResearch.Base</AssemblyName>
-        <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
-        <FileAlignment>512</FileAlignment>
-        <LangVersion>10</LangVersion>
-    </PropertyGroup>
-    <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-        <PlatformTarget>AnyCPU</PlatformTarget>
-        <DebugSymbols>true</DebugSymbols>
-        <DebugType>portable</DebugType>
-        <Optimize>false</Optimize>
-        <OutputPath>$(SolutionDir)bin\$(Configuration)\</OutputPath>
-        <DefineConstants>DEBUG;TRACE;ASSERT;LOG_TRACE</DefineConstants>
-        <ErrorReport>prompt</ErrorReport>
-        <WarningLevel>4</WarningLevel>
-        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    </PropertyGroup>
-    <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-        <PlatformTarget>AnyCPU</PlatformTarget>
-        <DebugType>portable</DebugType>
-        <Optimize>true</Optimize>
-        <OutputPath>$(SolutionDir)bin\$(Configuration)\</OutputPath>
-        <DefineConstants>TRACE;INFO</DefineConstants>
-        <ErrorReport>prompt</ErrorReport>
-        <WarningLevel>4</WarningLevel>
-        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    </PropertyGroup>
-    <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Profiling|AnyCPU' ">
-        <PlatformTarget>AnyCPU</PlatformTarget>
-        <DebugType>portable</DebugType>
-        <Optimize>true</Optimize>
-        <OutputPath>$(SolutionDir)bin\$(Configuration)\</OutputPath>
-        <DefineConstants>TRACE;INFO;ENABLE_PROFILER</DefineConstants>
-        <ErrorReport>prompt</ErrorReport>
-        <WarningLevel>4</WarningLevel>
-        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    </PropertyGroup>
-    <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Editor|AnyCPU' ">
-        <PlatformTarget>AnyCPU</PlatformTarget>
-        <DebugSymbols>true</DebugSymbols>
-        <DebugType>portable</DebugType>
-        <Optimize>false</Optimize>
-        <OutputPath>$(SolutionDir)bin\$(Configuration)\</OutputPath>
-        <DefineConstants>DEBUG;TRACE;ASSERT;LOG_TRACE;ENABLE_UNITY_COLLECTIONS_CHECKS</DefineConstants>
-        <ErrorReport>prompt</ErrorReport>
-        <WarningLevel>4</WarningLevel>
-        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    </PropertyGroup>
-    <ItemGroup>
-        <Reference Include="System" />
-        <Reference Include="Unity.Burst">
-            <HintPath>$(KSP_DIR_BUILD)\GameData\000_KSPBurst\Plugins\Unity.Burst.dll</HintPath>
-        </Reference>
-        <Reference Include="Unity.Burst.Unsafe">
-            <HintPath>$(KSP_DIR_BUILD)\GameData\000_KSPBurst\Plugins\Unity.Burst.Unsafe.dll</HintPath>
-        </Reference>
-        <Reference Include="Unity.Collections">
-            <HintPath>$(KSP_DIR_BUILD)\GameData\000_KSPBurst\Plugins\Unity.Collections.dll</HintPath>
-        </Reference>
-        <Reference Include="Unity.Jobs">
-            <HintPath>$(KSP_DIR_BUILD)\GameData\000_KSPBurst\Plugins\Unity.Jobs.dll</HintPath>
-        </Reference>
-        <Reference Include="Unity.Mathematics">
-            <HintPath>$(KSP_DIR_BUILD)\GameData\000_KSPBurst\Plugins\Unity.Mathematics.dll</HintPath>
-        </Reference>
-        <Reference Include="UnityEngine">
-            <HintPath>$(KSP_DIR_BUILD)\$(KSP_DATA_DIRNAME)\Managed\UnityEngine.dll</HintPath>
-        </Reference>
-        <Reference Include="UnityEngine.AnimationModule">
-            <HintPath>$(KSP_DIR_BUILD)\$(KSP_DATA_DIRNAME)\Managed\UnityEngine.AnimationModule.dll</HintPath>
-        </Reference>
-        <Reference Include="UnityEngine.AssetBundleModule">
-            <HintPath>$(KSP_DIR_BUILD)\$(KSP_DATA_DIRNAME)\Managed\UnityEngine.AssetBundleModule.dll</HintPath>
-        </Reference>
-        <Reference Include="UnityEngine.CoreModule" Condition=" '$(Configuration)|$(Platform)' != 'Editor|AnyCPU' ">
-            <HintPath>$(KSP_DIR_BUILD)\$(KSP_DATA_DIRNAME)\Managed\UnityEngine.CoreModule.dll</HintPath>
-        </Reference>
-        <Reference Include="UnityEngine.CoreModule" Condition=" '$(Configuration)|$(Platform)' == 'Editor|AnyCPU' ">
-            <HintPath>$(UNITY_EDITOR_MANAGED_DIR)\UnityEngine.CoreModule.dll</HintPath>
-        </Reference>
-        <Reference Include="UnityEngine.ImageConversionModule">
-          <HintPath>$(KSP_DIR_BUILD)\$(KSP_DATA_DIRNAME)\Managed\UnityEngine.ImageConversionModule.dll</HintPath>
-        </Reference>
-        <Reference Include="UnityEngine.IMGUIModule">
-            <HintPath>$(KSP_DIR_BUILD)\$(KSP_DATA_DIRNAME)\Managed\UnityEngine.IMGUIModule.dll</HintPath>
-        </Reference>
-        <Reference Include="UnityEngine.InputLegacyModule">
-            <HintPath>$(KSP_DIR_BUILD)\$(KSP_DATA_DIRNAME)\Managed\UnityEngine.InputLegacyModule.dll</HintPath>
-        </Reference>
-        <Reference Include="UnityEngine.PhysicsModule">
-            <HintPath>$(KSP_DIR_BUILD)\$(KSP_DATA_DIRNAME)\Managed\UnityEngine.PhysicsModule.dll</HintPath>
-        </Reference>
-        <Reference Include="UnityEngine.TextRenderingModule">
-            <HintPath>$(KSP_DIR_BUILD)\$(KSP_DATA_DIRNAME)\Managed\UnityEngine.TextRenderingModule.dll</HintPath>
-        </Reference>
-        <Reference Include="UnityEngine.UI">
-            <HintPath>$(KSP_DIR_BUILD)\$(KSP_DATA_DIRNAME)\Managed\UnityEngine.UI.dll</HintPath>
-        </Reference>
-        <Reference Include="UnityEngine.UnityWebRequestModule">
-            <HintPath>$(KSP_DIR_BUILD)\$(KSP_DATA_DIRNAME)\Managed\UnityEngine.UnityWebRequestModule.dll</HintPath>
-        </Reference>
-        <Reference Include="UnityEngine.UnityWebRequestTextureModule">
-            <HintPath>$(KSP_DIR_BUILD)\$(KSP_DATA_DIRNAME)\Managed\UnityEngine.UnityWebRequestTextureModule.dll</HintPath>
-        </Reference>
-    </ItemGroup>
-    <ItemGroup>
-        <Compile Include="Config\DebugConfig.cs" />
-        <Compile Include="Config\ExposureConfig.cs" />
-        <Compile Include="Config\FlightLogConfig.cs" />
-        <Compile Include="Config\GUIColors.cs" />
-        <Compile Include="Config\ResourceNode.cs" />
-        <Compile Include="Config\ShaderConfig.cs" />
-        <Compile Include="Config\TextureConfig.cs" />
-        <Compile Include="Config\VoxelizationConfig.cs" />
-        <Compile Include="FARAddonAttribute.cs" />
-        <Compile Include="FARAddonLoader.cs" />
-        <Compile Include="FARConfig.cs" />
-        <Compile Include="Geometry\DebugVoxel.cs" />
-        <Compile Include="Geometry\DebugVoxelMesh.cs" />
-        <Compile Include="Geometry\Exposure\CameraInfo.cs" />
-        <Compile Include="Geometry\Exposure\Debugger.cs" />
-        <Compile Include="Geometry\Exposure\Executor.cs" />
-        <Compile Include="Geometry\Exposure\Renderer.cs" />
-        <Compile Include="Geometry\Exposure\RenderBatch.cs" />
-        <Compile Include="Geometry\Exposure\RenderRequest.cs" />
-        <Compile Include="Geometry\Exposure\RenderResources.cs" />
-        <Compile Include="Geometry\Exposure\RenderResult.cs" />
-        <Compile Include="Geometry\IDebugVoxelMeshBuilder.cs" />
-        <Compile Include="Geometry\MeshBuildData.cs" />
-        <Compile Include="Interfaces\IConfigNode.cs" />
-        <Compile Include="Interfaces\IConfigValue.cs" />
-        <Compile Include="Interfaces\IObservable.cs" />
-        <Compile Include="Interfaces\IReloadable.cs" />
-        <Compile Include="Interfaces\IWaitForAddon.cs" />
-        <Compile Include="ObjectReferenceEqualityComparer.cs" />
-        <Compile Include="Properties\AssemblyInfo.cs" />
-        <Compile Include="Reflection\INodeLoader.cs" />
-        <Compile Include="Reflection\ValueReflection.cs" />
-        <Compile Include="Reflection\ConfigNodeAttribute.cs" />
-        <Compile Include="Reflection\ConfigReflection.cs" />
-        <Compile Include="Reflection\ConfigValueAttribute.cs" />
-        <Compile Include="Reflection\ConfigValueIgnoreAttribute.cs" />
-        <Compile Include="Reflection\INodeSaver.cs" />
-        <Compile Include="Reflection\ListValueReflection.cs" />
-        <Compile Include="Reflection\NodeReflection.cs" />
-        <Compile Include="Reflection\ReflectionUtils.cs" />
-        <Compile Include="Resources\Device.cs" />
-        <Compile Include="Resources\FARAssetDictionary.cs" />
-        <Compile Include="Resources\FARAssets.cs" />
-        <Compile Include="Resources\FARComputeShaderCache.cs" />
-        <Compile Include="Resources\FARShaderCache.cs" />
-        <Compile Include="Resources\FARTextureCache.cs" />
-        <Compile Include="Resources\LoadableAsset.cs" />
-        <Compile Include="Resources\LoaderCache.cs" />
-        <Compile Include="Resources\Loading\AssetBundleAssetLoader.cs" />
-        <Compile Include="Resources\Loading\AssetBundleLoader.cs" />
-        <Compile Include="Resources\Loading\ComputeShaderBundleLoader.cs" />
-        <Compile Include="Resources\Loading\ComputeShaderLoader.cs" />
-        <Compile Include="Resources\Loading\IAssetBundleLoader.cs" />
-        <Compile Include="Resources\Loading\IAssetLoader.cs" />
-        <Compile Include="Resources\Loading\IAssetRequest.cs" />
-        <Compile Include="Resources\Loading\Progress.cs" />
-        <Compile Include="Resources\Loading\AssetRequest.cs" />
-        <Compile Include="Resources\Loading\ShaderBundleLoader.cs" />
-        <Compile Include="Resources\Loading\ShaderBundleLoaderBase.cs" />
-        <Compile Include="Resources\Loading\ShaderLoader.cs" />
-        <Compile Include="Resources\Loading\TextureLoader.cs" />
-        <Compile Include="Resources\PhysicalDevice.cs" />
-        <Compile Include="Resources\Pool.cs" />
-        <Compile Include="Resources\ShaderPropertyIds.cs" />
-        <Compile Include="Threading\MainThread.cs" />
-        <Compile Include="Threading\ReaderWriteLockExtensions.cs" />
-        <Compile Include="Utils\CsvWriter.cs" />
-        <Compile Include="Utils\FARLogger.cs" />
-        <Compile Include="Utils\FARLogHandler.cs" />
-        <Compile Include="Utils\FARUtils.cs" />
-        <Compile Include="Utils\MonoSingleton.cs" />
-        <Compile Include="Utils\Observable.cs" />
-        <Compile Include="Utils\Pair.cs" />
-        <Compile Include="Utils\PathUtil.cs" />
-        <Compile Include="Utils\Singleton.cs" />
-        <Compile Include="Utils\SourceInfo.cs" />
-        <Compile Include="Utils\StringFormatter.cs" />
-        <Compile Include="Version.cs" />
-    </ItemGroup>
-    <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-    <PropertyGroup>
-        <PostBuildEvent>$(PostBuildCommand) "$(TargetPath)"</PostBuildEvent>
-    </PropertyGroup>
-    <!-- To modify your build process, add your task inside one of the targets below and uncomment it.
-         Other similar extension points exist, see Microsoft.Common.targets.
-    <Target Name="BeforeBuild">
-    </Target>
-    <Target Name="AfterBuild">
-    </Target>
-    -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FerramAerospaceResearch</RootNamespace>
+    <AssemblyName>FerramAerospaceResearch.Base</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Base is Unity-only (the Unity project builds against it) and must not see Assembly-CSharp -->
+    <KSPBT_ReferenceGameAssemblies>false</KSPBT_ReferenceGameAssemblies>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DebugSymbols>true</DebugSymbols>
+    <Optimize>false</Optimize>
+    <DefineConstants>DEBUG;TRACE;ASSERT;LOG_TRACE</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <Optimize>true</Optimize>
+    <DefineConstants>TRACE;INFO</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Profiling' ">
+    <Optimize>true</Optimize>
+    <DefineConstants>TRACE;INFO;ENABLE_PROFILER</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Editor' ">
+    <DebugSymbols>true</DebugSymbols>
+    <Optimize>false</Optimize>
+    <DefineConstants>DEBUG;TRACE;ASSERT;LOG_TRACE;ENABLE_UNITY_COLLECTIONS_CHECKS</DefineConstants>
+  </PropertyGroup>
 
+  <ItemGroup>
+    <ModReference Include="Unity.Burst">
+      <DLLPath>GameData/000_KSPBurst/Plugins/Unity.Burst.dll</DLLPath>
+      <CKANIdentifier>KSPBurst</CKANIdentifier>
+    </ModReference>
+    <ModReference Include="Unity.Burst.Unsafe">
+      <DLLPath>GameData/000_KSPBurst/Plugins/Unity.Burst.Unsafe.dll</DLLPath>
+      <CKANIdentifier>KSPBurst</CKANIdentifier>
+    </ModReference>
+    <ModReference Include="Unity.Collections">
+      <DLLPath>GameData/000_KSPBurst/Plugins/Unity.Collections.dll</DLLPath>
+      <CKANIdentifier>KSPBurst</CKANIdentifier>
+    </ModReference>
+    <ModReference Include="Unity.Jobs">
+      <DLLPath>GameData/000_KSPBurst/Plugins/Unity.Jobs.dll</DLLPath>
+      <CKANIdentifier>KSPBurst</CKANIdentifier>
+    </ModReference>
+    <ModReference Include="Unity.Mathematics">
+      <DLLPath>GameData/000_KSPBurst/Plugins/Unity.Mathematics.dll</DLLPath>
+      <CKANIdentifier>KSPBurst</CKANIdentifier>
+    </ModReference>
+  </ItemGroup>
+
+  <!-- The Unity project (Unity/FerramAerospaceResearch) needs Base built against the editor's CoreModule -->
+  <Target Name="FARUseEditorCoreModule" BeforeTargets="ResolveAssemblyReferences" Condition=" '$(Configuration)' == 'Editor' ">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition=" '%(Filename)' == 'UnityEngine.CoreModule' " />
+      <Reference Include="$(UNITY_EDITOR_MANAGED_DIR)\UnityEngine.CoreModule.dll">
+        <Private>False</Private>
+      </Reference>
+    </ItemGroup>
+  </Target>
 </Project>

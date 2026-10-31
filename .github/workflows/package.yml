@@ -4,63 +4,53 @@ on:
   push:
   pull_request:
   workflow_dispatch:
-  schedule:
-    - cron: "0 0 1 * *"
 
 jobs:
-  check-secrets:
-    runs-on: ubuntu-latest
-    outputs:
-      have_secrets: ${{ steps.setvar.outputs.have_secrets  }}
-    steps:
-      - id: setvar
-        run: |
-          if [[ "${{ secrets.SSH_PRIVATE_KEY }}" != "" ]]; \
-          then
-            echo "::set-output name=have_secrets::true"
-          else
-            echo "No secrets, mod will not be built"
-            echo "::set-output name=have_secrets::false"
-          fi
-
   build:
-    runs-on: windows-latest
-    needs: [check-secrets]
-    if: "needs.check-secrets.outputs.have_secrets == 'true' && !contains(github.event.head_commit.message, '[skip ci]') && !contains(github.event.head_commit.message, '[skip build]')"
+    runs-on: ubuntu-24.04
     env:
-      DEPENDENCIES_REPO: git@github.com:dkavolis/ksp_binaries.git
-      FAKE_GAME_DIR: ${{ github.workspace }}/b
+      KSP_ROOT: /tmp/ksp
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
         with:
           submodules: true
 
-      - uses: webfactory/ssh-agent@v0.5.4
+      - uses: actions/setup-python@v6
         with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          python-version: "3.12"
 
-      - name: Checkout dependencies
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.x
+
+      - uses: KSPModdingLibs/KSPBuildTools/.github/actions/setup-ckan@1.1.1
+        with:
+          # Install dependencies whole, they are bundled in the zip
+          ckan-filters: ""
+
+      # Build references and the dependencies bundled in the zip
+      - uses: KSPModdingLibs/KSPBuildTools/.github/actions/install-dependencies@1.1.1
+        with:
+          dependency-identifiers: ModularFlightIntegrator KSPCommunityFixes KSPBurst ModuleManager
+
+      - name: Stamp commit SHA
         run: |
-          git clone ${{ env.DEPENDENCIES_REPO }} ${{ env.FAKE_GAME_DIR }}
-
-      - name: Add msbuild to PATH
-        uses: microsoft/setup-msbuild@v1.1
-
-      - name: Build
-        run: |
-          cp "${{ github.workspace }}/.github/package.build.props" "${{ github.workspace }}/Directory.Build.props.user"
-          cp "${{ github.workspace }}/.github/package.config.json" "${{ github.workspace }}/config.json.user"
+          cp .github/package.config.json config.json.user
           python -m buildtools replace
-          msbuild /p:Configuration=Release ${{ github.workspace }}/FerramAerospaceResearch.sln -m
+
+      # Downloads stripped KSP assemblies, no secrets needed
+      - uses: KSPModdingLibs/KSPBuildTools/.github/actions/compile@1.1.1
+        with:
+          solution-file-path: FerramAerospaceResearch.sln
 
       - name: Package
         id: package-mod
         run: |
-          echo "::set-output name=archive::$(python -m buildtools package)"
+          archive=$(python -m buildtools package)
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v6
         with:
           name: FerramAerospaceResearch
           path: ${{ steps.package-mod.outputs.archive }}

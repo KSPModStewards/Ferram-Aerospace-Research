@@ -1,5 +1,5 @@
 /*
-Ferram Aerospace Research v0.16.1.2 "Marangoni"
+Ferram Aerospace Research v0.16.2.0 "Maskell"
 =========================
 Aerodynamics model for Kerbal Space Program
 
@@ -50,6 +50,7 @@ using FerramAerospaceResearch.FARGUI.FARFlightGUI;
 using FerramAerospaceResearch.FARPartGeometry;
 using FerramAerospaceResearch.FARThreading;
 using FerramAerospaceResearch.Threading;
+using KSPCommunityFixes;
 using UnityEngine;
 
 namespace FerramAerospaceResearch.FARAeroComponents
@@ -134,13 +135,6 @@ namespace FerramAerospaceResearch.FARAeroComponents
         protected override void OnStart()
         {
             FARLogger.Info("FARVesselAero on " + vessel.name + " reporting startup");
-            base.OnStart();
-
-            if (!HighLogic.LoadedSceneIsFlight)
-            {
-                enabled = false;
-                return;
-            }
 
             _currentGeoModules = new List<GeometryPartModule>();
 
@@ -162,7 +156,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                         geoModulesReady++;
                 }
 
-                if (!p.Modules.Contains<KerbalEVA>() && !p.Modules.Contains<FlagSite>())
+                if (!p.HasModuleImplementingFast<KerbalEVA>() && !p.HasModuleImplementingFast<FlagSite>())
                     continue;
                 FARLogger.Info("Handling Stuff for KerbalEVA / Flag");
                 g = (GeometryPartModule)p.AddModule("GeometryPartModule");
@@ -176,45 +170,44 @@ namespace FerramAerospaceResearch.FARAeroComponents
             enabled = true;
         }
 
+        public override Activation GetActivation() => Activation.FlightScene | Activation.LoadedVessels;
+
         private PartModule.StartState StartState()
         {
             PartModule.StartState startState = PartModule.StartState.None;
-            if (HighLogic.LoadedSceneIsEditor)
-                startState |= PartModule.StartState.Editor;
-            else if (HighLogic.LoadedSceneIsFlight)
-                switch (vessel.situation)
-                {
-                    case Vessel.Situations.PRELAUNCH:
-                        startState |= PartModule.StartState.PreLaunch;
-                        startState |= PartModule.StartState.Landed;
-                        break;
-                    case Vessel.Situations.DOCKED:
-                        startState |= PartModule.StartState.Docked;
-                        break;
-                    case Vessel.Situations.ORBITING:
-                    case Vessel.Situations.ESCAPING:
-                        startState |= PartModule.StartState.Orbital;
-                        break;
-                    case Vessel.Situations.SUB_ORBITAL:
-                        startState |= PartModule.StartState.SubOrbital;
-                        break;
-                    case Vessel.Situations.SPLASHED:
-                        startState |= PartModule.StartState.Splashed;
-                        break;
-                    case Vessel.Situations.FLYING:
-                        startState |= PartModule.StartState.Flying;
-                        break;
-                    case Vessel.Situations.LANDED:
-                        startState |= PartModule.StartState.Landed;
-                        break;
-                }
+            switch (vessel.situation)
+            {
+                case Vessel.Situations.PRELAUNCH:
+                    startState |= PartModule.StartState.PreLaunch;
+                    startState |= PartModule.StartState.Landed;
+                    break;
+                case Vessel.Situations.DOCKED:
+                    startState |= PartModule.StartState.Docked;
+                    break;
+                case Vessel.Situations.ORBITING:
+                case Vessel.Situations.ESCAPING:
+                    startState |= PartModule.StartState.Orbital;
+                    break;
+                case Vessel.Situations.SUB_ORBITAL:
+                    startState |= PartModule.StartState.SubOrbital;
+                    break;
+                case Vessel.Situations.SPLASHED:
+                    startState |= PartModule.StartState.Splashed;
+                    break;
+                case Vessel.Situations.FLYING:
+                    startState |= PartModule.StartState.Flying;
+                    break;
+                case Vessel.Situations.LANDED:
+                    startState |= PartModule.StartState.Landed;
+                    break;
+            }
 
             return startState;
         }
 
         private void FixedUpdate()
         {
-            if (_vehicleAero == null || !vessel.loaded)
+            if (_vehicleAero == null)
                 return;
             if (_vehicleAero.CalculationCompleted)
             {
@@ -806,7 +799,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
             _updateRateLimiter = 0;
             _updateQueued = false;
-            if (vessel.rootPart.Modules.Contains<LaunchClamp>())
+            if (vessel.rootPart.HasModuleImplementingFast<LaunchClamp>())
             {
                 DisableModule();
                 return;
@@ -818,7 +811,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 geoModulesReady = 0;
                 foreach (Part p in vessel.Parts)
                 {
-                    GeometryPartModule g = p.Modules.GetModule<GeometryPartModule>();
+                    GeometryPartModule g = p.FindModuleImplementingFast<GeometryPartModule>();
                     if (g is null)
                         continue;
                     _currentGeoModules.Add(g);
@@ -882,7 +875,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
         public override void OnLoadVessel()
         {
             if (vessel.loaded)
-                if (vessel.rootPart.Modules.Contains("MissileLauncher") && vessel.parts.Count == 1)
+                if (ModUtils.IsBDArmoryInstalled && vessel.rootPart.Modules.Contains("MissileLauncher") &&
+                    vessel.parts.Count == 1)
                 {
                     vessel.rootPart.dragModel = Part.DragModel.CUBE;
                     enabled = false;
