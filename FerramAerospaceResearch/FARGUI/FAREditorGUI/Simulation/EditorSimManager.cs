@@ -69,11 +69,17 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
 
         public SweepSim SweepSim { get; }
 
+        // the craft's latest aero data, as the simulations have it (the Components tab reads it)
+        public List<FARAeroSection> AeroSections { get; private set; }
+        public List<FARWingAerodynamicModel> Wings { get; private set; }
+
         public void UpdateAeroData(VehicleAerodynamics vehicleAero, List<FARWingAerodynamicModel> wingAerodynamicModel)
         {
             vehicleAero.GetNewAeroData(out List<FARAeroPartModule> aeroModules, out List<FARAeroSection> aeroSections);
             _instantCondition.UpdateAeroData(aeroModules, aeroSections, vehicleAero, wingAerodynamicModel);
             _aeroCenter.UpdateAeroData(aeroSections);
+            AeroSections = aeroSections;
+            Wings = wingAerodynamicModel;
         }
     }
 }

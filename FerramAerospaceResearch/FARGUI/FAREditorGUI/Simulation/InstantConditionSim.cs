@@ -92,6 +92,13 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             return accel;
         }
 
+        /// <summary>
+        ///     Whether a wing counts in the editor's sums, its force and its area in the reference area, MAC and span:
+        ///     every wing but a shielded one, and every control surface (set free to deflect here, where in flight a stowed
+        ///     one gives no force), so that the reference stays the same whatever the controls' deflection
+        /// </summary>
+        internal static bool Counts(FARWingAerodynamicModel w) => w is FARControllableSurface || !w.isShielded;
+
         public void GetClCdCmSteady(
             InstantConditionSimInput input,
             out InstantConditionSimOutput output,
@@ -196,8 +203,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                                                               0,
                                                               input.flaps,
                                                               input.spoilers);
-                else if (w.isShielded)
+                if (!Counts(w))
                     continue;
+                area += w.S;
+                MAC += w.GetMAC() * w.S;
+                b_2 += w.Getb_2() * w.S;
 
                 Vector3d force = w.ComputeForceEditor(vel.normalized, input.machNumber, 2) * 1000;
 
@@ -210,10 +220,6 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                 output.Cm += Vector3d.Dot(moment, sideways);
                 output.Cn += Vector3d.Dot(moment, liftDown);
                 output.C_roll += Vector3d.Dot(moment, velocity);
-
-                area += w.S;
-                MAC += w.GetMAC() * w.S;
-                b_2 += w.Getb_2() * w.S;
             }
 
             var center = new FARCenterQuery();

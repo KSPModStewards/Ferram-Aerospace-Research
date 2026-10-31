@@ -40,6 +40,7 @@ Copyright 2022, Benjamin Chung, aka BenChung
     http: //forum.kerbalspaceprogram.com/threads/60863
  */
 
+using System.Collections.Generic;
 using ferram4;
 using UnityEngine;
 
@@ -107,6 +108,17 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 pd.aeroModule.part.transform.TransformPoint(pd.centroidPartSpace - pd.aeroModule.part.CoMOffset);
             center.AddForce(centroid, forceVector);
             center.AddTorque(torqueVector);
+            if (PerPart == null)
+                return;
+            if (!PerPart.TryGetValue(pd.aeroModule.part, out FARCenterQuery own))
+                PerPart[pd.aeroModule.part] = own = new FARCenterQuery();
+            own.AddForce(centroid, forceVector);
+            own.AddTorque(torqueVector);
         }
+
+        /// <summary>
+        ///     When set, each part's share of the forces is also gathered here (the editor's Components tab)
+        /// </summary>
+        public Dictionary<Part, FARCenterQuery> PerPart;
     }
 }

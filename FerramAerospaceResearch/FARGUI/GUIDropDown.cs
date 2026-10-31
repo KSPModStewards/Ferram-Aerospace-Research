@@ -112,6 +112,9 @@ namespace FerramAerospaceResearch.FARGUI
             selectedOption = defaultOption;
         }
 
+        /// <summary>How many options the open list shows before it scrolls (0: a list 150 high)</summary>
+        public int VisibleItems { get; set; }
+
         public T ActiveSelection
         {
             get { return typeOptions[selectedOption]; }
@@ -131,7 +134,16 @@ namespace FerramAerospaceResearch.FARGUI
             Rect btnRect = GUILayoutUtility.GetLastRect();
             btnRect.x += relativePos.x;
             btnRect.y += relativePos.y;
-            var dropdownRect = new Rect(btnRect.x, btnRect.y + btnRect.height, btnRect.width, 150);
+            float listHeight = 150;
+            if (VisibleItems > 0 && stringOptions.Length > 0)
+            {
+                GUIStyle item = GUIDropDownStyles.DropDownItem;
+                float itemHeight = item.CalcHeight(new GUIContent(stringOptions[0]), btnRect.width) +
+                                   Mathf.Max(item.margin.top, item.margin.bottom);
+                listHeight = Mathf.Min(stringOptions.Length, VisibleItems) * itemHeight + 10;
+            }
+
+            var dropdownRect = new Rect(btnRect.x, btnRect.y + btnRect.height, btnRect.width, listHeight);
 
             switch (isActive)
             {
