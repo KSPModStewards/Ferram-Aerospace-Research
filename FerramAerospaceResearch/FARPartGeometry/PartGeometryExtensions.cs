@@ -1,5 +1,5 @@
 /*
-Ferram Aerospace Research v0.16.1.2 "Marangoni"
+Ferram Aerospace Research v0.16.2.0 "Maskell"
 =========================
 Aerodynamics model for Kerbal Space Program
 
@@ -45,6 +45,7 @@ Copyright 2022, Michael Ferrara, aka Ferram4
 using System.Collections.Generic;
 using System.Reflection;
 using FerramAerospaceResearch.Settings;
+using KSPCommunityFixes;
 using UnityEngine;
 
 namespace FerramAerospaceResearch.FARPartGeometry
@@ -186,7 +187,7 @@ namespace FerramAerospaceResearch.FARPartGeometry
 
             returnList.AddRange(p.FindModelComponents<Transform>());
 
-            if (p.Modules.Contains<ModuleAsteroid>())
+            if (p.HasModuleImplementingFast<ModuleAsteroid>())
                 ProceduralAsteroidTransforms(p, returnList);
 
             foreach (Transform t in ignoredModelTransforms)
@@ -197,7 +198,7 @@ namespace FerramAerospaceResearch.FARPartGeometry
 
         private static void ProceduralAsteroidTransforms(Part p, List<Transform> transformList)
         {
-            var asteroid = (ModuleAsteroid)p.Modules["ModuleAsteroid"];
+            var asteroid = p.FindModuleImplementingFast<ModuleAsteroid>();
             FieldInfo[] fields = asteroid.GetType().GetFields(BindingFlags.NonPublic | BindingFlags.Instance);
 
             var procAsteroid = (PAsteroid)fields[2].GetValue(asteroid);

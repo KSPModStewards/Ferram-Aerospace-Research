@@ -1,5 +1,5 @@
 /*
-Ferram Aerospace Research v0.16.1.2 "Marangoni"
+Ferram Aerospace Research v0.16.2.0 "Maskell"
 =========================
 Aerodynamics model for Kerbal Space Program
 
@@ -45,6 +45,7 @@ Copyright 2022, Michael Ferrara, aka Ferram4
 using System;
 using FerramAerospaceResearch;
 using FerramAerospaceResearch.Settings;
+using KSPCommunityFixes;
 using UnityEngine;
 
 // ReSharper disable once CheckNamespace
@@ -325,9 +326,9 @@ namespace ferram4
         {
             foreach (Part p in part.symmetryCounterparts)
             {
-                foreach (PartModule m in p.Modules)
-                    if (m is FARControllableSurface controllableSurface)
-                        controllableSurface.SetDeflection(flapDeflectionLevel);
+                var modules = p.FindModulesImplementingReadOnly<FARControllableSurface>();
+                foreach (FARControllableSurface controllableSurface in modules)
+                    controllableSurface.SetDeflection(flapDeflectionLevel);
             }
         }
 
@@ -413,8 +414,8 @@ namespace ferram4
         public override void Initialization()
         {
             base.Initialization();
-            if (part.Modules.GetModule<ModuleControlSurface>())
-                part.RemoveModule(part.Modules.GetModule<ModuleControlSurface>());
+            if (part.FindModuleImplementingFast<ModuleControlSurface>() is ModuleControlSurface mcs)
+                part.RemoveModule(mcs);
 
             OnVesselPartsChange += CalculateSurfaceFunctions;
             UpdateEvents();

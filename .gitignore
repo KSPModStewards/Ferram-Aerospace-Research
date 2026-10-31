@@ -3,7 +3,6 @@
 obj
 
 *.mdb
-/Ships
 /GameData/FerramAerospaceResearch/Custom*.cfg
 /GameData/FerramAerospaceResearch/FARForceDataUpdate.cfg
 GameData/FerramAerospaceResearch/Plugins/FARLogger_*

@@ -20,7 +20,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
             Body
         };
 
-        public static readonly Device[] DeviceOptions = { Device.PreferGPU, Device.CPU, Device.GPU, Device.None };
+        public static readonly Device[] DeviceOptions = { Device.None, Device.PreferGPU, Device.CPU, Device.GPU };
         public static readonly Direction[] DirectionOptions = { Direction.Airstream, Direction.Sun, Direction.Body };
 
         private readonly Renderer<Part> exposureRenderer = new();
@@ -132,10 +132,10 @@ namespace FerramAerospaceResearch.FARAeroComponents
         {
             deviceSelect = new GUIDropDown<Device>(new[]
                                                    {
+                                                       LocalizerExtensions.Get("FARDeviceNone"),
                                                        LocalizerExtensions.Get("FARDevicePreferGPU"),
                                                        LocalizerExtensions.Get("FARDeviceCPU"),
                                                        LocalizerExtensions.Get("FARDeviceGPU"),
-                                                       LocalizerExtensions.Get("FARDeviceNone"),
                                                    },
                                                    DeviceOptions,
                                                    DeviceOptions.IndexOf(ComputeDevice));

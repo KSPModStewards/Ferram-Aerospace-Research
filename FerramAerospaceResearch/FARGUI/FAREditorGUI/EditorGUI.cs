@@ -1,5 +1,5 @@
 /*
-Ferram Aerospace Research v0.16.1.2 "Marangoni"
+Ferram Aerospace Research v0.16.2.0 "Maskell"
 =========================
 Aerodynamics model for Kerbal Space Program
 
@@ -56,6 +56,7 @@ using FerramAerospaceResearch.FARThreading;
 using FerramAerospaceResearch.Resources;
 using KSP.Localization;
 using KSP.UI.Screens;
+using KSPCommunityFixes;
 using ModuleWheels;
 using PreFlightTests;
 using UnityEngine;
@@ -340,16 +341,14 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             {
                 if (p == null)
                     continue;
-                if (p.Modules.Contains<FARWingAerodynamicModel>())
+                if (p.FindModuleImplementingFast<FARWingAerodynamicModel>() is FARWingAerodynamicModel w)
                 {
-                    FARWingAerodynamicModel w = p.Modules.GetModule<FARWingAerodynamicModel>();
                     if (updateWingInteractions)
                         w.EditorUpdateWingInteractions();
                     _wingAerodynamicModel.Add(w);
                 }
-                else if (p.Modules.Contains<FARControllableSurface>())
+                else if (p.FindModuleImplementingFast<FARControllableSurface>() is FARControllableSurface c)
                 {
-                    FARControllableSurface c = p.Modules.GetModule<FARControllableSurface>();
                     if (updateWingInteractions)
                         c.EditorUpdateWingInteractions();
                     _wingAerodynamicModel.Add(c);
@@ -435,10 +434,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
             foreach (Part p in partList)
             {
-                if (!p.Modules.Contains<GeometryPartModule>())
-                    continue;
-                GeometryPartModule g = p.Modules.GetModule<GeometryPartModule>();
-                if (g == null)
+                if (!(p.FindModuleImplementingFast<GeometryPartModule>() is GeometryPartModule g))
                     continue;
                 if (g.Ready)
                 {
@@ -775,9 +771,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             List<Part> partsList = EditorLogic.SortedShipList;
             foreach (Part p in partsList)
             {
-                if (p.Modules.Contains<ModuleWheelDeployment>())
+                if (p.FindModuleImplementingFast<ModuleWheelDeployment>() is ModuleWheelDeployment l)
                 {
-                    ModuleWheelDeployment l = p.Modules.GetModule<ModuleWheelDeployment>();
                     l.ActionToggle(new KSPActionParam(KSPActionGroup.Gear,
                                                       gearToggle ? KSPActionType.Activate : KSPActionType.Deactivate));
                 }

@@ -1,18 +1,9 @@
 {
     "variables": {
-        "KSP_DIR_INSTALL": "$(KSP_DIR_BUILD)"
+        "KSP_DIR_INSTALL": "$(env:KSP_ROOT)"
     },
     "package": {
-        "compression": null,
-        "+dependencies": [
-            {
-                "path": "$(KSP_DIR_BUILD)/Ships",
-                "destination": "Ships",
-                "include": [
-                    "**/*"
-                ]
-            }
-        ]
+        "compression": null
     },
     "replace": {
         "regex": [

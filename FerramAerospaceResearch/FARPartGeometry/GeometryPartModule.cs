@@ -1,5 +1,5 @@
 /*
-Ferram Aerospace Research v0.16.1.2 "Marangoni"
+Ferram Aerospace Research v0.16.2.0 "Maskell"
 =========================
 Aerodynamics model for Kerbal Space Program
 
@@ -52,6 +52,7 @@ using FerramAerospaceResearch.FARGUI.FAREditorGUI;
 using FerramAerospaceResearch.FARPartGeometry.GeometryModification;
 using FerramAerospaceResearch.Settings;
 using KSP.UI.Screens;
+using KSPCommunityFixes;
 using TweakScale;
 using UnityEngine;
 
@@ -240,14 +241,14 @@ namespace FerramAerospaceResearch.FARPartGeometry
             if (ignoreLayer0 < 0)
                 ignoreLayer0 = LayerMask.NameToLayer("TransparentFX");
 
-            GeometryPartModule modulePrefab = part.partInfo.partPrefab.FindModuleImplementing<GeometryPartModule>();
+            GeometryPartModule modulePrefab = part.partInfo.partPrefab.FindModuleImplementingFast<GeometryPartModule>();
             if (modulePrefab is not null)
                 config = modulePrefab.config;
 
             if (part.collider == null &&
-                !part.Modules.Contains<ModuleWheelBase>() &&
-                !part.Modules.Contains<KerbalEVA>() &&
-                !part.Modules.Contains<FlagSite>())
+                !part.HasModuleImplementingFast<ModuleWheelBase>() &&
+                !part.HasModuleImplementingFast<KerbalEVA>() &&
+                !part.HasModuleImplementingFast<FlagSite>())
                 return;
 
             if (HighLogic.LoadedSceneIsEditor)
@@ -490,28 +491,27 @@ namespace FerramAerospaceResearch.FARPartGeometry
                 geometryUpdaters.Add(compoundUpdate);
             }
 
-            if (part.Modules.Contains<ModuleProceduralFairing>())
+            if (part.FindModulesImplementingReadOnly<ModuleProceduralFairing>() is List<PartModule> pmList &&
+                pmList.Count > 0)
             {
-                List<ModuleProceduralFairing> fairings = part.Modules.GetModules<ModuleProceduralFairing>();
-                foreach (ModuleProceduralFairing fairing in fairings)
+                foreach (ModuleProceduralFairing fairing in pmList)
                 {
                     var fairingUpdater = new StockProcFairingGeoUpdater(fairing, this);
                     geometryUpdaters.Add(fairingUpdater);
                 }
             }
 
-            if (part.Modules.Contains<ModuleJettison>())
-
+            if (part.FindModulesImplementingReadOnly<ModuleJettison>() is List<PartModule> pmList2 &&
+                pmList2.Count > 0)
             {
-                List<ModuleJettison> engineFairings = part.Modules.GetModules<ModuleJettison>();
-                foreach (ModuleJettison engineFairing in engineFairings)
+                foreach (ModuleJettison engineFairing in pmList2)
                 {
                     var fairingUpdater = new StockJettisonTransformGeoUpdater(engineFairing, this);
                     geometryUpdaters.Add(fairingUpdater);
                 }
             }
 
-            if (!part.Modules.Contains<ModuleAsteroid>())
+            if (!part.HasModuleImplementingFast<ModuleAsteroid>())
                 return;
             var asteroidUpdater = new StockProcAsteroidGeoUpdater(this);
             geometryUpdaters.Add(asteroidUpdater);
@@ -804,7 +804,7 @@ namespace FerramAerospaceResearch.FARPartGeometry
 
                 m = mf.sharedMesh;
 
-                if (part.Modules.Contains<ModuleProceduralFairing>() || part.Modules.Contains<ModuleAsteroid>())
+                if (part.HasModuleImplementingFast<ModuleProceduralFairing>() || part.HasModuleImplementingFast<ModuleAsteroid>())
                     return new MeshData(m.vertices, m.triangles, m.bounds);
 
                 return new MeshData(m.vertices, m.triangles, m.bounds);
@@ -827,7 +827,7 @@ namespace FerramAerospaceResearch.FARPartGeometry
             var meshList = new List<MeshData>();
             var validTransformList = new List<Transform>();
 
-            if (part.Modules.Contains<KerbalEVA>() || part.Modules.Contains<FlagSite>())
+            if (part.HasModuleImplementingFast<KerbalEVA>() || part.HasModuleImplementingFast<FlagSite>())
             {
                 FARLogger.Info("Adding vox box to Kerbal / Flag");
                 meshList.Add(CreateBoxMeshForKerbalEVA());
@@ -841,10 +841,10 @@ namespace FerramAerospaceResearch.FARPartGeometry
             Bounds colliderBounds = part.GetPartColliderBoundsInBasis(worldToLocalMatrix);
 
             bool cantUseColliders = true;
-            bool isFairing = part.Modules.Contains<ModuleProceduralFairing>() ||
+            bool isFairing = part.HasModuleImplementingFast<ModuleProceduralFairing>() ||
                              part.Modules.Contains("ProceduralFairingSide");
-            bool isDrill = part.Modules.Contains<ModuleAsteroidDrill>() ||
-                           part.Modules.Contains<ModuleResourceHarvester>();
+            bool isDrill = part.HasModuleImplementingFast<ModuleAsteroidDrill>() ||
+                           part.HasModuleImplementingFast<ModuleResourceHarvester>();
 
             //Voxelize colliders
             if ((config.forceUseColliders ||
@@ -867,10 +867,10 @@ namespace FerramAerospaceResearch.FARPartGeometry
                 }
 
 
-            if (part.Modules.Contains<ModuleJettison>())
+            if (part.FindModulesImplementingReadOnly<ModuleJettison>() is List<PartModule> jettisons &&
+                jettisons.Count > 0)
             {
-                bool variants = part.Modules.Contains<ModulePartVariants>();
-                List<ModuleJettison> jettisons = part.Modules.GetModules<ModuleJettison>();
+                bool variants = part.HasModuleImplementingFast<ModulePartVariants>();
                 var jettisonTransforms = new HashSet<string>();
                 foreach (ModuleJettison j in jettisons)
                 {

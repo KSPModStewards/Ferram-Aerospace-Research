@@ -5,9 +5,9 @@ namespace FerramAerospaceResearch
         // using byte here because 0-255 should be enough for any version number
         public const byte Major = 0;
         public const byte Minor = 16;
-        public const byte Build = 1;
-        public const byte Revision = 2;
-        public const string Name = "Marangoni";
+        public const byte Build = 2;
+        public const byte Revision = 0;
+        public const string Name = "Maskell";
 
         /// <summary>
         /// String of the numerical version

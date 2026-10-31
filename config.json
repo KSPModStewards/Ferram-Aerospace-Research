@@ -7,14 +7,13 @@
         "ModDir": "$(SolutionDir)/$(ModDirRelative)",
         "PluginDir": "$(ModDir)/Plugins",
         "AssetDir": "$(ModDir)/Assets",
-        "KSP_DIR_INSTALL": "C:/Zaidimai/KSP 1.12",
+        "KSP_DIR_INSTALL": "",
         "KSPGameData": "$(KSP_DIR_INSTALL)/GameData",
-        "GameDir": "$(KSPGameData)/$(ModName)",
         "VersionMajor": 0,
         "VersionMinor": 16,
-        "VersionBuild": 1,
-        "VersionRevision": 2,
-        "VersionName": "Marangoni",
+        "VersionBuild": 2,
+        "VersionRevision": 0,
+        "VersionName": "Maskell",
         "Year": 2022,
         "NumericalVersion": "$(VersionMajor).$(VersionMinor).$(VersionBuild).$(VersionRevision)",
         "VersionString": "$(NumericalVersion) \"$(VersionName)\"",
@@ -42,25 +41,6 @@
                 "destination": "$(AssetDir)"
             }
         ],
-        "[FerramAerospaceResearch]": {
-            "clean": [
-                "$(GameDir)"
-            ],
-            "install": [
-                {
-                    "source": "$(TargetDir)/$(TargetName).*",
-                    "destination": "$(PluginDir)"
-                },
-                {
-                    "source": "$(AssetBundleDir)/*.far",
-                    "destination": "$(AssetDir)"
-                },
-                {
-                    "source": "GameData/$(ModName)",
-                    "destination": "$(GameDir)"
-                }
-            ]
-        },
         "|Editor": {
             "install": []
         },

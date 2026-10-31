@@ -1,11 +1,10 @@
 <Project>
+  <!-- buildtools reads the variables in this file, keep MSBuild-only properties in Common.props -->
   <PropertyGroup>
-    <KSP_DIR_BUILD>C:\Zaidimai\KSP 1.12</KSP_DIR_BUILD>
     <KSP_DATA_DIRNAME>KSP_x64_Data</KSP_DATA_DIRNAME>
     <UNITY_EDITOR_MANAGED_DIR>C:\Program Files\Unity\Hub\Editor\2019.4.18f1\Editor\Data\Managed\UnityEngine</UNITY_EDITOR_MANAGED_DIR>
-    <PostBuildCommand>
-      cd "$(SolutionDir)""
-      python -m buildtools postbuild --dump-events -f "$(SolutionDir)config.json" -c "$(Configuration)" -t</PostBuildCommand>
+    <PostBuildCommand>python -m buildtools postbuild --dump-events -f config.json -c "$(Configuration)" -t</PostBuildCommand>
   </PropertyGroup>
   <Import Project="Directory.Build.props.user" Condition=" Exists('Directory.Build.props.user') " />
+  <Import Project="$(MSBuildThisFileDirectory)Common.props" />
 </Project>

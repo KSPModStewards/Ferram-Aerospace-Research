@@ -1,5 +1,5 @@
 /*
-Ferram Aerospace Research v0.16.1.2 "Marangoni"
+Ferram Aerospace Research v0.16.2.0 "Maskell"
 =========================
 Aerodynamics model for Kerbal Space Program
 
@@ -46,6 +46,7 @@ using System;
 using ferram4;
 using FerramAerospaceResearch.FARAeroComponents;
 using FerramAerospaceResearch.FARGUI.FARFlightGUI;
+using KSPCommunityFixes;
 using UnityEngine;
 
 // ReSharper disable UnusedMember.Global
@@ -222,9 +223,8 @@ namespace FerramAerospaceResearch
         {
             foreach (Part p in v.parts)
             {
-                if (!p.Modules.Contains<FARControllableSurface>())
+                if (!(p.FindModuleImplementingFast<FARControllableSurface>() is FARControllableSurface surface))
                     continue;
-                FARControllableSurface surface = p.Modules.GetModule<FARControllableSurface>();
                 surface.SetDeflection(surface.flapDeflectionLevel + 1);
             }
         }
@@ -236,9 +236,8 @@ namespace FerramAerospaceResearch
         {
             foreach (Part p in v.parts)
             {
-                if (!p.Modules.Contains<FARControllableSurface>())
+                if (!(p.FindModuleImplementingFast<FARControllableSurface>() is FARControllableSurface surface))
                     continue;
-                FARControllableSurface surface = p.Modules.GetModule<FARControllableSurface>();
                 surface.SetDeflection(surface.flapDeflectionLevel - 1);
             }
         }
@@ -252,9 +251,8 @@ namespace FerramAerospaceResearch
         {
             foreach (Part p in v.parts)
             {
-                if (!p.Modules.Contains<FARControllableSurface>())
+                if (!(p.FindModuleImplementingFast<FARControllableSurface>() is FARControllableSurface surface))
                     continue;
-                FARControllableSurface surface = p.Modules.GetModule<FARControllableSurface>();
                 if (surface.isFlap)
                     return surface.flapDeflectionLevel;
             }
@@ -269,9 +267,8 @@ namespace FerramAerospaceResearch
         {
             foreach (Part p in v.parts)
             {
-                if (!p.Modules.Contains<FARControllableSurface>())
+                if (!(p.FindModuleImplementingFast<FARControllableSurface>() is FARControllableSurface surface))
                     continue;
-                FARControllableSurface surface = p.Modules.GetModule<FARControllableSurface>();
                 surface.brake = spoilerActive;
             }
         }
@@ -285,9 +282,8 @@ namespace FerramAerospaceResearch
         {
             foreach (Part p in v.parts)
             {
-                if (!p.Modules.Contains<FARControllableSurface>())
+                if (!(p.FindModuleImplementingFast<FARControllableSurface>() is FARControllableSurface surface))
                     continue;
-                FARControllableSurface surface = p.Modules.GetModule<FARControllableSurface>();
                 if (surface.isSpoiler)
                     return surface.brake;
             }
@@ -430,7 +426,7 @@ namespace FerramAerospaceResearch
         /// Signature is (part, (drag, lift, torque)) -> (new_drag, new_lift, new_torque)</param>
         public static void SetPartAeroForceModifier(Part part, Func<Part, Vector3, Vector3> modifier)
         {
-            part.FindModuleImplementing<FARAeroPartModule>().AeroForceModifier = modifier;
+            part.FindModuleImplementingFast<FARAeroPartModule>().AeroForceModifier = modifier;
         }
 
         /// <summary>
@@ -441,7 +437,7 @@ namespace FerramAerospaceResearch
         /// Signature is (part, (drag, lift, torque)) -> (new_drag, new_lift, new_torque)</returns>
         public static Func<Part, Vector3, Vector3> GetPartAeroForceModifier(Part part)
         {
-            return part.FindModuleImplementing<FARAeroPartModule>()?.AeroForceModifier;
+            return part.FindModuleImplementingFast<FARAeroPartModule>()?.AeroForceModifier;
         }
     }
 }

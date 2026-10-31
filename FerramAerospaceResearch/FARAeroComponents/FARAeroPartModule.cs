@@ -1,5 +1,5 @@
 /*
-Ferram Aerospace Research v0.16.1.2 "Marangoni"
+Ferram Aerospace Research v0.16.2.0 "Maskell"
 =========================
 Aerodynamics model for Kerbal Space Program
 
@@ -51,6 +51,7 @@ using FerramAerospaceResearch.FARPartGeometry;
 using FerramAerospaceResearch.RealChuteLite;
 using FerramAerospaceResearch.Settings;
 using KSP.Localization;
+using KSPCommunityFixes;
 using UnityEngine;
 
 namespace FerramAerospaceResearch.FARAeroComponents
@@ -238,8 +239,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
             double areaForStress = projectedArea.totalArea / 6;
             if (!FARDebugValues.allowStructuralFailures ||
                 areaForStress <= 0.1 ||
-                part.Modules.Contains<RealChuteFAR>() ||
-                part.Modules.Contains<ModuleAblator>())
+                part.HasModuleImplementingFast<RealChuteFAR>() ||
+                part.HasModuleImplementingFast<ModuleAblator>())
             {
                 partForceMaxY = double.MaxValue;
                 partForceMaxXZ = double.MaxValue;
@@ -303,17 +304,15 @@ namespace FerramAerospaceResearch.FARAeroComponents
             partTransform = part.partTransform;
 
             materialColorUpdater = new MaterialColorUpdater(partTransform, PhysicsGlobals.TemperaturePropertyID);
-            if (part.Modules.Contains<FARWingAerodynamicModel>())
-                LegacyWingModel = part.Modules.GetModule<FARWingAerodynamicModel>();
-            else if (part.Modules.Contains<FARControllableSurface>())
-                LegacyWingModel = part.Modules.GetModule<FARControllableSurface>();
+            if (part.FindModuleImplementingFast<FARWingAerodynamicModel>() is FARWingAerodynamicModel pm)
+                LegacyWingModel = pm;
+            else if (part.FindModuleImplementingFast<FARControllableSurface>() is FARControllableSurface pm2)
+                LegacyWingModel = pm2;
             else
                 LegacyWingModel = null;
 
             // For handling airbrakes aero visualization
-            stockAeroSurfaceModule = part.Modules.Contains<ModuleAeroSurface>()
-                                         ? part.Modules.GetModule<ModuleAeroSurface>()
-                                         : null;
+            stockAeroSurfaceModule = part.FindModuleImplementingFast<ModuleAeroSurface>();
         }
 
         public double ProjectedAreaWorld(Vector3 normalizedDirectionVector)
@@ -581,9 +580,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
         private void ApplyAeroStressFailure()
         {
             bool failureOccured = false;
-            if (part.Modules.Contains<ModuleProceduralFairing>())
+            if (part.FindModuleImplementingFast<ModuleProceduralFairing>() is ModuleProceduralFairing fairing)
             {
-                ModuleProceduralFairing fairing = part.Modules.GetModule<ModuleProceduralFairing>();
                 fairing.ejectionForce = 0.5f;
 
                 fairing.DeployFairing();
