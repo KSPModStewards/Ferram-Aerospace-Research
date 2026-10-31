@@ -393,10 +393,17 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
             if (FARAtmosphere.GetPressure(body, new Vector3d(0, 0, altitudeDouble), Planetarium.GetUniversalTime()) > 0)
             {
+                StabilityDerivCalculator.VehicleProperties stabProps =
+                    simManager.StabDerivCalculator.ComputeVehicleProperties(flapsettingInt, spoilersDeployedBool);
+                GasProperties stabGas =
+                    FARAtmosphere.GetGasProperties(body, new Vector3d(0, 0, altitudeDouble), Planetarium.GetUniversalTime());
                 stabDerivOutput =
-                    simManager.StabDerivCalculator.CalculateStabilityDerivs(body,
+                    simManager.StabDerivCalculator.CalculateStabilityDerivs(stabProps,
+                                                                            body,
                                                                             altitudeDouble,
                                                                             machDouble,
+                                                                            stabGas.Density,
+                                                                            stabGas.SpeedOfSound,
                                                                             flapsettingInt,
                                                                             spoilersDeployedBool,
                                                                             0,

@@ -80,6 +80,19 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         public Vector3 LocalVelocity(FARAeroSection.PartData pd)
         {
+            // A snapshot prediction reads the parts captured with the snapshot; a part that was not captured is
+            // left out (zero velocity is skipped), since reading it live is not allowed off the main thread.
+            if (pd.aeroModule.TryGetSnapshotState(out FARAeroPartModule.SnapshotState captured))
+                return captured.Geom.InverseTransformVector(worldVel);
+            if (SimThreadContext.SnapshotStamp != 0)
+                return Vector3.zero;
+            ferram4.FrozenPartTransform? sweepGeom = pd.aeroModule.SweepGeom;
+            if (sweepGeom.HasValue)
+                return sweepGeom.Value.InverseTransformVector(worldVel);
+            // A sweep worker never reads a live part (Unity is main-thread-only, its == null included): a part the
+            // sweep did not freeze is left out, as a snapshot leaves out a part it did not capture.
+            if (SimThreadContext.InSweep)
+                return Vector3.zero;
             if (pd.aeroModule.part == null || pd.aeroModule.part.partTransform == null)
                 return Vector3.zero;
             return pd.aeroModule.part.partTransform.InverseTransformVector(worldVel);
@@ -89,21 +102,41 @@ namespace FerramAerospaceResearch.FARAeroComponents
         {
             double tmp = 0.0005 * Vector3.SqrMagnitude(localVel);
             double dynamicPressurekPa = tmp * atmDensity;
-            double dragFactor = dynamicPressurekPa *
-                                Mathf.Max(PhysicsGlobals.DragCurvePseudoReynolds.Evaluate(atmDensity *
-                                                                                          Vector3.Magnitude(localVel)),
-                                          1.0f);
+
+            // PhysicsGlobals.DragCurvePseudoReynolds through its exact, thread-safe copy (the Unity curve keeps a
+            // segment cache and is not safe to evaluate concurrently).
+            float pseudoReynolds = atmDensity * Vector3.Magnitude(localVel);
+            float dragPseudo = FARAeroUtil.DragPseudoReynolds.Evaluate(pseudoReynolds);
+            double dragFactor = dynamicPressurekPa * Mathf.Max(dragPseudo, 1.0f);
             double liftFactor = dynamicPressurekPa;
 
             Vector3 localVelNorm = Vector3.Normalize(localVel);
             Vector3 localForceTemp = Vector3.Dot(localVelNorm, forceVector) * localVelNorm;
             Vector3 partLocalForce =
                 localForceTemp * (float)dragFactor + (forceVector - localForceTemp) * (float)liftFactor;
+
+            Vector3 centroid;
+            bool snapshot = pd.aeroModule.TryGetSnapshotState(out FARAeroPartModule.SnapshotState captured);
+            ferram4.FrozenPartTransform? sweepGeom = snapshot ? null : pd.aeroModule.SweepGeom;
+            if (snapshot || sweepGeom.HasValue)
+            {
+                ferram4.FrozenPartTransform g = snapshot ? captured.Geom : sweepGeom.Value;
+                Vector3 comOffset = snapshot ? captured.CoMOffset : pd.aeroModule.SimCoMOffset;
+                forceVector = g.TransformDirection(partLocalForce);
+                torqueVector = g.TransformDirection(torqueVector * (float)dynamicPressurekPa);
+                if (float.IsNaN(forceVector.x) || float.IsNaN(torqueVector.x))
+                    return;
+                centroid = g.TransformPoint(pd.centroidPartSpace - comOffset);
+                center.AddForce(centroid, forceVector);
+                center.AddTorque(torqueVector);
+                return;
+            }
+
             forceVector = pd.aeroModule.part.transform.TransformDirection(partLocalForce);
             torqueVector = pd.aeroModule.part.transform.TransformDirection(torqueVector * (float)dynamicPressurekPa);
             if (float.IsNaN(forceVector.x) || float.IsNaN(torqueVector.x))
                 return;
-            Vector3 centroid =
+            centroid =
                 pd.aeroModule.part.transform.TransformPoint(pd.centroidPartSpace - pd.aeroModule.part.CoMOffset);
             center.AddForce(centroid, forceVector);
             center.AddTorque(torqueVector);

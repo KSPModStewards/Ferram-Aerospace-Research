@@ -109,7 +109,13 @@ namespace ferram4
                 part_transform = part.partTransform;
         }
 
-        public Vector3d GetVelocity()
+        /// <summary>The velocity the editor evaluations read back through GetVelocity.</summary>
+        public virtual void SetEditorVelocity(Vector3d vel)
+        {
+            velocityEditor = vel;
+        }
+
+        public virtual Vector3d GetVelocity()
         {
             if (HighLogic.LoadedSceneIsFlight)
                 return part.Rigidbody.velocity +
@@ -178,7 +184,7 @@ namespace ferram4
 
             foreach (FARBaseAerodynamics ba in parts)
             {
-                ba.velocityEditor = vel;
+                ba.SetEditorVelocity(vel);
                 ba.ResetCenterOfLift();
             }
 

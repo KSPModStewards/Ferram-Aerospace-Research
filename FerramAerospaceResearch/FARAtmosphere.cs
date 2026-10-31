@@ -74,26 +74,36 @@ namespace FerramAerospaceResearch
             public Func<Arg1, Arg2, Arg3, Ret> Function
             {
                 get { return function; }
-                set
+                set { SetFunction(value, false); }
+            }
+
+            /// <summary>
+            ///     Whether the function may be called from any thread: true for the default (a vessel snapshot
+            ///     reproduces it), and for a custom function only when it was set as thread-safe.
+            /// </summary>
+            public bool ThreadSafe { get; private set; } = true;
+
+            public void SetFunction(Func<Arg1, Arg2, Arg3, Ret> value, bool threadSafe)
+            {
+                // if passed null, reset back to default so that function is never null
+                if (value is null)
                 {
-                    // if passed null, reset back to default so that function is never null
-                    if (value is null)
-                    {
-                        FARLogger.InfoFormat("FARAtmosphere.{0}: attempted to set null function, using default {1}",
-                                             Name,
-                                             Default.Method.Name);
-                        function = Default;
-                    }
-                    else
-                    {
-                        MethodInfo method = value.Method;
-                        FARLogger.InfoFormat("FARAtmosphere.{0}: setting function to {1}.{2} from {3}",
-                                             Name,
-                                             method.DeclaringType?.Name ?? "(global)",
-                                             method.Name,
-                                             method.Module.Name);
-                        function = value;
-                    }
+                    FARLogger.InfoFormat("FARAtmosphere.{0}: attempted to set null function, using default {1}",
+                                         Name,
+                                         Default.Method.Name);
+                    function = Default;
+                    ThreadSafe = true;
+                }
+                else
+                {
+                    MethodInfo method = value.Method;
+                    FARLogger.InfoFormat("FARAtmosphere.{0}: setting function to {1}.{2} from {3}",
+                                         Name,
+                                         method.DeclaringType?.Name ?? "(global)",
+                                         method.Name,
+                                         method.Module.Name);
+                    function = value;
+                    ThreadSafe = threadSafe || ReferenceEquals(value, Default);
                 }
             }
 
@@ -258,7 +268,19 @@ namespace FerramAerospaceResearch
         /// <param name="newFunction">See <see cref="GetPressure(CelestialBody, Vector3d, double)"/> for parameter meanings</param>
         public static void SetPressureFunction(PropertyDelegate newFunction)
         {
-            pressureFunction.Function = newFunction;
+            pressureFunction.SetFunction(newFunction, false);
+            UpdateIsCustom();
+        }
+
+        /// <summary>
+        ///     "Set" method for the simulated pressure function, for a function that may be called from any thread. A
+        ///     vessel snapshot (FARAPI.CaptureVesselSnapshot) predicts off the main thread only when every custom
+        ///     atmosphere function in use was set this way. A separate name, so reflection by name alone still finds
+        ///     one method.
+        /// </summary>
+        public static void SetPressureFunctionThreadSafe(PropertyDelegate newFunction)
+        {
+            pressureFunction.SetFunction(newFunction, true);
             UpdateIsCustom();
         }
 
@@ -291,7 +313,14 @@ namespace FerramAerospaceResearch
         /// <param name="newFunction">See <see cref="GetTemperature(CelestialBody, Vector3d, double)"/> for parameter meanings</param>
         public static void SetTemperatureFunction(PropertyDelegate newFunction)
         {
-            temperatureFunction.Function = newFunction;
+            temperatureFunction.SetFunction(newFunction, false);
+            UpdateIsCustom();
+        }
+
+        /// <summary>"Set" method for a thread-safe simulated temperature function; see SetPressureFunctionThreadSafe.</summary>
+        public static void SetTemperatureFunctionThreadSafe(PropertyDelegate newFunction)
+        {
+            temperatureFunction.SetFunction(newFunction, true);
             UpdateIsCustom();
         }
 
@@ -324,7 +353,14 @@ namespace FerramAerospaceResearch
         /// <param name="newFunction">See <see cref="GetAdiabaticIndex(CelestialBody, Vector3d, double)"/> for parameter meanings</param>
         public static void SetAdiabaticIndexFunction(PropertyDelegate newFunction)
         {
-            adiabaticIndexFunction.Function = newFunction;
+            adiabaticIndexFunction.SetFunction(newFunction, false);
+            UpdateIsCustom();
+        }
+
+        /// <summary>"Set" method for a thread-safe simulated adiabatic index function; see SetPressureFunctionThreadSafe.</summary>
+        public static void SetAdiabaticIndexFunctionThreadSafe(PropertyDelegate newFunction)
+        {
+            adiabaticIndexFunction.SetFunction(newFunction, true);
             UpdateIsCustom();
         }
 
@@ -357,9 +393,37 @@ namespace FerramAerospaceResearch
         /// <param name="newFunction">See <see cref="GetGasConstant(CelestialBody, Vector3d, double)"/> for parameter meanings</param>
         public static void SetGasConstantFunction(PropertyDelegate newFunction)
         {
-            gasConstantFunction.Function = newFunction;
+            gasConstantFunction.SetFunction(newFunction, false);
             UpdateIsCustom();
         }
+
+        /// <summary>"Set" method for a thread-safe simulated gas constant function; see SetPressureFunctionThreadSafe.</summary>
+        public static void SetGasConstantFunctionThreadSafe(PropertyDelegate newFunction)
+        {
+            gasConstantFunction.SetFunction(newFunction, true);
+            UpdateIsCustom();
+        }
+
+        /// <summary>
+        ///     The property functions as a vessel snapshot takes them: whether each is custom, whether every custom one
+        ///     may be called from any thread, and the functions a prediction calls (a custom one as set, else the
+        ///     default). The snapshot keeps the functions, so one set after the capture does not reach its predictions.
+        /// </summary>
+        internal static bool PressureIsCustom => pressureFunction.IsCustom;
+        internal static bool TemperatureIsCustom => temperatureFunction.IsCustom;
+        internal static bool AdiabaticIndexIsCustom => adiabaticIndexFunction.IsCustom;
+        internal static bool GasConstantIsCustom => gasConstantFunction.IsCustom;
+
+        internal static bool PropertiesThreadSafe =>
+            pressureFunction.ThreadSafe && temperatureFunction.ThreadSafe &&
+            adiabaticIndexFunction.ThreadSafe && gasConstantFunction.ThreadSafe;
+
+        internal static PropertyDelegate PredictionPressureFunction => pressureFunction.Function;
+
+        internal static PropertyDelegate PredictionTemperatureFunction => temperatureFunction.Function;
+
+        internal static PropertyDelegate PredictionAdiabaticIndexFunction => adiabaticIndexFunction.Function;
+        internal static PropertyDelegate PredictionGasConstantFunction => gasConstantFunction.Function;
 
         /// <summary>
         ///     Calculates static gas properties at the specified universal time.

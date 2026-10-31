@@ -45,7 +45,9 @@ Copyright 2022, Michael Ferrara, aka Ferram4
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using FerramAerospaceResearch;
+using FerramAerospaceResearch.Threading;
 using UnityEngine;
 
 // ReSharper disable once CheckNamespace
@@ -58,6 +60,12 @@ namespace ferram4
 
         private static FloatCurve wingCamberFactor;
         private static FloatCurve wingCamberMoment;
+
+        // The camber curves as every slot evaluates them: exact copies any thread can evaluate (see ExactCurve).
+        private static volatile ExactCurve wingCamberFactorExact;
+        private static volatile ExactCurve wingCamberMomentExact;
+        private static readonly object camberLock = new object();
+
         private readonly Vector3 rootChordMidLocal;
         private readonly short srfAttachFlipped;
 
@@ -92,6 +100,23 @@ namespace ferram4
             rootChordMidLocal = rootChordMid;
             srfAttachFlipped = srfAttachNegative;
 
+            GenerateCamberCurves();
+        }
+
+        /// <summary>Builds the camber curves and their exact copies once. Harmless to call again.</summary>
+        public static void GenerateCamberCurves()
+        {
+            if (wingCamberMomentExact != null)
+                return;
+            lock (camberLock)
+            {
+                if (wingCamberMomentExact == null)
+                    BuildCamberCurves();
+            }
+        }
+
+        private static void BuildCamberCurves()
+        {
             if (wingCamberFactor == null)
             {
                 wingCamberFactor = new FloatCurve();
@@ -112,35 +137,98 @@ namespace ferram4
                 wingCamberFactor.Add(1, 1);
             }
 
-            if (wingCamberMoment != null)
-                return;
-            wingCamberMoment = new FloatCurve();
-            for (double i = 0; i <= 1; i += 0.1)
+            if (wingCamberMoment == null)
             {
-                double tmp = i * 2;
-                tmp--;
-                tmp = Math.Acos(tmp);
+                wingCamberMoment = new FloatCurve();
+                for (double i = 0; i <= 1; i += 0.1)
+                {
+                    double tmp = i * 2;
+                    tmp--;
+                    tmp = Math.Acos(tmp);
 
-                tmp = (Math.Sin(2 * tmp) - 2 * Math.Sin(tmp)) / (8 * (Math.PI - tmp + Math.Sin(tmp)));
+                    tmp = (Math.Sin(2 * tmp) - 2 * Math.Sin(tmp)) / (8 * (Math.PI - tmp + Math.Sin(tmp)));
 
-                wingCamberMoment.Add((float)i, (float)tmp);
+                    wingCamberMoment.Add((float)i, (float)tmp);
+                }
+            }
+
+            wingCamberFactorExact = new ExactCurve(wingCamberFactor);
+            wingCamberMomentExact = new ExactCurve(wingCamberMoment);
+        }
+
+        // Per-call mutable state lives in _scratch so multiple threads can evaluate
+        // independent (Mach, altitude) cells against the same FARWingInteraction
+        // instance using their own scratch. Thread-local so each worker in the parallel
+        // sweep gets its own; the single-threaded paths use the calling (main) thread's.
+        // Public properties delegate to scratch.
+        // Per-thread-slot scratch (see SimThreadContext) - an array index is much cheaper than
+        // ThreadLocal.Value under Mono. Each slot is single-threaded, so the lazy create is safe.
+        private readonly WingInteractionScratch[] _scratchSlots =
+            new WingInteractionScratch[SimThreadContext.MaxSlots];
+
+        /// <summary>
+        /// Starts the calling thread's slot (a prediction's) from the flight's, slot 0's. The wing's lift slope reads
+        /// ARFactor before the orientation update refreshes it, so a stale slot would carry the last call into this one.
+        /// </summary>
+        internal void BeginPredictionState()
+        {
+            int s = SimThreadContext.Slot;
+            WingInteractionScratch sc = _scratchSlots[s];
+            if (sc == null)
+                _scratchSlots[s] = sc = new WingInteractionScratch();
+            sc.CopyFrom(_scratchSlots[0] ?? new WingInteractionScratch());
+        }
+
+        /// <summary>A copy of the flight's state (slot 0's), for a vessel snapshot. Main thread.</summary>
+        internal WingInteractionScratch CaptureSeed()
+        {
+            var seed = new WingInteractionScratch();
+            seed.CopyFrom(_scratchSlots[0] ?? new WingInteractionScratch());
+            return seed;
+        }
+
+        /// <summary>Starts the calling thread's slot (a snapshot prediction's) from the captured flight state.</summary>
+        internal void InstallSeed(WingInteractionScratch seed)
+        {
+            int s = SimThreadContext.Slot;
+            WingInteractionScratch sc = _scratchSlots[s];
+            if (sc == null)
+                _scratchSlots[s] = sc = new WingInteractionScratch();
+            sc.CopyFrom(seed ?? new WingInteractionScratch());
+        }
+
+        internal WingInteractionScratch _scratch
+        {
+            get
+            {
+                int s = SimThreadContext.Slot;
+                WingInteractionScratch sc = _scratchSlots[s];
+                if (sc == null)
+                {
+                    sc = new WingInteractionScratch();
+                    _scratchSlots[s] = sc;
+                }
+
+                return sc;
             }
         }
 
-        public double EffectiveUpstreamMAC { get; private set; }
-        public double EffectiveUpstreamb_2 { get; private set; }
-        public double EffectiveUpstreamLiftSlope { get; private set; }
-        public double EffectiveUpstreamArea { get; private set; }
-        public double EffectiveUpstreamStall { get; private set; }
-        public double EffectiveUpstreamCosSweepAngle { get; private set; }
-        public double EffectiveUpstreamAoAMax { get; private set; }
-        public double EffectiveUpstreamAoA { get; private set; }
-        public double EffectiveUpstreamCd0 { get; private set; }
-        public double EffectiveUpstreamInfluence { get; private set; }
-        public bool HasWingsUpstream { get; private set; }
+        public double EffectiveUpstreamMAC => _scratch.EffectiveUpstreamMAC;
+        public double EffectiveUpstreamb_2 => _scratch.EffectiveUpstreamb_2;
+        public double EffectiveUpstreamLiftSlope => _scratch.EffectiveUpstreamLiftSlope;
+        public double EffectiveUpstreamArea => _scratch.EffectiveUpstreamArea;
+        public double EffectiveUpstreamStall => _scratch.EffectiveUpstreamStall;
+        public double EffectiveUpstreamCosSweepAngle => _scratch.EffectiveUpstreamCosSweepAngle;
+        public double EffectiveUpstreamAoAMax => _scratch.EffectiveUpstreamAoAMax;
+        public double EffectiveUpstreamAoA => _scratch.EffectiveUpstreamAoA;
+        public double EffectiveUpstreamCd0 => _scratch.EffectiveUpstreamCd0;
+        public double EffectiveUpstreamInfluence => _scratch.EffectiveUpstreamInfluence;
+        public bool HasWingsUpstream => _scratch.HasWingsUpstream;
 
-        public double ARFactor { get; private set; } = 1;
+        public double ARFactor => _scratch.ARFactor;
 
+        // Set from the neighboring parts when the vessel changes (UpdateWingInteraction), not per evaluation, so
+        // it is shared by every slot; in the scratch, slots other than 0 read the default of 1.
         public double ClInterferenceFactor { get; private set; } = 1;
 
         public void Destroy()
@@ -159,13 +247,13 @@ namespace ferram4
         /// </summary>
         public void ResetWingInteractions()
         {
-            EffectiveUpstreamLiftSlope = 0;
-            EffectiveUpstreamStall = 0;
-            EffectiveUpstreamCosSweepAngle = 0;
-            EffectiveUpstreamAoAMax = 0;
-            EffectiveUpstreamAoA = 0;
-            EffectiveUpstreamCd0 = 0;
-            EffectiveUpstreamInfluence = 0;
+            _scratch.EffectiveUpstreamLiftSlope = 0;
+            _scratch.EffectiveUpstreamStall = 0;
+            _scratch.EffectiveUpstreamCosSweepAngle = 0;
+            _scratch.EffectiveUpstreamAoAMax = 0;
+            _scratch.EffectiveUpstreamAoA = 0;
+            _scratch.EffectiveUpstreamCd0 = 0;
+            _scratch.EffectiveUpstreamInfluence = 0;
         }
 
         /// <summary>
@@ -633,17 +721,17 @@ namespace ferram4
             double thisWingMAC = parentWingModule.GetMAC();
             double thisWingb_2 = parentWingModule.Getb_2();
 
-            EffectiveUpstreamMAC = 0;
-            EffectiveUpstreamb_2 = 0;
-            EffectiveUpstreamArea = 0;
+            _scratch.EffectiveUpstreamMAC = 0;
+            _scratch.EffectiveUpstreamb_2 = 0;
+            _scratch.EffectiveUpstreamArea = 0;
 
-            EffectiveUpstreamLiftSlope = 0;
-            EffectiveUpstreamStall = 0;
-            EffectiveUpstreamCosSweepAngle = 0;
-            EffectiveUpstreamAoAMax = 0;
-            EffectiveUpstreamAoA = 0;
-            EffectiveUpstreamCd0 = 0;
-            EffectiveUpstreamInfluence = 0;
+            _scratch.EffectiveUpstreamLiftSlope = 0;
+            _scratch.EffectiveUpstreamStall = 0;
+            _scratch.EffectiveUpstreamCosSweepAngle = 0;
+            _scratch.EffectiveUpstreamAoAMax = 0;
+            _scratch.EffectiveUpstreamAoA = 0;
+            _scratch.EffectiveUpstreamCd0 = 0;
+            _scratch.EffectiveUpstreamInfluence = 0;
 
             double wingForwardDir = parallelInPlaneLocal.y;
             double wingRightwardDir = parallelInPlaneLocal.x * srfAttachFlipped;
@@ -689,9 +777,9 @@ namespace ferram4
             double flapRatio = (thisWingMAC / (thisWingMAC + EffectiveUpstreamMAC)).Clamp(0, 1);
             float flt_flapRatio = (float)flapRatio;
             //Flap Effectiveness Factor
-            double flapFactor = wingCamberFactor.Evaluate(flt_flapRatio);
+            double flapFactor = wingCamberFactorExact.Evaluate(flt_flapRatio);
             //Change in moment due to change in lift from flap
-            double dCm_dCl = wingCamberMoment.Evaluate(flt_flapRatio);
+            double dCm_dCl = wingCamberMomentExact.Evaluate(flt_flapRatio);
 
             //This accounts for the wing possibly having a longer span than the flap
             double WingFraction = (thisWingb_2 / EffectiveUpstreamb_2).Clamp(0, 1);
@@ -725,8 +813,8 @@ namespace ferram4
             double wingForwardDir = parallelInPlaneLocal.y;
             double wingRightwardDir = parallelInPlaneLocal.x * srfAttachFlipped;
 
-            ARFactor = CalculateARFactor(wingForwardDir, wingRightwardDir);
-            HasWingsUpstream = DetermineWingsUpstream(wingForwardDir, wingRightwardDir);
+            _scratch.ARFactor = CalculateARFactor(wingForwardDir, wingRightwardDir);
+            _scratch.HasWingsUpstream = DetermineWingsUpstream(wingForwardDir, wingRightwardDir);
         }
 
         private void UpdateUpstreamValuesFromWingModules(
@@ -737,40 +825,95 @@ namespace ferram4
         )
         {
             directionalInfluence = Math.Abs(directionalInfluence);
+
+            // Only the flight and the serial editor tabs (slot 0, main thread) prune a destroyed neighbour from the
+            // lists. Any other slot - a sweep worker, a prediction, possibly on another thread - reads the lists
+            // other threads may be reading too, so it leaves them alone: it skips the destroyed neighbours and
+            // scales the others' influence by 1 / their sum, which is what pruning does.
+            bool prune = SimThreadContext.Slot == 0 && MainThread.IsMainThread;
+            double influenceScale = prune ? 1 : LiveInfluenceScale(wingModules, associatedInfluences);
+
             for (int i = 0; i < wingModules.Count; i++)
             {
                 FARWingAerodynamicModel wingModule = wingModules[i];
-                double wingInfluenceFactor = associatedInfluences[i] * directionalInfluence;
 
-                if (wingModule == null)
+                if (prune)
                 {
-                    HandleNullPart(wingModules, associatedInfluences, i);
-                    i--;
+                    if (wingModule == null)
+                    {
+                        // A snapshot prediction on another thread may be reading the lists.
+                        parentWingModule.BumpGeometryVersion();
+                        HandleNullPart(wingModules, associatedInfluences, i);
+                        parentWingModule.BumpGeometryVersion();
+                        i--;
+                        continue;
+                    }
+                }
+                else if (IsGone(wingModule))
+                {
                     continue;
                 }
 
-                if (wingModule.isShielded)
+                double wingInfluenceFactor = prune
+                                                 ? associatedInfluences[i] * directionalInfluence
+                                                 : associatedInfluences[i] * influenceScale * directionalInfluence;
+
+                if (wingModule.GetShielded())
                     continue;
 
-                double tmp = Vector3.Dot(wingModule.transform.forward, parentWingModule.transform.forward);
+                Vector3 wingForward = wingModule.SolveForward;
+                Vector3 parentForward = parentWingModule.SolveForward;
+                double tmp = Vector3.Dot(wingForward, parentForward);
 
-                EffectiveUpstreamMAC += wingModule.GetMAC() * wingInfluenceFactor;
-                EffectiveUpstreamb_2 += wingModule.Getb_2() * wingInfluenceFactor;
-                EffectiveUpstreamArea += wingModule.S * wingInfluenceFactor;
+                // the neighbour's values on this slot (its GetMAC, Getb_2, ... read the same scratch)
+                WingScratch neighbour = wingModule._scratch;
+                _scratch.EffectiveUpstreamMAC += neighbour.effective_MAC * wingInfluenceFactor;
+                _scratch.EffectiveUpstreamb_2 += neighbour.effective_b_2 * wingInfluenceFactor;
+                _scratch.EffectiveUpstreamArea += wingModule.S * wingInfluenceFactor;
 
-                EffectiveUpstreamLiftSlope += wingModule.GetRawLiftSlope() * wingInfluenceFactor;
-                EffectiveUpstreamStall += wingModule.GetStall() * wingInfluenceFactor;
-                EffectiveUpstreamCosSweepAngle += wingModule.GetCosSweepAngle() * wingInfluenceFactor;
-                EffectiveUpstreamAoAMax += wingModule.rawAoAmax * wingInfluenceFactor;
-                EffectiveUpstreamCd0 += wingModule.GetCd0() * wingInfluenceFactor;
-                EffectiveUpstreamInfluence += wingInfluenceFactor;
+                _scratch.EffectiveUpstreamLiftSlope += neighbour.rawLiftSlope * wingInfluenceFactor;
+                _scratch.EffectiveUpstreamStall += neighbour.stall * wingInfluenceFactor;
+                _scratch.EffectiveUpstreamCosSweepAngle += neighbour.cosSweepAngle * wingInfluenceFactor;
+                _scratch.EffectiveUpstreamAoAMax += neighbour.rawAoAmax * wingInfluenceFactor;
+                _scratch.EffectiveUpstreamCd0 += neighbour.zeroLiftCdIncrement * wingInfluenceFactor;
+                _scratch.EffectiveUpstreamInfluence += wingInfluenceFactor;
 
                 double wAoA = wingModule.CalculateAoA(wingModule.GetVelocity()) * Math.Sign(tmp);
                 //First, make sure that the AoA are wrt the same direction; then account for any strange angling of the part that shouldn't be there
                 tmp = (thisWingAoA - wAoA) * wingInfluenceFactor;
 
-                EffectiveUpstreamAoA += tmp;
+                _scratch.EffectiveUpstreamAoA += tmp;
             }
+        }
+
+        /// <summary>
+        ///     A neighbour destroyed since the lists were built. Unity's destroyed-object check is a main-thread call;
+        ///     off the main thread only a missing reference counts.
+        /// </summary>
+        private static bool IsGone(FARWingAerodynamicModel wingModule)
+        {
+            if (ReferenceEquals(wingModule, null))
+                return true;
+            // A snapshot prediction takes the wings captured with the snapshot, on whichever thread it runs.
+            if (SimThreadContext.SnapshotStamp != 0)
+                return !wingModule.CapturedForSolve;
+            return MainThread.IsMainThread && wingModule == null;
+        }
+
+        /// <summary>
+        ///     The factor pruning the destroyed neighbours would renormalize the rest by (1 / the sum of their
+        ///     influences), or exactly 1 when none is destroyed.
+        /// </summary>
+        private static double LiveInfluenceScale(List<FARWingAerodynamicModel> wingModules, List<double> associatedInfluences)
+        {
+            bool anyGone = false;
+            double sum = 0;
+            for (int i = 0; i < wingModules.Count; i++)
+                if (IsGone(wingModules[i]))
+                    anyGone = true;
+                else
+                    sum += associatedInfluences[i];
+            return anyGone ? 1 / sum : 1;
         }
 
         private static void HandleNullPart(
