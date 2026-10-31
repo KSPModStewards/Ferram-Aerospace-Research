@@ -1,5 +1,5 @@
 /*
-Ferram Aerospace Research v0.16.1.2 "Marangoni"
+Ferram Aerospace Research v0.16.2.0 "Maskell"
 =========================
 Aerodynamics model for Kerbal Space Program
 
@@ -50,6 +50,7 @@ using System.Threading;
 using ferram4;
 using FerramAerospaceResearch.FARThreading;
 using FerramAerospaceResearch.Geometry;
+using KSPCommunityFixes;
 using UnityEngine;
 
 namespace FerramAerospaceResearch.FARPartGeometry
@@ -280,13 +281,13 @@ namespace FerramAerospaceResearch.FARPartGeometry
 
             if (g.HasCrossSectionAdjusters && g.MaxCrossSectionAdjusterArea > 0)
                 return int.MaxValue;
-            if (modules.Contains("ProceduralFairingSide") || modules.Contains<ModuleProceduralFairing>())
+            if (modules.Contains("ProceduralFairingSide") || g.part.HasModuleImplementingFast<ModuleProceduralFairing>())
                 return 3;
             if (modules.Contains("ProceduralFairingBase"))
                 return 2;
-            if (modules.Contains<FARControllableSurface>() ||
-                modules.Contains<ModuleRCS>() ||
-                modules.Contains<ModuleEngines>())
+            if (g.part.HasModuleImplementingFast<FARControllableSurface>() ||
+                g.part.HasModuleImplementingFast<ModuleRCS>() ||
+                g.part.HasModuleImplementingFast<ModuleEngines>())
                 return 1;
 
             return -1;

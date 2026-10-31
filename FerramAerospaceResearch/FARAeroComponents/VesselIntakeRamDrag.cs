@@ -1,5 +1,5 @@
 /*
-Ferram Aerospace Research v0.16.1.2 "Marangoni"
+Ferram Aerospace Research v0.16.2.0 "Maskell"
 =========================
 Aerodynamics model for Kerbal Space Program
 
@@ -44,6 +44,7 @@ Copyright 2022, Michael Ferrara, aka Ferram4
 
 using System;
 using System.Collections.Generic;
+using KSPCommunityFixes;
 using UnityEngine;
 
 namespace FerramAerospaceResearch.FARAeroComponents
@@ -83,10 +84,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     continue;
                 Part p = aeroModule.part;
 
-                foreach (PartModule m in p.Modules)
+                var intakeModules = p.FindModulesImplementingReadOnly<ModuleResourceIntake>();
+                foreach (ModuleResourceIntake intake in intakeModules)
                 {
-                    if (!(m is ModuleResourceIntake intake))
-                        continue;
                     if (intake.node != null && intake.node.attachedPart != null)
                         continue;
 
@@ -105,10 +105,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     continue;
                 Part p = aeroModule.part;
 
-                foreach (PartModule m in p.Modules)
+                var engineModules = p.FindModulesImplementingReadOnly<ModuleEngines>();
+                foreach (ModuleEngines e in engineModules)
                 {
-                    if (!(m is ModuleEngines e))
-                        continue;
                     if (FARAeroUtil.AJELoaded)
                         if (e.ClassID == AJE_JET_CLASS_ID || e.ClassID == AJE_PROP_CLASS_ID)
                         {

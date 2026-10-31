@@ -1,5 +1,5 @@
 /*
-Ferram Aerospace Research v0.16.1.2 "Marangoni"
+Ferram Aerospace Research v0.16.2.0 "Maskell"
 =========================
 Aerodynamics model for Kerbal Space Program
 
@@ -48,6 +48,7 @@ using FerramAerospaceResearch;
 using FerramAerospaceResearch.FARAeroComponents;
 using FerramAerospaceResearch.Settings;
 using KSP.Localization;
+using KSPCommunityFixes;
 using TweakScale;
 using UnityEngine;
 
@@ -230,7 +231,7 @@ namespace ferram4
 
         public void NUFAR_CalculateExposedAreaFactor()
         {
-            FARAeroPartModule a = part.Modules.GetModule<FARAeroPartModule>();
+            FARAeroPartModule a = part.FindModuleImplementingFast<FARAeroPartModule>();
 
             NUFAR_areaExposedFactor = Math.Min(a.ProjectedAreas.kN, a.ProjectedAreas.kP);
             NUFAR_totalExposedAreaFactor = Math.Max(a.ProjectedAreas.kN, a.ProjectedAreas.kP);
@@ -248,8 +249,8 @@ namespace ferram4
                 if (p == null)
                     continue;
                 FARWingAerodynamicModel model = this is FARControllableSurface
-                                                    ? p.Modules.GetModule<FARControllableSurface>()
-                                                    : p.Modules.GetModule<FARWingAerodynamicModel>();
+                                                    ? p.FindModuleImplementingFast<FARControllableSurface>()
+                                                    : p.FindModuleImplementingFast<FARWingAerodynamicModel>();
 
                 ++counterpartsCount;
                 sum += model.NUFAR_areaExposedFactor;
@@ -268,8 +269,8 @@ namespace ferram4
                 if (p == null)
                     continue;
                 FARWingAerodynamicModel model = this is FARControllableSurface
-                                                    ? p.Modules.GetModule<FARControllableSurface>()
-                                                    : p.Modules.GetModule<FARWingAerodynamicModel>();
+                                                    ? p.FindModuleImplementingFast<FARControllableSurface>()
+                                                    : p.FindModuleImplementingFast<FARWingAerodynamicModel>();
 
                 model.NUFAR_areaExposedFactor = sum;
                 model.NUFAR_totalExposedAreaFactor = totalExposedSum;
@@ -627,11 +628,17 @@ namespace ferram4
 
                     double v_scalar = velocity.magnitude;
 
+                    // water's contribution to rho
+                    double waterRho = 0;
                     if (partVessel.mainBody.ocean)
-                        rho = partVessel.mainBody.oceanDensity * 1000 * part.submergedPortion +
-                              part.atmDensity * (1 - part.submergedPortion);
+                    {
+                        waterRho = partVessel.mainBody.oceanDensity * 1000 * part.submergedPortion;
+                        rho = waterRho + part.atmDensity * (1 - part.submergedPortion);
+                    }
                     else
+                    {
                         rho = part.atmDensity;
+                    }
 
                     double machNumber = partVessel.mach;
                     if (rho > 0 && v_scalar > 0.1)
@@ -651,8 +658,7 @@ namespace ferram4
                             Vector3 waterDragForce, waterLiftForce;
                             if (part.submergedPortion < 1)
                             {
-                                float waterFraction = (float)(part.submergedDynamicPressurekPa * part.submergedPortion);
-                                waterFraction /= (float)rho;
+                                float waterFraction = (float)(waterRho / rho);
 
                                 waterDragForce = worldSpaceDragForce * waterFraction; //calculate areaDrag vector
                                 waterLiftForce = worldSpaceLiftForce * waterFraction;
@@ -723,9 +729,9 @@ namespace ferram4
                             if (part.parent && !partVessel.packed)
                             {
                                 partVessel.SendMessage("AerodynamicFailureStatus");
-                                string msg = string.Format(Localizer.Format("FARFlightLogAeroFailure"),
-                                                           KSPUtil.PrintTimeStamp(FlightLogger.met),
-                                                           part.partInfo.title);
+                                string msg = Localizer.Format("FARFlightLogAeroFailure",
+                                                              KSPUtil.PrintTimeStamp(FlightLogger.met),
+                                                              part.partInfo.title);
                                 FlightLogger.eventLog.Add(msg);
                                 part.decouple(25);
                                 if (FARDebugValues.aeroFailureExplosions)

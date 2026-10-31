@@ -1,5 +1,5 @@
 /*
-Ferram Aerospace Research v0.16.1.2 "Marangoni"
+Ferram Aerospace Research v0.16.2.0 "Maskell"
 =========================
 Aerodynamics model for Kerbal Space Program
 
@@ -74,7 +74,6 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
         internal static GUIStyle buttonStyle;
 
         private readonly StringBuilder _strBuilder = new StringBuilder();
-        private Vessel _vessel;
         private FARVesselAero _vesselAero;
 
         private PhysicsCalcs _physicsCalcs;
@@ -88,6 +87,7 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
         private bool showFlightDataWindow;
         private bool showSettingsWindow;
         private bool showDebugWindow;
+        private bool started;
 
         private GUIDropDown<int> settingsWindow;
         public VesselFlightInfo InfoParameters { get; private set; }
@@ -113,12 +113,10 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                 else
                     FARDebugAndSettings.FARDebugButtonStock.SetFalse(false);
 
-
-            _vessel = GetComponent<Vessel>();
             _vesselAero = GetComponent<FARVesselAero>();
-            _physicsCalcs = new PhysicsCalcs(_vessel, _vesselAero);
+            _physicsCalcs = new PhysicsCalcs(vessel, _vesselAero);
             _flightStatusGUI = new FlightStatusGUI();
-            _stabilityAugmentation = new StabilityAugmentation(_vessel);
+            _stabilityAugmentation = new StabilityAugmentation(vessel);
             _flightDataGUI = new FlightDataGUI();
             AeroVizGUI = new AeroVisualizationGUI();
             debugGUI = new DebugGUI();
@@ -132,11 +130,11 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                                                   },
                                                   new[] { 0, 1, 2, 3 });
 
-            if (vesselFlightGUI.ContainsKey(_vessel))
-                vesselFlightGUI[_vessel] = this;
+            if (vesselFlightGUI.ContainsKey(vessel))
+                vesselFlightGUI[vessel] = this;
             else
-                vesselFlightGUI.Add(_vessel, this);
-            flightDataLogger = FlightDataLogger.CreateLogger(_vessel);
+                vesselFlightGUI.Add(vessel, this);
+            flightDataLogger = FlightDataLogger.CreateLogger(vessel);
 
             enabled = true;
 
@@ -144,13 +142,16 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                 GenerateBlizzyToolbarButton();
 
             activeFlightGUICount++;
+            started = true;
 
-            if (_vessel == FlightGlobals.ActiveVessel || FlightGlobals.ActiveVessel == null)
+            if (vessel == FlightGlobals.ActiveVessel || FlightGlobals.ActiveVessel == null)
                 LoadConfigs();
 
             GameEvents.onShowUI.Add(ShowUI);
             GameEvents.onHideUI.Add(HideUI);
         }
+
+        public override Activation GetActivation() => Activation.FlightScene | Activation.LoadedVessels;
 
         private void OnDestroy()
         {
@@ -158,8 +159,8 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
             GameEvents.onShowUI.Remove(ShowUI);
             GameEvents.onHideUI.Remove(HideUI);
             SaveConfigs();
-            if (_vessel)
-                vesselFlightGUI.Remove(_vessel);
+            if (vessel)
+                vesselFlightGUI.Remove(vessel);
             _physicsCalcs = null;
 
             _flightDataGUI?.SaveSettings();
@@ -182,7 +183,9 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
             _flightStatusGUI = null;
             settingsWindow = null;
 
-            activeFlightGUICount--;
+            // OnStart only runs once the vessel has been loaded
+            if (started)
+                activeFlightGUICount--;
 
             if (activeFlightGUICount <= 0)
             {
@@ -196,7 +199,7 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
 
         public void SaveData()
         {
-            if (_vessel != FlightGlobals.ActiveVessel)
+            if (vessel != FlightGlobals.ActiveVessel)
                 return;
             SaveConfigs();
             airSpeedGUI?.SaveSettings();
@@ -246,7 +249,7 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
 
         private void Update()
         {
-            FlightGUIDrawer.SetGUIActive(this, _vessel == FlightGlobals.ActiveVessel && showGUI && showAllGUI);
+            FlightGUIDrawer.SetGUIActive(this, vessel == FlightGlobals.ActiveVessel && showGUI && showAllGUI);
             if (frameCountForSaving >= 120)
             {
                 SaveActiveData();
@@ -262,8 +265,8 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
         {
             if (airSpeedGUI != null)
                 airSpeedGUI.ChangeSurfVelocity();
-            else if (_vessel != null)
-                airSpeedGUI = new AirspeedSettingsGUI(_vessel);
+            else if (vessel != null)
+                airSpeedGUI = new AirspeedSettingsGUI(vessel);
         }
 
         public void DrawGUI()
@@ -291,7 +294,7 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                 buttonStyle.padding = new RectOffset(2, 2, 2, 2);
             }
 
-            if (_vessel != FlightGlobals.ActiveVessel || !showGUI || !showAllGUI)
+            if (vessel != FlightGlobals.ActiveVessel || !showGUI || !showAllGUI)
                 return;
             mainGuiRect = GUILayout.Window(GetHashCode(),
                                            mainGuiRect,

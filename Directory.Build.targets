@@ -1,0 +1,18 @@
+<Project>
+  <Target Name="FARPostBuild" AfterTargets="Build" Condition=" '$(PostBuildCommand)' != '' ">
+    <Exec Command="$(PostBuildCommand) &quot;$(TargetPath)&quot;" WorkingDirectory="$(MSBuildThisFileDirectory)" />
+  </Target>
+
+  <!-- Only with KSP_DIR_INSTALL set (Directory.Build.props.user): replace GameData/FerramAerospaceResearch
+       in that install. FerramAerospaceResearch builds last, after Base and ferramGraph are copied. -->
+  <Target Name="FARInstall" AfterTargets="FARPostBuild" Condition=" '$(KSP_DIR_INSTALL)' != '' And '$(MSBuildProjectName)' == 'FerramAerospaceResearch' And '$(Configuration)' != 'Editor' ">
+    <PropertyGroup>
+      <FARInstallDir>$(KSP_DIR_INSTALL)\GameData\FerramAerospaceResearch</FARInstallDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <FARModFiles Include="$(MSBuildThisFileDirectory)GameData\FerramAerospaceResearch\**\*" />
+    </ItemGroup>
+    <RemoveDir Directories="$(FARInstallDir)" />
+    <Copy SourceFiles="@(FARModFiles)" DestinationFiles="@(FARModFiles->'$(FARInstallDir)\%(RecursiveDir)%(Filename)%(Extension)')" />
+  </Target>
+</Project>

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using FerramAerospaceResearch.Reflection;
+using KSPCommunityFixes;
 
 namespace FerramAerospaceResearch.Settings
 {
@@ -86,7 +87,7 @@ namespace FerramAerospaceResearch.Settings
 
             int resCount = p.Resources.Count;
             bool crewed = p.CrewCapacity > 0;
-            if (p.Modules.Contains<ModuleAblator>() || p.Resources.Contains("Ablator"))
+            if (p.HasModuleImplementingFast<ModuleAblator>() || p.Resources.Contains("Ablator"))
                 return template;
 
             foreach (FARPartStressTemplate candidate in StressTemplates)

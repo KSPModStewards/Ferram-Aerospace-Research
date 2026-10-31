@@ -1,5 +1,5 @@
 /*
-Ferram Aerospace Research v0.16.1.2 "Marangoni"
+Ferram Aerospace Research v0.16.2.0 "Maskell"
 =========================
 Aerodynamics model for Kerbal Space Program
 
@@ -45,6 +45,7 @@ Copyright 2022, Michael Ferrara, aka Ferram4
 using System;
 using FerramAerospaceResearch.Settings;
 using ModularFI;
+using KSPCommunityFixes;
 using UnityEngine;
 
 namespace FerramAerospaceResearch.FARAeroComponents
@@ -75,13 +76,13 @@ namespace FerramAerospaceResearch.FARAeroComponents
             {
                 PartThermalData ptd = fi.partThermalDataList[i];
                 Part part = ptd.part;
-                FARAeroPartModule aeroModule = part.Modules.GetModule<FARAeroPartModule>();
+                FARAeroPartModule aeroModule = part.FindModuleImplementingFast<FARAeroPartModule>();
                 if (aeroModule is null)
                     continue;
 
-                // make sure drag cube areas are correct based on voxelization
-                if (voxelizationCompleted)
+                if (voxelizationCompleted && !FARSettings.ExposedAreaUsesKSPHack)
                 {
+                    // make sure drag cube areas are correct based on voxelization
                     if (!part.DragCubes.None && aeroModule)
                         for (int j = 0; j < 6; j++)
                             part.DragCubes.AreaOccluded[FARAeroPartModule.ProjectedArea.FaceMap[j]] =
@@ -107,7 +108,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
         {
             //FIXME Proper model for airbrakes
             if (part.Modules.Contains<ModuleAeroSurface>() ||
-                part.Modules.Contains("MissileLauncher") && part.vessel.rootPart == part)
+                 (ModUtils.IsBDArmoryInstalled &&
+                  part.vessel.rootPart == part &&
+                  part.Modules.Contains("MissileLauncher")))
             {
                 fi.BaseFIUpdateAerodynamics(part);
             }
@@ -185,7 +188,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         private static double CalculateAreaRadiative(ModularFlightIntegrator fi, Part part)
         {
-            FARAeroPartModule module = part.Modules.GetModule<FARAeroPartModule>();
+            FARAeroPartModule module = part.FindModuleImplementingFast<FARAeroPartModule>();
             return CalculateAreaRadiative(fi, part, module);
         }
 
@@ -204,7 +207,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         private static double CalculateAreaExposed(ModularFlightIntegrator fi, Part part)
         {
-            FARAeroPartModule module = part.Modules.GetModule<FARAeroPartModule>();
+            FARAeroPartModule module = part.FindModuleImplementingFast<FARAeroPartModule>();
             return CalculateAreaExposed(fi, part, module);
         }
 
@@ -224,7 +227,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         private static double CalculateSunArea(ModularFlightIntegrator fi, PartThermalData ptd)
         {
-            FARAeroPartModule module = ptd.part.Modules.GetModule<FARAeroPartModule>();
+            FARAeroPartModule module = ptd.part.FindModuleImplementingFast<FARAeroPartModule>();
 
             if (module is null)
                 return fi.BaseFIGetSunArea(ptd);
@@ -235,7 +238,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         private static double CalculateBodyArea(ModularFlightIntegrator fi, PartThermalData ptd)
         {
-            FARAeroPartModule module = ptd.part.Modules.GetModule<FARAeroPartModule>();
+            FARAeroPartModule module = ptd.part.FindModuleImplementingFast<FARAeroPartModule>();
 
             if (module is null)
                 return fi.BaseFIBodyArea(ptd);

@@ -1,7 +1,7 @@
-# Ferram Aerospace Research Continued v0.16.1.2 "Marangoni"
+# Ferram Aerospace Research Continued v0.16.2.0 "Maskell"
 
-[![Build](https://github.com/dkavolis/Ferram-Aerospace-Research/actions/workflows/package.yml/badge.svg?branch=master)](https://github.com/dkavolis/Ferram-Aerospace-Research/actions/workflows/package.yml)  
-Download latest build [here](https://nightly.link/dkavolis/Ferram-Aerospace-Research/workflows/package/master/FerramAerospaceResearch.zip)  
+[![Build](https://github.com/KSPModStewards/Ferram-Aerospace-Research/actions/workflows/package.yml/badge.svg?branch=master)](https://github.com/KSPModStewards/Ferram-Aerospace-Research/actions/workflows/package.yml)  
+Download latest build [here](https://nightly.link/KSPModStewards/Ferram-Aerospace-Research/workflows/package/master/FerramAerospaceResearch.zip)  
 
 =========================  
 Aerodynamics model for Kerbal Space Program
@@ -35,7 +35,7 @@ Source available at: [https://github.com/dkavolis/Ferram-Aerospace-Research](htt
 
 Install by merging the GameData folder in the zip with the GameData folder in your KSP install
 
-ModuleManager and ModularFlightIntegrator are REQUIRED for FAR to work properly.  Failing to copy this over will result in strange errors.
+ModuleManager, ModularFlightIntegrator and KSPCommunityFixes (1.36.0 or newer) are REQUIRED for FAR to work properly.  Failing to copy this over will result in strange errors.
 
 ## Legacy wing configs
 
@@ -63,6 +63,18 @@ For control surfaces, use above but replace `FARWingAerodynamicModel` with `FARC
 Set all the other winglet/control surface values to zero
 
 ## CHANGELOG
+
+0.16.2.0V "Maskell"------------------------------------  
+
+KSPCommunityFixes 1.36.0 or newer is now required  
+Faster part module lookups through KSPCommunityFixes, thanks [@siimav](https://github.com/siimav) [#154](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/154)  
+FAR vessel modules now only run on loaded vessels, which saves frame time with many vessels in flight, thanks [@siimav](https://github.com/siimav) [#151](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/151)  
+Exposure rendering now defaults to off (`device = None`). A device saved earlier in `GameData/Custom_FARConfig.cfg` still applies, thanks [@siimav](https://github.com/siimav) [#157](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/157)  
+Drag cube occluded areas are no longer overwritten from FAR's voxels while `exposedAreaUsesKSPHack` is on (the default), which made reentry heating finicky on small parts and thin heatshields, thanks [@siimav](https://github.com/siimav) [#156](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/156)  
+Fixed partially submerged wings producing large unphysical forces at speed, thanks [@siimav](https://github.com/siimav) [#176](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/176)  
+Only look for BDArmory's `MissileLauncher` module when BDArmory is installed, thanks [@siimav](https://github.com/siimav) [#153](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/153)  
+Removed `FarForceDataUpdate.cfg`, which invalidated the ModuleManager cache and made CKAN reinstall FAR repeatedly, thanks [@siimav](https://github.com/siimav) [#158](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/158)  
+Fixed the part name missing from aerodynamic failure messages in the flight log, thanks [@siimav](https://github.com/siimav) [#171](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/171)  
 
 0.16.1.2V "Marangoni"------------------------------------  
 
