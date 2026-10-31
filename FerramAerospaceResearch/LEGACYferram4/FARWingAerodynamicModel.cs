@@ -156,6 +156,10 @@ namespace ferram4
         private Vector3d ParallelInPlaneLocal = Vector3d.zero;
 
         private FARWingInteraction wingInteraction;
+        internal FARWingInteraction WingInteraction => wingInteraction;
+        // the aspect ratio the lift slope uses, and the panel's own (semispan over chord), as last computed
+        internal double EffectiveAR => effective_AR;
+        internal double OwnAR => transformed_AR;
         private FARAeroPartModule aeroModule;
 
         public short srfAttachNegative = 1;
@@ -276,7 +280,14 @@ namespace ferram4
         public void NUFAR_UpdateShieldingStateFromAreaFactor()
         {
             isShielded = NUFAR_areaExposedFactor < 0.1 * S;
+            FARWingInteraction.InvalidateWingGroups(part);
         }
+
+        /// <summary>
+        ///     Whether the voxels find this panel covered by other parts: shielded, for a control surface at rest (a
+        ///     deflected one comes out of the cover, see FARControllableSurface.CheckShielded). Changes only with the voxels
+        /// </summary>
+        internal bool ShieldedAtRest => NUFAR_areaExposedFactor < 0.1 * S;
 
         public double GetStall()
         {
@@ -413,6 +424,41 @@ namespace ferram4
         public Vector3 WingCentroid()
         {
             return part_transform.TransformDirection(localWingCentroid) + part.partTransform.position;
+        }
+
+        /// <summary>
+        ///     The corners of this panel's planform as FAR models it (world), in order around it: root leading edge, root
+        ///     trailing edge, tip trailing edge, tip leading edge
+        /// </summary>
+        internal void PlanformCorners(Vector3[] corners)
+        {
+            Vector3d rootMid = rootMidChordOffsetFromOrig;
+            Vector3d tipMid;
+            double rootChord, tipChord;
+            if (nonSideAttach <= 0)
+            {
+                // MAC_actual is the mean chord (S = b_2 MAC): rootChord (1 + taper) / 2
+                double taper = TaperRatio;
+                rootChord = 2 * MAC_actual / (1 + taper);
+                tipChord = rootChord * taper;
+                tipMid = rootMid -
+                         b_2_actual *
+                         (Vector3d.right * srfAttachNegative + Vector3d.up * Math.Tan(MidChordSweep * FARMathUtil.deg2rad));
+            }
+            else
+            {
+                // a control surface hung from its leading edge, centered on its centroid
+                Vector3d centroid = rootMid - MAC_actual * 0.7 * Vector3d.up;
+                rootMid = centroid + 0.5 * b_2_actual * Vector3d.right;
+                tipMid = centroid - 0.5 * b_2_actual * Vector3d.right;
+                rootChord = tipChord = MAC_actual;
+            }
+
+            Vector3 origin = part.partTransform.position;
+            corners[0] = origin + part_transform.TransformDirection(rootMid + 0.5 * rootChord * Vector3d.up);
+            corners[1] = origin + part_transform.TransformDirection(rootMid - 0.5 * rootChord * Vector3d.up);
+            corners[2] = origin + part_transform.TransformDirection(tipMid - 0.5 * tipChord * Vector3d.up);
+            corners[3] = origin + part_transform.TransformDirection(tipMid + 0.5 * tipChord * Vector3d.up);
         }
 
         private Vector3d CalculateAerodynamicCenter(double MachNumber, double AoA, Vector3d WC)
@@ -1319,7 +1365,7 @@ namespace ferram4
 
             SetSweepAngle(sweepHalfChord);
 
-            effective_AR = transformed_AR * wingInteraction.ARFactor;
+            effective_AR = wingInteraction.SpanChainedAR(transformed_AR);
 
             //Even this range of effective ARs is large, but it keeps the Oswald's Efficiency numbers in check
             effective_AR = effective_AR.Clamp(0.25, 30d);
@@ -1329,7 +1375,8 @@ namespace ferram4
             else
                 tmp = 0.19;
 
-            double sweepTmp = sweepHalfChord;
+            // a wing on a bare body lifts as the whole wing through the body: that wing's half-chord sweep
+            double sweepTmp = double.IsNaN(wingInteraction.GroupTanSweep) ? sweepHalfChord : wingInteraction.GroupTanSweep;
             sweepTmp *= sweepTmp;
 
             tmp += sweepTmp;
@@ -1340,7 +1387,8 @@ namespace ferram4
             tmp = 1 / tmp;
             tmp *= 2 * Math.PI;
 
-            return tmp * effective_AR;
+            // and the panels carry that wing's lift on the body between its roots
+            return tmp * effective_AR * wingInteraction.BodyLiftFactor;
         }
 
         //Transforms cos sweep of the midchord to cosine(sweep of the leading edge)

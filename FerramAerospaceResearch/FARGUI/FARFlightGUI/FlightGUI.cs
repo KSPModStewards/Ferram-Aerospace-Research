@@ -463,7 +463,14 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
             blizzyFlightGUIButton = ToolbarManager.Instance.add("FerramAerospaceResearch", "FARFlightButtonBlizzy");
             blizzyFlightGUIButton.TexturePath = FARAssets.Instance.Textures.IconSmall.Url;
             blizzyFlightGUIButton.ToolTip = "FAR Flight Sys";
-            blizzyFlightGUIButton.OnClick += e => showGUI = !showGUI;
+            // right click: the model options
+            blizzyFlightGUIButton.OnClick += e =>
+            {
+                if (e.MouseButton == 1)
+                    FARDebugAndSettings.ToggleModelOptions();
+                else
+                    showGUI = !showGUI;
+            };
         }
 
         public static void onAppLaunchToggle()
