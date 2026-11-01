@@ -1831,6 +1831,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         /// otherwise a plain sweep.</summary>
         private void StartAutoFitOrSweep()
         {
+            // Persist the parameters on every run, not only when the editor closes, so a crash or a
+            // forced quit keeps them. Before the probe below swaps in its own grid.
+            SaveSettings();
+
             if (_autoMaxAlt || _autoMaxSpeed)
                 BeginAutoFitProbe();
             else
