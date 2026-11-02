@@ -56,8 +56,9 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 {
     /// <summary>
     ///     The editor's Components tab: the craft part by part, as FAR models it. A table of the parts that make forces (wing
-    ///     panels, control surfaces, bodies) with each one's area, aspect ratios, shielding and forces at a flight
-    ///     condition; the parts tinted by any of those; the flaps and spoilers set (and shown) for it; and the voxels.
+    ///     panels, control surfaces, bodies) with each one's area, aspect ratios, wing, shielding and forces at a flight
+    ///     condition; the parts tinted by any of those; the flaps and spoilers set (and shown) for it; the voxels; and the
+    ///     whole-wing aspect ratio switched on and off to compare it with each panel's own.
     /// </summary>
     internal class ComponentsGUI
     {
@@ -66,13 +67,14 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             None,
             Parts,
             AspectRatio,
+            Wings,
             Shielded,
             Cl,
             Cd,
             Cm
         }
 
-        private static readonly string[] TintNames = {"None", "Parts", "Aspect Ratio", "Shielded", "Cl", "Cd", "Cm"};
+        private static readonly string[] TintNames = {"None", "Parts", "Aspect Ratio", "Wings", "Shielded", "Cl", "Cd", "Cm"};
 
         private sealed class Row
         {
@@ -81,6 +83,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             public FARWingAerodynamicModel Wing;
             public double S, OwnAR, EffectiveAR;
             public bool Shielded;
+            public int Group = -1;
             // forces at the condition (kN) and the pitching moment about the CoM (kN m), and the part's share of the
             // craft's coefficients (on the wing reference area and MAC, as the other editor tabs report the craft's)
             public double Lift, Drag, Moment, Cl, Cd, Cm;
@@ -245,7 +248,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             const int wName = 250, wNum = 52;
             if (nameStyle == null)
                 nameStyle = new GUIStyle(GUI.skin.label) {wordWrap = false, clipping = TextClipping.Clip};
-            string[] heads = {"S m2", "AR own", "AR", "Shld", "L kN", "D kN", "M kNm", "Cl", "Cd", "Cm"};
+            string[] heads = {"S m2", "AR own", "AR", "Wing", "Shld", "L kN", "D kN", "M kNm", "Cl", "Cd", "Cm"};
             // the scroll view as wide as the columns, so that only its vertical bar shows; the header over the columns
             RectOffset margin = GUI.skin.label.margin, pad = GUI.skin.scrollView.padding;
             float width = wName + heads.Length * wNum + (heads.Length + 1) * Math.Max(margin.left, margin.right) +
@@ -270,6 +273,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 Cell(wing ? r.S.ToString("F2", CultureInfo.InvariantCulture) : "", wNum);
                 Cell(wing ? r.OwnAR.ToString("F2", CultureInfo.InvariantCulture) : "", wNum);
                 Cell(wing ? r.EffectiveAR.ToString("F2", CultureInfo.InvariantCulture) : "", wNum);
+                Cell(r.Group >= 0 ? (r.Group + 1).ToString(CultureInfo.InvariantCulture) : "", wNum);
                 Cell(wing ? (r.Shielded ? "yes" : "") : "", wNum);
                 Cell(r.Lift.ToString("F2", CultureInfo.InvariantCulture), wNum);
                 Cell(r.Drag.ToString("F2", CultureInfo.InvariantCulture), wNum);
@@ -367,6 +371,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             }
 
             double area = 0, mac = 0;
+            var groupIndex = new Dictionary<object, int>();
             foreach (FARWingAerodynamicModel w in wings)
             {
                 if (!(w && w.part))
@@ -387,6 +392,23 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 r.OwnAR = w.OwnAR;
                 r.EffectiveAR = w.EffectiveAR;
                 r.Shielded = w.isShielded;
+                object key = w.WingInteraction?.WingKey;
+                if (key != null)
+                {
+                    if (!groupIndex.TryGetValue(key, out int g))
+                    {
+                        // a wing and its mirror image are one wing: the index of a symmetry counterpart's, if it has one
+                        g = -1;
+                        foreach (Part c in w.part.symmetryCounterparts)
+                            if (c != null && byPart.TryGetValue(c, out Row cr) && cr.Group >= 0)
+                                g = cr.Group;
+                        if (g < 0)
+                            g = groupIndex.Count == 0 ? 0 : groupIndex.Values.Max() + 1;
+                        groupIndex[key] = g;
+                    }
+
+                    r.Group = g;
+                }
 
                 Vector3d moment = -Vector3d.Cross(w.GetAerodynamicCenter() - com, force);
                 r.Lift += -Vector3d.Dot(force, liftDown);
@@ -443,8 +465,10 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             rows.Sort((a, b) => Math.Abs(b.Lift) + Math.Abs(b.Drag) > Math.Abs(a.Lift) + Math.Abs(a.Drag) ? 1 :
                                 Math.Abs(b.Lift) + Math.Abs(b.Drag) < Math.Abs(a.Lift) + Math.Abs(a.Drag) ? -1 : 0);
             summary = string.Format(CultureInfo.InvariantCulture,
-                                    "Mach {0:F3}, q {1:F2} kPa; craft Cl {2:F4}, Cd {3:F4}, Cm {4:F4} on S {5:F2} m2, MAC {6:F2} m",
-                                    mach, q, cl, cd, cm, area, mac);
+                                    "Mach {0:F3}, q {1:F2} kPa; craft Cl {2:F4}, Cd {3:F4}, Cm {4:F4} on S {5:F2} m2, MAC {6:F2} m; " +
+                                    "{7} wings ({8})",
+                                    mach, q, cl, cd, cm, area, mac, groupIndex.Values.Distinct().Count(),
+                                    FARDebugValues.wholeWingAspectRatio ? "whole-wing AR" : "each panel's own AR");
         }
 
         /// <summary>The parts tinted by the chosen quantity (none: cleared); the legend to go with it</summary>
@@ -521,6 +545,17 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                     legendTitle = "Shielding";
                     legendSwatches.Add(new KeyValuePair<Color, string>(ShieldedColor, "shielded (no lift)"));
                     legendSwatches.Add(new KeyValuePair<Color, string>(ExposedColor, "exposed"));
+                    break;
+                case Tint.Wings:
+                    legendTitle = "Wings";
+                    foreach (Row r in rows.Where(r => r.Group >= 0).GroupBy(r => r.Group).Select(g => g.First())
+                                          .OrderBy(r => r.Group))
+                        legendSwatches.Add(new KeyValuePair<Color, string>(
+                                               Hue(r.Group),
+                                               string.Format(CultureInfo.InvariantCulture, "{0}: AR {1:F1}", r.Group + 1,
+                                                             r.EffectiveAR)));
+                    if (rows.Any(r => r.Wing != null && r.Group < 0))
+                        legendSwatches.Add(new KeyValuePair<Color, string>(OwnArColor, "own AR"));
                     break;
                 case Tint.Cl:
                 case Tint.Cd:
@@ -638,6 +673,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         }
 
         private static readonly Color Clear = new Color(0, 0, 0, 0);
+        // a panel that keeps its own aspect ratio, in the Wings colors
+        private static readonly Color OwnArColor = new Color(0.4f, 0.4f, 0.4f);
         private static readonly Color ShieldedColor = new Color(1, 0.1f, 0.1f), ExposedColor = new Color(0.1f, 0.8f, 0.1f);
 
         // aspect ratio, as a fraction of the largest: blue 0, cyan, green, yellow, red at the largest
@@ -660,6 +697,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                     return Hue(rows.IndexOf(r));
                 case Tint.AspectRatio:
                     return r.Wing == null ? Clear : ArColor((float)(r.EffectiveAR / max));
+                case Tint.Wings:
+                    return r.Wing == null ? Clear : r.Group < 0 ? OwnArColor : Hue(r.Group);
                 case Tint.Shielded:
                     return r.Wing == null ? Clear : r.Shielded ? ShieldedColor : ExposedColor;
                 case Tint.Cl:
