@@ -42,6 +42,7 @@ Copyright 2022, Michael Ferrara, aka Ferram4
 	http://forum.kerbalspaceprogram.com/threads/60863
  */
 
+using System;
 using System.Collections.Generic;
 using FerramAerospaceResearch;
 using FerramAerospaceResearch.FARGUI.FAREditorGUI;
@@ -119,8 +120,73 @@ namespace ferram4
             velocityEditor = vel;
         }
 
+        /// <summary>
+        ///     The external temperature the stock FlightIntegrator reports at this speed and Mach
+        ///     (CalculateShockTemperature): the ambient temperature or the shock temperature, whichever is higher, with
+        ///     the game's reentry heat scale and the body's multiplier.
+        /// </summary>
+        internal static double StockExternalTemperature(CelestialBody body, double ambientTemperature, double speed, double mach)
+        {
+            return StockExternalTemperature(ShockTemperatureParameters.Capture(body), ambientTemperature, speed, mach);
+        }
+
+        /// <summary>StockExternalTemperature with the game's parameters as captured (see ShockTemperatureParameters).</summary>
+        internal static double StockExternalTemperature(
+            in ShockTemperatureParameters p,
+            double ambientTemperature,
+            double speed,
+            double mach
+        )
+        {
+            double lerp = (mach - p.LerpStartMach) / (p.LerpEndMach - p.LerpStartMach);
+            lerp = Math.Pow(UtilMath.Clamp01(lerp), p.LerpExponent);
+            double shock = speed * p.NewtonianFactor;
+            if (lerp > 0)
+                shock = UtilMath.LerpUnclamped(shock, p.MachScalar * Math.Pow(speed, p.MachVelocityExponent), lerp);
+            shock *= p.HeatScale * p.BodyMultiplier;
+            return Math.Max(ambientTemperature, shock);
+        }
+
+        /// <summary>
+        ///     The game's parameters the shock temperature takes (PhysicsGlobals, the difficulty's reentry heat scale,
+        ///     the body's multiplier), captured on the main thread so the temperature can be computed on any thread.
+        /// </summary>
+        internal readonly struct ShockTemperatureParameters
+        {
+            public readonly double LerpStartMach;
+            public readonly double LerpEndMach;
+            public readonly double LerpExponent;
+            public readonly double NewtonianFactor;
+            public readonly double MachScalar;
+            public readonly double MachVelocityExponent;
+            public readonly double HeatScale;
+            public readonly double BodyMultiplier;
+
+            private ShockTemperatureParameters(CelestialBody body)
+            {
+                LerpStartMach = PhysicsGlobals.NewtonianMachTempLerpStartMach;
+                LerpEndMach = PhysicsGlobals.NewtonianMachTempLerpEndMach;
+                LerpExponent = PhysicsGlobals.NewtonianMachTempLerpExponent;
+                NewtonianFactor = PhysicsGlobals.NewtonianTemperatureFactor;
+                MachScalar = PhysicsGlobals.MachTemperatureScalar;
+                MachVelocityExponent = PhysicsGlobals.MachTemperatureVelocityExponent;
+                HeatScale = HighLogic.CurrentGame != null ? HighLogic.CurrentGame.Parameters.Difficulty.ReentryHeatScale : 1;
+                BodyMultiplier = body != null ? body.shockTemperatureMultiplier : 1;
+            }
+
+            public static ShockTemperatureParameters Capture(CelestialBody body)
+            {
+                return new ShockTemperatureParameters(body);
+            }
+        }
+
         public virtual Vector3d GetVelocity()
         {
+            // Inside a flight prediction the airflow is the simulated one, so a wing reading an upstream neighbour's
+            // angle of attack takes it at the simulated condition, not the one the vessel is flying.
+            SimThreadContext.PredictionCall call = SimThreadContext.Prediction;
+            if (call != null)
+                return call.Velocity;
             if (HighLogic.LoadedSceneIsFlight)
                 return part.Rigidbody.velocity +
                        Krakensbane.GetFrameVelocityV3f() -

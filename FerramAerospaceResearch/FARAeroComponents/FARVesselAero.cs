@@ -59,13 +59,15 @@ namespace FerramAerospaceResearch.FARAeroComponents
     {
         public readonly Vector3 VelocityVector;
         public readonly Vector3d Position;
+        public readonly double UT;
         public readonly Vector3 Force;
         public readonly Vector3 Torque;
 
-        public CachedSimResults(Vector3 velocityVector, Vector3d position, Vector3 force, Vector3 torque)
+        public CachedSimResults(Vector3 velocityVector, Vector3d position, double ut, Vector3 force, Vector3 torque)
         {
             VelocityVector = velocityVector;
             Position = position;
+            UT = ut;
             Force = force;
             Torque = torque;
         }
@@ -94,6 +96,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
         private CachedSimResults lastSimResults;
         // Predictions can come from more than one thread; the memo is read and written whole under this lock.
         private readonly object lastSimResultsLock = new object();
+
+        // At most this many passes over the wings in a prediction to bring them to a consistent state.
+        private const int MaxPredictionPasses = 8;
 
         // Changes whenever the aerodynamic model a snapshot holds changes: bumped before and after the aero data is
         // swapped for a new voxelization (the sections swapped out are then refilled by the voxel thread), when the
@@ -296,14 +301,29 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 m.ApplyForces();
         }
 
-        private static bool loggedOffMainThread;
-        private static bool loggedNoSlot;
-
         public void SimulateAeroProperties(
             out Vector3 aeroForce,
             out Vector3 aeroTorque,
             Vector3 velocityWorldVector,
             double altitude
+        )
+        {
+            SimulateAeroPropertiesAt(out aeroForce,
+                                   out aeroTorque,
+                                   velocityWorldVector,
+                                   vessel.CurrentPosition(altitude),
+                                   Planetarium.GetUniversalTime());
+        }
+
+        private static bool loggedOffMainThread;
+        private static bool loggedNoSlot;
+
+        public void SimulateAeroPropertiesAt(
+            out Vector3 aeroForce,
+            out Vector3 aeroTorque,
+            Vector3 velocityWorldVector,
+            Vector3d position,
+            double ut
         )
         {
             // The live vessel is read here (transforms, rigidbodies, the atmosphere functions), which only the main
@@ -321,16 +341,13 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 return;
             }
 
-            Vector3d position = vessel.CurrentPosition(altitude);
-
+            // The atmosphere depends on latitude, longitude and time (sun heating), custom or not.
             CachedSimResults memo;
             lock (lastSimResultsLock)
                 memo = lastSimResults;
             if (velocityWorldVector.NearlyEqual(memo.VelocityVector) &&
-                (FARAtmosphere.IsCustom
-                     // Custom atmospheres are not guaranteed to be independent of latitude and longitude
-                     ? position.NearlyEqual(memo.Position)
-                     : altitude.NearlyEqual(memo.Position.z)))
+                position.NearlyEqual(memo.Position) &&
+                ut.NearlyEqual(memo.UT))
             {
                 aeroForce = memo.Force;
                 aeroTorque = memo.Torque;
@@ -339,9 +356,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
             var center = new FARCenterQuery();
 
-            //Calculate main gas properties
+            //Calculate main gas properties (the game's temperature at the point, so the density is the game's)
             GasProperties properties =
-                FARAtmosphere.GetGasProperties(vessel.mainBody, position, Planetarium.GetUniversalTime());
+                FARAtmosphere.GetPredictionGasProperties(vessel.mainBody, position, ut);
 
             if (properties.Pressure <= 0 || properties.Temperature <= 0)
             {
@@ -352,11 +369,13 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
             float velocityMag = velocityWorldVector.magnitude;
             float machNumber = (float)(velocityMag / properties.SpeedOfSound);
+            // The viscosity takes the temperature the flight's Reynolds number does (FARAtmosphere.GetTemperature, the
+            // altitude curve unless a custom function is set), not the density's.
             float reynoldsNumber = (float)FARAeroUtil.CalculateReynoldsNumber(properties.Density,
                                                                               Length,
                                                                               velocityMag,
                                                                               machNumber,
-                                                                              properties.Temperature,
+                                                                              FARAtmosphere.GetTemperature(vessel.mainBody, position, ut),
                                                                               properties.AdiabaticIndex);
 
             float reynoldsPerLength = reynoldsNumber / (float)Length;
@@ -370,8 +389,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 // control surfaces keep their working state per slot, and slot 0 is the flight's: evaluating on it
                 // overwrote the lift slope, stall, aerodynamic center and neighbour values the next physics frame
                 // reads, so any caller (a trajectory predictor, an autopilot) changed how the vessel flew, and each
-                // prediction started from whatever the last one left. The slot starts from the flight's state, the
-                // one a prediction found on slot 0 before any other prediction had run.
+                // prediction started from whatever the flight or the last prediction left.
                 SimThreadContext.PredictionCall call = SimThreadContext.BeginPrediction(velocityWorldVector);
                 if (call == null)
                 {
@@ -389,6 +407,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
                 try
                 {
+                    call.ExternalTemperature =
+                        FARBaseAerodynamics.StockExternalTemperature(vessel.mainBody, properties.Temperature, velocityMag, machNumber);
                     foreach (FARAeroSection curSection in _currentAeroSections)
                         curSection?.PredictionCalculateAeroForces((float)properties.Density,
                                                                   machNumber,
@@ -399,6 +419,10 @@ namespace FerramAerospaceResearch.FARAeroComponents
                                                                   center);
 
                     SimulateWings(_legacyWingModels, true, velocityWorldVector, machNumber, properties.Density, center);
+
+                    // The flight path adds intake ram drag after the sections; without it the prediction's drag was low
+                    // by the whole ram drag, which grows toward Mach 1 (5-7% of an Aeris 4A's drag below 20 km).
+                    _vesselIntakeRamDrag?.SimulateIntakeRamDrag(machNumber, velocityWorldVector, (float)properties.Density, center);
                 }
                 finally
                 {
@@ -410,12 +434,15 @@ namespace FerramAerospaceResearch.FARAeroComponents
             aeroTorque = center.TorqueAt(vessel.CoM);
 
             lock (lastSimResultsLock)
-                lastSimResults = new CachedSimResults(velocityWorldVector, position, aeroForce, aeroTorque);
+                lastSimResults = new CachedSimResults(velocityWorldVector, position, ut, aeroForce, aeroTorque);
         }
 
         /// <summary>
-        /// The wings at one condition on the calling thread's prediction slot, each from the state the flight left
-        /// (slot 0's, or the snapshot's capture of it), its force added at its part's position.
+        /// The wings at one condition on the calling thread's prediction slot. A wing reads its upstream neighbours'
+        /// lift slope, stall, sweep and Cd0 as last calculated on the slot, so every wing starts from the same fixed
+        /// state and passes are repeated until no wing's Cl, Cd or stall changes (at most MaxPredictionPasses), then
+        /// the forces are taken. The answer depends on the inputs alone. A shielded wing (under a tenth of its area
+        /// exposed) applies no force in flight and is left out of the editor's analyses, so it is left out here too.
         /// </summary>
         private static void SimulateWings(
             IList<FARWingAerodynamicModel> wings,
@@ -427,21 +454,41 @@ namespace FerramAerospaceResearch.FARAeroComponents
         )
         {
             // live: the vessel's wing list, where a destroyed wing is found with Unity's == null and each wing's
-            // prediction state is started here, every wing before any is computed (a wing reads its neighbours'
-            // values on the slot). From a snapshot the wings are the captured ones (C# references, given their
-            // captured state beforehand), and no Unity call is made.
+            // prediction state is reset here. From a snapshot the wings are the captured ones (C# references,
+            // reset and given their captured state beforehand), and no Unity call is made.
+            int n = wings.Count;
             if (live)
                 foreach (FARWingAerodynamicModel w in wings)
                     w?.BeginPredictionState();
 
-            var dummy = new FARCenterQuery();
-            foreach (FARWingAerodynamicModel w in wings)
+            var last = new double[3 * n];
+            var discard = new FARCenterQuery();
+            for (int pass = 0; pass < MaxPredictionPasses; pass++)
             {
-                if (IsMissing(w, live))
-                    continue;
-                Vector3 position = live ? w.transform.position : w.SolveGeom.Value.Position;
-                center.AddForce(position, w.PrecomputeCenterOfLift(velocity, machNumber, density, dummy));
+                bool changed = pass == 0;
+                for (int i = 0; i < n; i++)
+                {
+                    FARWingAerodynamicModel w = wings[i];
+                    if (IsMissing(w, live) || w.GetShielded())
+                        continue;
+                    w.PrecomputeCenterOfLift(velocity, machNumber, density, discard);
+                    w.GetPredictionState(out double cl, out double cd, out double stallFraction);
+                    if (cl != last[3 * i] || cd != last[3 * i + 1] || stallFraction != last[3 * i + 2])
+                        changed = true;
+                    last[3 * i] = cl;
+                    last[3 * i + 1] = cd;
+                    last[3 * i + 2] = stallFraction;
+                }
+
+                if (!changed)
+                    break;
             }
+
+            // PrecomputeCenterOfLift adds the wing's force at its aerodynamic center, as the flight path does;
+            // adding it again at the part's transform origin put every wing's lift at its attach point.
+            foreach (FARWingAerodynamicModel w in wings)
+                if (!IsMissing(w, live) && !w.GetShielded())
+                    w.PrecomputeCenterOfLift(velocity, machNumber, density, center);
         }
 
         private static bool IsMissing(FARWingAerodynamicModel w, bool live)
@@ -486,8 +533,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 Length = Length,
                 AdiabaticIndex = FARAeroUtil.CurrentAdiabaticIndex,
                 VesselAdiabaticIndex = FARAtmosphere.GetAdiabaticIndex(vessel),
-                ExternalTemperature = vessel.externalTemperature,
-                BodyData = FARAeroUtil.currentBodyData
+                Shock = FARBaseAerodynamics.ShockTemperatureParameters.Capture(body),
+                BodyData = FARAeroUtil.currentBodyData,
+                RamDrag = _vesselIntakeRamDrag?.Capture()
             };
 
             // Sections and the part modules they apply force to.
@@ -645,14 +693,16 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     call.AdiabaticIndex = snapshot.AdiabaticIndex;
                     call.VesselAdiabaticIndex = snapshot.VesselAdiabaticIndex;
                     call.BodyData = snapshot.BodyData;
-                    call.ExternalTemperature = snapshot.ExternalTemperature;
+                    call.ExternalTemperature =
+                        FARBaseAerodynamics.StockExternalTemperature(in snapshot.Shock, properties.Temperature, velocityMag, machNumber);
 
-                    // Inside the call, so the viscosity is the captured body's.
+                    // Inside the call, so the viscosity is the captured body's. The viscosity takes the temperature
+                    // the flight's Reynolds number does, not the density's.
                     float reynoldsNumber = (float)FARAeroUtil.CalculateReynoldsNumber(properties.Density,
                                                                                       snapshot.Length,
                                                                                       velocityMag,
                                                                                       machNumber,
-                                                                                      properties.Temperature,
+                                                                                      snapshot.ReynoldsTemperature(latLonAltitude, ut, in properties),
                                                                                       properties.AdiabaticIndex);
                     float reynoldsPerLength = reynoldsNumber / (float)snapshot.Length;
                     float skinFriction = (float)FARAeroUtil.SkinFrictionDrag(reynoldsNumber, machNumber);
@@ -685,6 +735,13 @@ namespace FerramAerospaceResearch.FARAeroComponents
                                                               center);
 
                     SimulateWings(snapshot.SimulatedWings, false, velocityWorldVector, machNumber, properties.Density, center);
+
+                    if (snapshot.RamDrag != null)
+                        VesselIntakeRamDrag.SimulateIntakeRamDrag(snapshot.RamDrag,
+                                                                  machNumber,
+                                                                  velocityWorldVector,
+                                                                  (float)properties.Density,
+                                                                  center);
                 }
                 finally
                 {

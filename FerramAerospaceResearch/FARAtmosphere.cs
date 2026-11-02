@@ -191,6 +191,45 @@ namespace FerramAerospaceResearch
             new(((body, latLonAltitude, ut) => body.GetTemperature(latLonAltitude.z)), "Temperature");
 
         /// <summary>
+        ///     The temperature the game uses for vessel.atmDensity at a latitude, longitude and altitude: the altitude
+        ///     curve plus the latitude and sun offset FlightIntegrator adds (CelestialBody.GetAtmoThermalStats). The
+        ///     point is carried to the given time by the body's rotation; the sun's own motion over a prediction is
+        ///     ignored. Outside flight (no position to speak of) it is the altitude curve alone.
+        ///
+        ///     Predictions take it in place of the default temperature function (see GetPredictionGasProperties), so
+        ///     their density matches the game's at the predicted point. The flight itself keeps the default: its
+        ///     density is vessel.atmDensity already, and the default temperature feeds only its Reynolds number.
+        /// </summary>
+        internal static double GameTemperature(CelestialBody body, Vector3d latLonAltitude, double ut)
+        {
+            double altitude = latLonAltitude.z;
+            double baseTemperature = body.GetTemperature(altitude);
+            if (!HighLogic.LoadedSceneIsFlight || !body.atmosphere || altitude > body.atmosphereDepth)
+                return baseTemperature;
+            CelestialBody sun = Planetarium.fetch != null ? Planetarium.fetch.Sun : null;
+            if (sun == null || sun == body)
+                return baseTemperature;
+
+            double longitude = latLonAltitude.y;
+            if (body.rotates && body.rotationPeriod != 0)
+                longitude += 360.0 * (ut - Planetarium.GetUniversalTime()) / body.rotationPeriod;
+            Vector3d upAxis = body.GetSurfaceNVector(latLonAltitude.x, longitude);
+            Vector3d toSun = sun.position - body.GetWorldSurfacePosition(latLonAltitude.x, longitude, altitude);
+            double distance = toSun.magnitude;
+            Vector3d sunVector = distance > 0 ? toSun / distance : upAxis;
+            body.GetAtmoThermalStats(false,
+                                     sun,
+                                     sunVector,
+                                     Vector3d.Dot(sunVector, upAxis),
+                                     upAxis,
+                                     altitude,
+                                     out double temperatureOffset,
+                                     out _,
+                                     out _);
+            return body.GetFullTemperature(altitude, temperatureOffset);
+        }
+
+        /// <summary>
         ///     Simulation adiabatic index function
         /// </summary>
         private static readonly PropertyDispatcher adiabaticIndexFunction =
@@ -407,7 +446,8 @@ namespace FerramAerospaceResearch
         /// <summary>
         ///     The property functions as a vessel snapshot takes them: whether each is custom, whether every custom one
         ///     may be called from any thread, and the functions a prediction calls (a custom one as set, else the
-        ///     default). The snapshot keeps the functions, so one set after the capture does not reach its predictions.
+        ///     default; for the temperature, the game's temperature). The snapshot keeps the functions, so one set
+        ///     after the capture does not reach its predictions.
         /// </summary>
         internal static bool PressureIsCustom => pressureFunction.IsCustom;
         internal static bool TemperatureIsCustom => temperatureFunction.IsCustom;
@@ -420,7 +460,8 @@ namespace FerramAerospaceResearch
 
         internal static PropertyDelegate PredictionPressureFunction => pressureFunction.Function;
 
-        internal static PropertyDelegate PredictionTemperatureFunction => temperatureFunction.Function;
+        internal static PropertyDelegate PredictionTemperatureFunction =>
+            temperatureFunction.IsCustom ? temperatureFunction.Function : GameTemperature;
 
         internal static PropertyDelegate PredictionAdiabaticIndexFunction => adiabaticIndexFunction.Function;
         internal static PropertyDelegate PredictionGasConstantFunction => gasConstantFunction.Function;
@@ -453,6 +494,29 @@ namespace FerramAerospaceResearch
         public static GasProperties GetGasProperties(Vessel vessel)
         {
             return GetGasProperties(vessel, Planetarium.GetUniversalTime());
+        }
+
+        /// <summary>
+        ///     The temperature a prediction takes: a custom temperature function as it is, else the game's temperature
+        ///     at the point (<see cref="GameTemperature" />). Main thread.
+        /// </summary>
+        internal static double GetPredictionTemperature(CelestialBody body, Vector3d latLonAltitude, double ut)
+        {
+            return temperatureFunction.IsCustom
+                       ? GetTemperature(body, latLonAltitude, ut)
+                       : GameTemperature(body, latLonAltitude, ut);
+        }
+
+        /// <summary>
+        ///     The gas properties a prediction takes: those of <see cref="GetGasProperties(CelestialBody, Vector3d, double)" />
+        ///     with the temperature of <see cref="GetPredictionTemperature" />. Main thread.
+        /// </summary>
+        internal static GasProperties GetPredictionGasProperties(CelestialBody body, Vector3d latLonAltitude, double ut)
+        {
+            return new(pressure: GetPressure(body, latLonAltitude, ut),
+                       temperature: GetPredictionTemperature(body, latLonAltitude, ut),
+                       adiabaticIndex: GetAdiabaticIndex(body, latLonAltitude, ut),
+                       gasConstant: GetGasConstant(body, latLonAltitude, ut));
         }
     }
 }
