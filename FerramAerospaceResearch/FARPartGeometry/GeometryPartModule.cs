@@ -53,7 +53,6 @@ using FerramAerospaceResearch.FARPartGeometry.GeometryModification;
 using FerramAerospaceResearch.Settings;
 using KSP.UI.Screens;
 using KSPCommunityFixes;
-using TweakScale;
 using UnityEngine;
 
 namespace FerramAerospaceResearch.FARPartGeometry
@@ -84,7 +83,7 @@ namespace FerramAerospaceResearch.FARPartGeometry
         }
     }
 
-    public class GeometryPartModule : PartModule, IRescalable<GeometryPartModule>
+    public class GeometryPartModule : PartModule
     {
         private static int ignoreLayer0 = -1;
         public bool destroyed;
@@ -158,12 +157,15 @@ namespace FerramAerospaceResearch.FARPartGeometry
             get { return config.ignoreForMainAxis; }
         }
 
-        public void OnRescale(ScalingFactor factor)
+        // Called by the TweakScale handler in FerramAerospaceResearch.TweakScale.dll. This assembly must not
+        // reference Scale_Redist: the burst compiler fails on unresolvable references and the TweakScale
+        // redist DLL is not named Scale_Redist.dll.
+        public void OnRescale(float linearScale)
         {
             if (meshDataList == null)
                 return;
 
-            Rescale(factor.absolute.linear * Vector3.one);
+            Rescale(linearScale * Vector3.one);
         }
 
         private void DebugAddMesh(Transform t)

@@ -38,3 +38,6 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyFileVersion("0.16.2.0")]
 [assembly: KSPAssemblyDependency("ModularFlightIntegrator", 1, 0)]
 [assembly: KSPAssemblyDependency("KSPCommunityFixes", 1, 36)]
+
+// KSPBurst only burst compiles assemblies that depend on it, this also pulls in the jobs in FerramAerospaceResearch.Base
+[assembly: KSPAssemblyDependency("KSPBurst", 1, 7)]
