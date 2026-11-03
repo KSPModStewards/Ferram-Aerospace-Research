@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    FAR depends on a version of 999_Scale_Redist.dll that doesn't actually match
+    any of the ones that get installed by CKAN. This causes the burst compiler to
+    break when it attempts to handle FAR.
+
+    This package is a separate dll that has FAR's tweakscale provider. It does
+    not get compiled by burst and so does not break the burst compiler.
+  -->
+  <PropertyGroup>
+    <RootNamespace>FerramAerospaceResearch.TweakScale</RootNamespace>
+    <AssemblyName>FerramAerospaceResearch.TweakScale</AssemblyName>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DebugSymbols>true</DebugSymbols>
+    <Optimize>false</Optimize>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' != 'Debug' ">
+    <Optimize>true</Optimize>
+    <DefineConstants>TRACE</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Built against the original redist: IRescalable<T> and ScalingFactor are the same in every TweakScale fork -->
+    <Reference Include="Scale_Redist">
+      <HintPath>..\GameData\FerramAerospaceResearch\Plugins\Scale_Redist.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FerramAerospaceResearch\FerramAerospaceResearch.csproj">
+      <Private>False</Private>
+    </ProjectReference>
+  </ItemGroup>
+</Project>

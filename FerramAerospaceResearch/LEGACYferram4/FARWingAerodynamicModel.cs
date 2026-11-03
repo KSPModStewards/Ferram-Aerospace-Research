@@ -50,7 +50,6 @@ using FerramAerospaceResearch.FARAeroComponents;
 using FerramAerospaceResearch.Settings;
 using KSP.Localization;
 using KSPCommunityFixes;
-using TweakScale;
 using UnityEngine;
 
 // ReSharper disable once CheckNamespace
@@ -61,7 +60,7 @@ namespace ferram4
     ///     It uses Prandtl lifting line theory to calculate the basic lift and drag coefficients and includes compressibility
     ///     corrections for subsonic and supersonic flows; transonic regime has placeholder
     /// </summary>
-    public class FARWingAerodynamicModel : FARBaseAerodynamics, IRescalable<FARWingAerodynamicModel>, IPartMassModifier
+    public class FARWingAerodynamicModel : FARBaseAerodynamics, IPartMassModifier
     {
         protected const double criticalCl = 1.6;
         // rawAoAmax is read by FARWingInteraction from upstream wings (per-thread
@@ -258,10 +257,13 @@ namespace ferram4
             return ModifierChangeWhen.FIXED;
         }
 
-        public void OnRescale(ScalingFactor factor)
+        // Called by the TweakScale handler in FerramAerospaceResearch.TweakScale.dll, see
+        // GeometryPartModule.OnRescale. Keep the name and the MassScale lookup below: TweakScale Rescaled
+        // transpiles this method by name and pattern matches Fields.GetValue("MassScale").
+        public void OnRescale(float linearScale)
         {
-            b_2_actual = factor.absolute.linear * b_2;
-            MAC_actual = factor.absolute.linear * MAC;
+            b_2_actual = linearScale * b_2;
+            MAC_actual = linearScale * MAC;
             if (part.Modules.Contains("TweakScale"))
             {
                 PartModule m = part.Modules["TweakScale"];

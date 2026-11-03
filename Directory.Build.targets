@@ -4,8 +4,8 @@
   </Target>
 
   <!-- Only with KSP_DIR_INSTALL set (Directory.Build.props.user): replace GameData/FerramAerospaceResearch
-       in that install. FerramAerospaceResearch builds last, after Base and ferramGraph are copied. -->
-  <Target Name="FARInstall" AfterTargets="FARPostBuild" Condition=" '$(KSP_DIR_INSTALL)' != '' And '$(MSBuildProjectName)' == 'FerramAerospaceResearch' And '$(Configuration)' != 'Editor' ">
+       in that install. FerramAerospaceResearch.TweakScale builds last, after all the other projects are copied. -->
+  <Target Name="FARInstall" AfterTargets="FARPostBuild" Condition=" '$(KSP_DIR_INSTALL)' != '' And '$(MSBuildProjectName)' == 'FerramAerospaceResearch.TweakScale' And '$(Configuration)' != 'Editor' ">
     <PropertyGroup>
       <FARInstallDir>$(KSP_DIR_INSTALL)\GameData\FerramAerospaceResearch</FARInstallDir>
     </PropertyGroup>
