@@ -1,3 +1,7 @@
 [submodule "buildtools"]
 	path = buildtools
 	url = https://github.com/dkavolis/buildtools.git
+[submodule "KspTests/KspTest"]
+	path = KspTests/KspTest
+	url = https://github.com/chambem42/KspTest.git
+	branch = main

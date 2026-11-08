@@ -33,3 +33,7 @@ using System.Runtime.InteropServices;
 // [assembly: AssemblyVersion("1.0.*")]
 [assembly: AssemblyVersion("0.16.2.0")]
 [assembly: AssemblyFileVersion("0.16.2.0")]
+
+// the test suite (KspTests/): unit tests outside the game, in-game tests in it
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("FerramAerospaceResearch.UnitTests")]
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("FerramAerospaceResearch.KspTests")]
