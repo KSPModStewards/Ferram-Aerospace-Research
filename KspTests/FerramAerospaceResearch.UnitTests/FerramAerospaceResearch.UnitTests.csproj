@@ -1,0 +1,65 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!--
+        FAR's unit tests: the code that runs without the game (aero formulas, curves, formatting, config parsing), in a
+        plain .NET Framework process, in seconds. Built against FAR's compiled assemblies (FarBin: FAR's bin/Release by
+        default, so build FAR first) and the KSP and Unity assemblies in KspDir, copied beside the tests to run with them.
+        With stripped assemblies (KSPBuildTools' KSPLibs zip) Unity's types have no code: the tests that
+        need them skip (UnityRuntime.Available), the rest run.
+    -->
+    <PropertyGroup>
+        <TargetFramework>net48</TargetFramework>
+        <LangVersion>9</LangVersion>
+        <PlatformTarget>x64</PlatformTarget>
+        <IsPackable>false</IsPackable>
+        <IsTestProject>true</IsTestProject>
+        <RootNamespace>FerramAerospaceResearch.UnitTests</RootNamespace>
+        <FarBin Condition="'$(FarBin)' == ''">$(MSBuildThisFileDirectory)../../bin/Release</FarBin>
+        <KspManaged Condition="'$(KspManaged)' == '' and Exists('$(KspDir)/KSP_x64_Data/Managed')">$(KspDir)/KSP_x64_Data/Managed</KspManaged>
+        <KspManaged Condition="'$(KspManaged)' == ''">$(KspDir)/KSP_Data/Managed</KspManaged>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+        <PackageReference Include="xunit" Version="2.9.3" />
+        <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="Xunit.SkippableFact" Version="1.5.23" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- no shadow copies: FAR runs from bin, where an instrumented build's coverage recorder writes its counts -->
+        <!-- no theory enumeration at discovery: it serializes each case's arguments, which for a Unity type (LogType,
+             MeshTopology) reads its assembly's attributes, and a stripped UnityEngine module's attribute throws there -->
+        <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Reference Include="FerramAerospaceResearch" HintPath="$(FarBin)/FerramAerospaceResearch.dll" />
+        <Reference Include="FerramAerospaceResearch.Base" HintPath="$(FarBin)/FerramAerospaceResearch.Base.dll" />
+        <Reference Include="ferramGraph" HintPath="$(FarBin)/ferramGraph.dll" />
+        <Reference Include="Assembly-CSharp" HintPath="$(KspManaged)/Assembly-CSharp.dll" />
+        <Reference Include="Assembly-CSharp-firstpass" HintPath="$(KspManaged)/Assembly-CSharp-firstpass.dll" />
+        <Reference Include="UnityEngine" HintPath="$(KspManaged)/UnityEngine.dll" />
+        <Reference Include="UnityEngine.CoreModule" HintPath="$(KspManaged)/UnityEngine.CoreModule.dll" />
+        <Reference Include="UnityEngine.AnimationModule" HintPath="$(KspManaged)/UnityEngine.AnimationModule.dll" />
+        <!-- the game's other assemblies FAR's and KSP's types may load (not mscorlib or System*: the test runs on .NET's) -->
+        <None Include="$(KspManaged)/UnityEngine.*.dll;$(KspManaged)/KSPAssets.dll;$(KspManaged)/Assembly-CSharp*.dll"
+              CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" Visible="false" />
+        <!-- KSPBurst's Unity packages (FAR's Burst code; its config reflection walks those types' attributes), where the
+             install has them (FAR's build dependencies put them in KSPBuildTools' KSP_ROOT too) -->
+        <None Include="$(KspDir)/GameData/000_KSPBurst/Plugins/Unity.*.dll"
+              CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" Visible="false" />
+    </ItemGroup>
+
+    <Target Name="FarUnitTestsCheckInputs" BeforeTargets="ResolveAssemblyReferences">
+        <Error Condition="!Exists('$(FarBin)/FerramAerospaceResearch.dll')"
+               Text="No FAR build at $(FarBin): build FerramAerospaceResearch.sln (Release) first, or set FarBin." />
+        <Error Condition="!Exists('$(KspManaged)/Assembly-CSharp.dll')"
+               Text="No KSP assemblies at $(KspManaged): set KspDir (a KSP install, or KSPBuildTools' stripped KSP_ROOT)." />
+    </Target>
+
+</Project>

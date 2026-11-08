@@ -37,7 +37,9 @@ public class ExposureDebugger : Debugger
     {
         base.Dispose(disposing);
 
-        Object.Destroy(debugArrow);
+        // the arrow's GameObject (ArrowPointer.Create makes one for it), not only its component
+        if (debugArrow != null)
+            Object.Destroy(debugArrow.gameObject);
         debugArrow = null;
     }
 

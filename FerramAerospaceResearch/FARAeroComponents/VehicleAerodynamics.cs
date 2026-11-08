@@ -108,6 +108,11 @@ namespace FerramAerospaceResearch.FARAeroComponents
         private bool visualizing;
         public bool Voxelizing { get; private set; }
 
+        // a ForceCleanup asked for while a voxelization runs, left to the voxelization; under the lock, a voxelization's
+        // end (with the cleanup left to it) and ForceCleanup come one after the other
+        private readonly object _cleanupLock = new object();
+        private volatile bool _cleanupRequested;
+
         public Bounds VoxelBounds
         {
             get { return _voxel?.Bounds ?? new Bounds(); }
@@ -139,9 +144,31 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         public void ForceCleanup()
         {
+            // while a voxelization runs (queued or on its thread) it does the cleanup when it ends: done now, the model
+            // it is building would never be given back to the chunk pool, and it would go on with these cleared under it.
+            // The voxelization thread can wait on the main thread's tasks, so this cannot wait for it.
+            lock (_cleanupLock)
+            {
+                if (Voxelizing)
+                    _cleanupRequested = true;
+                else
+                    Cleanup(true);
+            }
+        }
+
+        /// <summary>
+        /// Gives the voxel model's chunks back and drops the lists. Off the main thread (a cleanup left to the
+        /// voxelization) only the chunks: clearing the debug voxel mesh waits on the main thread, which runs no FAR tasks
+        /// once the editor has gone, and the mesh goes with the scene.
+        /// </summary>
+        private void Cleanup(bool onMainThread)
+        {
             if (_voxel != null)
             {
-                _voxel.CleanupVoxel();
+                if (onMainThread)
+                    _voxel.CleanupVoxel();
+                else
+                    _voxel.RecycleVoxelChunks();
                 _voxel = null;
             }
 
@@ -310,12 +337,15 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         private void ClearDebugVoxel()
         {
-            _voxel.ClearVisualVoxels();
+            _voxel?.ClearVisualVoxels();
             visualizing = false;
         }
 
         private void DisplayDebugVoxels(Matrix4x4 localToWorldMatrix)
         {
+            // none while a new one is built
+            if (_voxel == null)
+                return;
             _voxel.VisualizeVoxel(localToWorldMatrix);
             visualizing = true;
         }
@@ -371,7 +401,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 //If the voxel still exists, cleanup everything so we can continue;
                 visualizing = false;
 
+                // its chunks go back to the pool for the new one: nothing may use or give back the old one after this
                 _voxel?.CleanupVoxel();
+                _voxel = null;
 
                 //set flag so that this function can't run again before voxelizing completes and queue voxelizing thread
                 Voxelizing = true;
@@ -391,8 +423,13 @@ namespace FerramAerospaceResearch.FARAeroComponents
             {
                 try
                 {
+                    // cleaned up before it started or while it was built: nobody wants the result
+                    if (_cleanupRequested)
+                        return;
                     //Actually voxelize it
                     _voxel = VehicleVoxel.CreateNewVoxel(_currentGeoModules, _voxelCount, vessel: vessel);
+                    if (_cleanupRequested)
+                        return;
                     if (_vehicleCrossSection.Length < _voxel.MaxArrayLength)
                         _vehicleCrossSection = _voxel.EmptyCrossSectionArray;
 
@@ -415,8 +452,14 @@ namespace FerramAerospaceResearch.FARAeroComponents
                         _voxel = null;
                     }
 
-                    //And unset the flag so that the main thread can queue it again
-                    Voxelizing = false;
+                    //And unset the flag so that the main thread can queue it again, a cleanup left to this done first
+                    lock (_cleanupLock)
+                    {
+                        if (_cleanupRequested)
+                            Cleanup(false);
+                        _cleanupRequested = false;
+                        Voxelizing = false;
+                    }
                 }
             }
         }
@@ -1531,6 +1574,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     }
                 }
 
+            // left with a cleanup to do (the editor gone), no main thread tasks: none may run until another scene
+            if (_cleanupRequested)
+                return;
             if (_moduleAndAreasDict.Count > 0)
                 VoxelizationThreadpool.Instance.RunOnMainThread(() =>
                 {
@@ -1559,6 +1605,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
             _newUnusedAeroModules.Clear();
 
+            if (_cleanupRequested)
+                return;
             VoxelizationThreadpool.Instance.RunOnMainThread(() =>
             {
                 foreach (GeometryPartModule geoModule in _currentGeoModules)
@@ -1784,14 +1832,15 @@ namespace FerramAerospaceResearch.FARAeroComponents
             return cP;
         }
 
-        // ReSharper disable once UnusedMember.Local
-        private double CalculateCpNoseDiscont(int index, double noseAreaSlope, double sectionThickness)
-        {
-            double cP_noseDiscont = index * sectionThickness * Math.PI;
-            cP_noseDiscont = noseAreaSlope / cP_noseDiscont;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Local
+        // private double CalculateCpNoseDiscont(int index, double noseAreaSlope, double sectionThickness)
+        // {
+        //     double cP_noseDiscont = index * sectionThickness * Math.PI;
+        //     cP_noseDiscont = noseAreaSlope / cP_noseDiscont;
 
-            return cP_noseDiscont;
-        }
+        //     return cP_noseDiscont;
+        // }
 
         private static double AdjustVelForFinitePressure(double vel)
         {
@@ -1933,107 +1982,109 @@ namespace FerramAerospaceResearch.FARAeroComponents
             return -drag; //force is negative
         }
 
-        // ReSharper disable once UnusedMember.Local
-        private double CalcAllTransonicWaveDrag(
-            VoxelCrossSection[] sections,
-            int front,
-            int numSections,
-            double sectionThickness
-        )
-        {
-            double drag = 0;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Local
+        // private double CalcAllTransonicWaveDrag(
+        //     VoxelCrossSection[] sections,
+        //     int front,
+        //     int numSections,
+        //     double sectionThickness
+        // )
+        // {
+        //     double drag = 0;
 
-            for (int j = 0; j < numSections; j++)
-            {
-                double accumulator = 0;
+        //     for (int j = 0; j < numSections; j++)
+        //     {
+        //         double accumulator = 0;
 
-                double Lj = (j + 0.5) * Math.Log(j + 0.5);
-                if (j > 0)
-                    Lj -= (j - 0.5) * Math.Log(j - 0.5);
+        //         double Lj = (j + 0.5) * Math.Log(j + 0.5);
+        //         if (j > 0)
+        //             Lj -= (j - 0.5) * Math.Log(j - 0.5);
 
-                for (int i = j; i < numSections; i++)
-                    accumulator += sections[front + i].secondAreaDeriv * sections[front + i - j].secondAreaDeriv;
+        //         for (int i = j; i < numSections; i++)
+        //             accumulator += sections[front + i].secondAreaDeriv * sections[front + i - j].secondAreaDeriv;
 
-                drag += accumulator * Lj;
-            }
+        //         drag += accumulator * Lj;
+        //     }
 
-            drag *= -sectionThickness * sectionThickness / Math.PI;
-            return drag;
-        }
+        //     drag *= -sectionThickness * sectionThickness / Math.PI;
+        //     return drag;
+        // }
 
-        // ReSharper disable once UnusedMember.Local
-        private double CalculateTransonicWaveDrag(
-            int i,
-            int index,
-            int numSections,
-            int front,
-            double sectionThickness,
-            double cutoff
-        )
-        {
-            double currentSectAreaCrossSection = MathClampAbs(_vehicleCrossSection[index].secondAreaDeriv, cutoff);
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Local
+        // private double CalculateTransonicWaveDrag(
+        //     int i,
+        //     int index,
+        //     int numSections,
+        //     int front,
+        //     double sectionThickness,
+        //     double cutoff
+        // )
+        // {
+        //     double currentSectAreaCrossSection = MathClampAbs(_vehicleCrossSection[index].secondAreaDeriv, cutoff);
 
-            if (currentSectAreaCrossSection.NearlyEqual(0)) //quick escape for 0 cross-section section drag
-                return 0;
+        //     if (currentSectAreaCrossSection.NearlyEqual(0)) //quick escape for 0 cross-section section drag
+        //         return 0;
 
-            int limDoubleDrag = Math.Min(i, numSections - i);
-            double sectionThicknessSq = sectionThickness * sectionThickness;
+        //     int limDoubleDrag = Math.Min(i, numSections - i);
+        //     double sectionThicknessSq = sectionThickness * sectionThickness;
 
-            double lj3rdTerm = Math.Log(sectionThickness) - 1;
+        //     double lj3rdTerm = Math.Log(sectionThickness) - 1;
 
-            double lj2ndTerm = 0.5 * Math.Log(0.5);
-            double drag = currentSectAreaCrossSection * (lj2ndTerm + lj3rdTerm);
+        //     double lj2ndTerm = 0.5 * Math.Log(0.5);
+        //     double drag = currentSectAreaCrossSection * (lj2ndTerm + lj3rdTerm);
 
 
-            for (int j = 1; j <= limDoubleDrag; j++) //section of influence from ahead and behind
-            {
-                double thisLj = (j + 0.5) * Math.Log(j + 0.5);
-                double tmp = thisLj;
-                thisLj -= lj2ndTerm;
-                lj2ndTerm = tmp;
+        //     for (int j = 1; j <= limDoubleDrag; j++) //section of influence from ahead and behind
+        //     {
+        //         double thisLj = (j + 0.5) * Math.Log(j + 0.5);
+        //         double tmp = thisLj;
+        //         thisLj -= lj2ndTerm;
+        //         lj2ndTerm = tmp;
 
-                tmp = MathClampAbs(_vehicleCrossSection[index + j].secondAreaDeriv, cutoff);
-                tmp += MathClampAbs(_vehicleCrossSection[index - j].secondAreaDeriv, cutoff);
+        //         tmp = MathClampAbs(_vehicleCrossSection[index + j].secondAreaDeriv, cutoff);
+        //         tmp += MathClampAbs(_vehicleCrossSection[index - j].secondAreaDeriv, cutoff);
 
-                thisLj += lj3rdTerm;
+        //         thisLj += lj3rdTerm;
 
-                drag += tmp * thisLj;
-            }
+        //         drag += tmp * thisLj;
+        //     }
 
-            if (i < numSections - i)
-                for (int j = 2 * i + 1; j < numSections; j++)
-                {
-                    double thisLj = (j - i + 0.5) * Math.Log(j - i + 0.5);
-                    double tmp = thisLj;
-                    thisLj -= lj2ndTerm;
-                    lj2ndTerm = tmp;
+        //     if (i < numSections - i)
+        //         for (int j = 2 * i + 1; j < numSections; j++)
+        //         {
+        //             double thisLj = (j - i + 0.5) * Math.Log(j - i + 0.5);
+        //             double tmp = thisLj;
+        //             thisLj -= lj2ndTerm;
+        //             lj2ndTerm = tmp;
 
-                    tmp = MathClampAbs(_vehicleCrossSection[j + front].secondAreaDeriv, cutoff);
+        //             tmp = MathClampAbs(_vehicleCrossSection[j + front].secondAreaDeriv, cutoff);
 
-                    thisLj += lj3rdTerm;
+        //             thisLj += lj3rdTerm;
 
-                    drag += tmp * thisLj;
-                }
-            else if (i > numSections - i)
-                for (int j = numSections - 2 * i - 2; j >= 0; j--)
-                {
-                    double thisLj = (i - j + 0.5) * Math.Log(i - j + 0.5);
-                    double tmp = thisLj;
-                    thisLj -= lj2ndTerm;
-                    lj2ndTerm = tmp;
+        //             drag += tmp * thisLj;
+        //         }
+        //     else if (i > numSections - i)
+        //         for (int j = numSections - 2 * i - 2; j >= 0; j--)
+        //         {
+        //             double thisLj = (i - j + 0.5) * Math.Log(i - j + 0.5);
+        //             double tmp = thisLj;
+        //             thisLj -= lj2ndTerm;
+        //             lj2ndTerm = tmp;
 
-                    tmp = MathClampAbs(_vehicleCrossSection[j + front].secondAreaDeriv, cutoff);
+        //             tmp = MathClampAbs(_vehicleCrossSection[j + front].secondAreaDeriv, cutoff);
 
-                    thisLj += lj3rdTerm;
+        //             thisLj += lj3rdTerm;
 
-                    drag += tmp * thisLj;
-                }
+        //             drag += tmp * thisLj;
+        //         }
 
-            drag *= sectionThicknessSq;
-            drag /= 2 * Math.PI;
-            drag *= currentSectAreaCrossSection;
-            return drag;
-        }
+        //     drag *= sectionThicknessSq;
+        //     drag /= 2 * Math.PI;
+        //     drag *= currentSectAreaCrossSection;
+        //     return drag;
+        // }
 
         private static double CalculateCriticalMachNumber(double finenessRatio)
         {

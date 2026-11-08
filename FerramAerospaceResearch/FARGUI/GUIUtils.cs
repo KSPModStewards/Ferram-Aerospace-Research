@@ -59,9 +59,14 @@ namespace FerramAerospaceResearch.FARGUI
 
         public static double TextEntryForDouble(string label, int labelWidth, double prevValue)
         {
-            string valString = prevValue.ToString("F5");
+            string shown = prevValue.ToString("F5");
+            string valString = shown;
             TextEntryField(label, labelWidth, ref valString);
 
+            // only an edit changes the value: the shown text is rounded (1.7894e-5 shows as 0.00002), and parsing it back
+            // every frame would round the value just by showing it
+            if (valString == shown)
+                return prevValue;
             return !Regex.IsMatch(valString, @"^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$")
                        ? prevValue
                        : double.Parse(valString);

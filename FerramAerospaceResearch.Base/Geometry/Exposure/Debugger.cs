@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using FerramAerospaceResearch.Resources;
 using JetBrains.Annotations;
@@ -115,36 +116,37 @@ public class Debugger : IDisposable
         Graphics.DrawTexture(texRect, Texture, Material);
     }
 
-    public void SaveToPNG([NotNull] string path, bool raw = false)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-            throw new ArgumentException("Value cannot be null or whitespace.", nameof(path));
-        if (Texture is null)
-            throw new InvalidOperationException("Cannot save null texture as PNG");
+    // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+    // public void SaveToPNG([NotNull] string path, bool raw = false)
+    // {
+    //     if (string.IsNullOrWhiteSpace(path))
+    //         throw new ArgumentException("Value cannot be null or whitespace.", nameof(path));
+    //     if (Texture is null)
+    //         throw new InvalidOperationException("Cannot save null texture as PNG");
 
-        var size = new int2(Texture.width, Texture.height);
-        RenderResources.SetupTexture(ref pngTexture, size);
-        RenderResources.SetupTexture(ref tempPngTexture, size);
+    //     var size = new int2(Texture.width, Texture.height);
+    //     RenderResources.SetupTexture(ref pngTexture, size);
+    //     RenderResources.SetupTexture(ref tempPngTexture, size);
 
-        if (raw)
-        {
-            RenderTexture.active = Texture;
-        }
-        else
-        {
-            // cannot blit to Texture2D directly...
-            Graphics.Blit(Texture, tempPngTexture, Material);
-            RenderTexture.active = tempPngTexture;
-        }
+    //     if (raw)
+    //     {
+    //         RenderTexture.active = Texture;
+    //     }
+    //     else
+    //     {
+    //         // cannot blit to Texture2D directly...
+    //         Graphics.Blit(Texture, tempPngTexture, Material);
+    //         RenderTexture.active = tempPngTexture;
+    //     }
 
-        // ReadPixels takes cares of synchronization
-        pngTexture.ReadPixels(new Rect(0, 0, size.x, size.y), 0, 0);
-        // no need for Apply since it will not be used on the gpu side anyway
+    //     // ReadPixels takes cares of synchronization
+    //     pngTexture.ReadPixels(new Rect(0, 0, size.x, size.y), 0, 0);
+    //     // no need for Apply since it will not be used on the gpu side anyway
 
-        byte[] bytes = pngTexture.EncodeToPNG();
-        File.WriteAllBytes(path, bytes);
-        FARLogger.InfoFormat("Saved rendered texture to {0}", path);
-    }
+    //     byte[] bytes = pngTexture.EncodeToPNG();
+    //     File.WriteAllBytes(path, bytes);
+    //     FARLogger.InfoFormat("Saved rendered texture to {0}", path);
+    // }
 
     private void ReleaseMaterial()
     {
@@ -192,6 +194,8 @@ public class Debugger : IDisposable
         GC.SuppressFinalize(this);
     }
 
+    // coverage: finalizer: runs only at GC time when Dispose was missed
+    [ExcludeFromCodeCoverage]
     ~Debugger()
     {
         Dispose(false);

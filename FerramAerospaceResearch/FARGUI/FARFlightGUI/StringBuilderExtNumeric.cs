@@ -10,6 +10,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 
 // ReSharper disable All
@@ -250,6 +251,15 @@ namespace StringLeakTest
                     string_builder.Append("-Infinity");
                     return string_builder;
                 }
+            }
+
+            // the int parts below overflow past the int range (the decimal cast throws): the framework's formatter,
+            // which allocates, for these rare values
+            if (float_val >= int.MaxValue || float_val <= int.MinValue)
+            {
+                string_builder.Append(float_val.ToString("F" + decimal_places.ToString(CultureInfo.InvariantCulture),
+                                                         CultureInfo.InvariantCulture));
+                return string_builder;
             }
 
             if (decimal_places == 0)

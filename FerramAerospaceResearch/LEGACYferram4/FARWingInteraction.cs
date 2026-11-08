@@ -355,47 +355,48 @@ namespace ferram4
         }
 
         //This updates the interactions of all wings near this one; call this one when something changes rather than all of them at once
-        // ReSharper disable once UnusedMember.Global
-        public HashSet<FARWingAerodynamicModel> UpdateNearbyWingInteractions(
-            HashSet<FARWingAerodynamicModel> wingsHandled
-        )
-        {
-            //Hashset to avoid repeating the same one affected
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Global
+        // public HashSet<FARWingAerodynamicModel> UpdateNearbyWingInteractions(
+        //     HashSet<FARWingAerodynamicModel> wingsHandled
+        // )
+        // {
+        //     //Hashset to avoid repeating the same one affected
 
-            foreach (FARWingAerodynamicModel w in nearbyWingModulesForwardList)
-            {
-                if (wingsHandled.Contains(w))
-                    continue;
-                w.UpdateThisWingInteractions();
-                wingsHandled.Add(w);
-            }
+        //     foreach (FARWingAerodynamicModel w in nearbyWingModulesForwardList)
+        //     {
+        //         if (wingsHandled.Contains(w))
+        //             continue;
+        //         w.UpdateThisWingInteractions();
+        //         wingsHandled.Add(w);
+        //     }
 
-            foreach (FARWingAerodynamicModel w in nearbyWingModulesBackwardList)
-            {
-                if (wingsHandled.Contains(w))
-                    continue;
-                w.UpdateThisWingInteractions();
-                wingsHandled.Add(w);
-            }
+        //     foreach (FARWingAerodynamicModel w in nearbyWingModulesBackwardList)
+        //     {
+        //         if (wingsHandled.Contains(w))
+        //             continue;
+        //         w.UpdateThisWingInteractions();
+        //         wingsHandled.Add(w);
+        //     }
 
-            foreach (FARWingAerodynamicModel w in nearbyWingModulesRightwardList)
-            {
-                if (wingsHandled.Contains(w))
-                    continue;
-                w.UpdateThisWingInteractions();
-                wingsHandled.Add(w);
-            }
+        //     foreach (FARWingAerodynamicModel w in nearbyWingModulesRightwardList)
+        //     {
+        //         if (wingsHandled.Contains(w))
+        //             continue;
+        //         w.UpdateThisWingInteractions();
+        //         wingsHandled.Add(w);
+        //     }
 
-            foreach (FARWingAerodynamicModel w in nearbyWingModulesLeftwardList)
-            {
-                if (wingsHandled.Contains(w))
-                    continue;
-                w.UpdateThisWingInteractions();
-                wingsHandled.Add(w);
-            }
+        //     foreach (FARWingAerodynamicModel w in nearbyWingModulesLeftwardList)
+        //     {
+        //         if (wingsHandled.Contains(w))
+        //             continue;
+        //         w.UpdateThisWingInteractions();
+        //         wingsHandled.Add(w);
+        //     }
 
-            return wingsHandled;
-        }
+        //     return wingsHandled;
+        // }
 
         /// <summary>
         ///     Finds every wing's group again, on every vessel: call when the model changes

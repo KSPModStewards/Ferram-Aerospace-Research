@@ -1,0 +1,204 @@
+ship = Radiator Test
+version = 1.12.5
+description = KspTest thermal area test craft
+type = VAB
+size = 3,2,3
+steamPublishedFileId = 0
+persistentId = 1234567
+rot = 0,0,0,0
+missionFlag = Squad/Flags/default
+vesselType = Ship
+OverrideDefault = False,False,False,False
+OverrideActionControl = 0,0,0,0
+OverrideAxisControl = 0,0,0,0
+OverrideGroupNames = ,,,
+PART
+{
+	part = fuelTank_4290000010
+	partName = Part
+	persistentId = 1100000010
+	pos = 0,15,0
+	attPos = 0,0,0
+	attPos0 = 0,15,0
+	rot = 0,0,0,1
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = radPanelLg_4290000011
+	link = radPanelLg_4290000012
+	link = solarPanels5_4290000013
+	link = solarPanels5_4290000014
+	attN = top,Null_0_0|0.981725|0_0|1|0_0|0.981725|0_0|1|0
+	attN = bottom,Null_0_0|-0.9125|0_0|-1|0_0|-0.9125|0_0|-1|0
+	EVENTS
+	{
+	}
+	ACTIONS
+	{
+	}
+	PARTDATA
+	{
+	}
+}
+PART
+{
+	part = radPanelLg_4290000011
+	partName = Part
+	persistentId = 1100000011
+	pos = 0.625,15,0
+	attPos = 0,0,0
+	attPos0 = 0.625,0,0
+	rot = 0,-0.70710678,0,0.70710678
+	attRot = 0,0,0,1
+	attRot0 = 0,-0.70710678,0,0.70710678
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,fuelTank_4290000010
+	EVENTS
+	{
+	}
+	ACTIONS
+	{
+	}
+	PARTDATA
+	{
+	}
+}
+PART
+{
+	part = radPanelLg_4290000012
+	partName = Part
+	persistentId = 1100000012
+	pos = -0.625,15,0
+	attPos = 0,0,0
+	attPos0 = -0.625,0,0
+	rot = 0,0.70710678,0,0.70710678
+	attRot = 0,0,0,1
+	attRot0 = 0,0.70710678,0,0.70710678
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,fuelTank_4290000010
+	EVENTS
+	{
+	}
+	ACTIONS
+	{
+	}
+	PARTDATA
+	{
+	}
+}
+PART
+{
+	part = solarPanels5_4290000013
+	partName = Part
+	persistentId = 1100000013
+	pos = 0,15.3,0.625
+	attPos = 0,0,0
+	attPos0 = 0,0.3,0.625
+	rot = 0,0,0,1
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,fuelTank_4290000010
+	EVENTS
+	{
+	}
+	ACTIONS
+	{
+	}
+	PARTDATA
+	{
+	}
+}
+PART
+{
+	part = solarPanels5_4290000014
+	partName = Part
+	persistentId = 1100000014
+	pos = 0,15.3,-0.625
+	attPos = 0,0,0
+	attPos0 = 0,0.3,-0.625
+	rot = 0,1,0,0
+	attRot = 0,0,0,1
+	attRot0 = 0,1,0,0
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,fuelTank_4290000010
+	EVENTS
+	{
+	}
+	ACTIONS
+	{
+	}
+	PARTDATA
+	{
+	}
+}

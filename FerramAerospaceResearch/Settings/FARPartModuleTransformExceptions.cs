@@ -53,13 +53,14 @@ namespace FerramAerospaceResearch.Settings
                 if (module is null)
                     continue;
 
-                for (int j = 1; j < pair.Value.Transforms.Count; ++j)
+                // from 0: the module name has its own field now, it no longer leads the list
+                foreach (string name in pair.Value.Transforms)
                 {
-                    string transformString =
-                        (string)module.GetType().GetField(pair.Value.Transforms[j]).GetValue(module);
-                    Transform.AddRange(string.IsNullOrEmpty(transformString)
-                                           ? p.FindModelComponents<Transform>(pair.Value.Transforms[j])
-                                           : p.FindModelComponents<Transform>(transformString));
+                    // a module field holding the transform's name, or the transform's own name
+                    string transformString = module.GetType().GetField(name)?.GetValue(module) as string;
+                    Transform.AddRange(p.FindModelComponents<Transform>(string.IsNullOrEmpty(transformString)
+                                                                           ? name
+                                                                           : transformString));
                 }
             }
 

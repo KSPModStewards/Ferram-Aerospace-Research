@@ -241,11 +241,12 @@ namespace FerramAerospaceResearch.FARAeroComponents
             }
         }
 
-        private void UpdateRenderers()
-        {
-            foreach (KeyValuePair<Part, List<Renderer>> pair in cachedRenderers)
-                exposureRenderer.SetupRenderers(pair.Key, pair.Value, pair.Key.mpb);
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // private void UpdateRenderers()
+        // {
+        //     foreach (KeyValuePair<Part, List<Renderer>> pair in cachedRenderers)
+        //         exposureRenderer.SetupRenderers(pair.Key, pair.Value, pair.Key.mpb);
+        // }
 
         private void OnVesselEvent(Vessel v)
         {

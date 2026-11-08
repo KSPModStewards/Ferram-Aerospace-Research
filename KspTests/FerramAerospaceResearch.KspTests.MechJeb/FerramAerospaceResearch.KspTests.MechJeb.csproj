@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!--
+        FAR's in-game tests that fly on MechJeb: deployed only into installs with MechJeb.
+        [UITest] methods the KspTest harness runs in a KSP session; loaded by KSP, so net48, built against the install in
+        KspDir (see ../Directory.Build.props). FerramAerospaceResearch.KspTests.Run runs them with dotnet test; FAR itself
+        does not depend on this.
+    -->
+    <PropertyGroup>
+        <TargetFramework>net48</TargetFramework>
+        <LangVersion>9</LangVersion>
+        <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+        <RootNamespace>FerramAerospaceResearch.KspTests.MechJeb</RootNamespace>
+        <IsPackable>false</IsPackable>
+        <IsTestProject>false</IsTestProject>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <!-- the harness and these modules from the KspTest submodule, compile-time only: the runner deploys them -->
+        <KspTestModules>MechJeb;Far;AtmosphereAutopilot</KspTestModules>
+    </PropertyGroup>
+
+    <Import Project="$(KspTestRoot)/build/KspTest.FromSource.targets" />
+
+</Project>

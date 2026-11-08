@@ -45,6 +45,7 @@ Copyright 2022, Michael Ferrara, aka Ferram4
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -241,7 +242,9 @@ namespace FerramAerospaceResearch.FARPartGeometry
             if (ignoreLayer0 < 0)
                 ignoreLayer0 = LayerMask.NameToLayer("TransparentFX");
 
-            GeometryPartModule modulePrefab = part.partInfo.partPrefab.FindModuleImplementingFast<GeometryPartModule>();
+            // a spawned asteroid's part has no prefab
+            Part prefab = part.partInfo?.partPrefab;
+            GeometryPartModule modulePrefab = prefab != null ? prefab.FindModuleImplementingFast<GeometryPartModule>() : null;
             if (modulePrefab is not null)
                 config = modulePrefab.config;
 
@@ -316,11 +319,12 @@ namespace FerramAerospaceResearch.FARPartGeometry
                 CheckAnimations();
         }
 
-        public void ClearMeshData()
-        {
-            meshDataList = null;
-            _ready = false;
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public void ClearMeshData()
+        // {
+        //     meshDataList = null;
+        //     _ready = false;
+        // }
 
         public void GeometryPartModuleRebuildMeshData()
         {
@@ -349,7 +353,9 @@ namespace FerramAerospaceResearch.FARPartGeometry
             meshTransforms.RemoveAll(IgnoredPredicate);
             List<MeshData> geometryMeshes = CreateMeshListFromTransforms(ref meshTransforms);
 
-            meshDataList = new List<GeometryMesh>();
+            // filled here and only then published: a voxelization thread may take meshDataList at any time and enumerate
+            // it, and a list it holds must not change under it
+            var meshes = new List<GeometryMesh>();
 
             Matrix4x4 worldToVesselMatrix = HighLogic.LoadedSceneIsFlight
                                                 ? vessel.vesselTransform.worldToLocalMatrix
@@ -366,8 +372,10 @@ namespace FerramAerospaceResearch.FARPartGeometry
                 }
 
                 var geoMesh = new GeometryMesh(m, meshTransforms[i], worldToVesselMatrix, this);
-                meshDataList.Add(geoMesh);
+                meshes.Add(geoMesh);
             }
+
+            meshDataList = meshes;
 
             _meshesToUpdate = 0;
             _started = true;
@@ -383,7 +391,12 @@ namespace FerramAerospaceResearch.FARPartGeometry
 
             if (t.gameObject.layer != ignoreLayer0)
             {
-                Transform prefabTransform = part.partInfo.partPrefab?.FindModelTransform(t.gameObject.name);
+                // Part.FindModelTransform, from the prefab's transform: it looks under partTransform, which a prefab that
+                // never woke does not have (the female EVA kerbal's, kerbalEVA_female_Exp, is not PartLoader's prefab)
+                Part prefab = part.partInfo.partPrefab;
+                Transform prefabTransform = prefab is null
+                                                ? null
+                                                : Part.FindHeirarchyTransform(prefab.transform.Find("model"), t.gameObject.name);
                 if (prefabTransform is null || prefabTransform.gameObject.layer != ignoreLayer0)
                     return false;
             }
@@ -540,41 +553,22 @@ namespace FerramAerospaceResearch.FARPartGeometry
             else if (part.Modules.Contains("ModuleResourceIntake"))
                 intakeType = "ModuleResourceIntake";
 
-            if (intakeType != "" && engineType != "")
+            // the adjusters take a ModuleResourceIntake, as AJE's AJEInlet is (one by that name that is not would be
+            // left out: an adjuster without its intake would have no transform)
+            var intake = intakeType != "" ? part.Modules[intakeType] as ModuleResourceIntake : null;
+
+            if (intake != null && engineType != "")
             {
-                PartModule module = part.Modules[intakeType];
-
-                if (module is ModuleResourceIntake intake)
-                {
-                    var intakeAdjuster =
-                        IntegratedIntakeEngineCrossSectionAdjuster.CreateAdjuster(intake, worldToVesselMatrix);
-                    crossSectionAdjusters.Add(intakeAdjuster);
-                }
-                else
-                {
-                    var intakeAdjuster =
-                        IntegratedIntakeEngineCrossSectionAdjuster.CreateAdjuster(module, worldToVesselMatrix);
-                    crossSectionAdjusters.Add(intakeAdjuster);
-                }
-
+                var intakeAdjuster =
+                    IntegratedIntakeEngineCrossSectionAdjuster.CreateAdjuster(intake, worldToVesselMatrix);
+                crossSectionAdjusters.Add(intakeAdjuster);
                 return;
             }
 
-            if (intakeType != "")
+            if (intake != null)
             {
-                PartModule module = part.Modules[intakeType];
-
-                if (module is ModuleResourceIntake intake)
-                {
-                    var intakeAdjuster = IntakeCrossSectionAdjuster.CreateAdjuster(intake, worldToVesselMatrix);
-                    crossSectionAdjusters.Add(intakeAdjuster);
-                }
-                else
-                {
-                    var intakeAdjuster = IntakeCrossSectionAdjuster.CreateAdjuster(module, worldToVesselMatrix);
-                    crossSectionAdjusters.Add(intakeAdjuster);
-                }
-
+                var intakeAdjuster = IntakeCrossSectionAdjuster.CreateAdjuster(intake, worldToVesselMatrix);
+                crossSectionAdjusters.Add(intakeAdjuster);
                 return;
             }
 
@@ -705,25 +699,31 @@ namespace FerramAerospaceResearch.FARPartGeometry
                         return;
                 _ready = false;
 
-                _meshesToUpdate = meshDataList.Count;
-                for (int i = 0; i < meshDataList.Count; ++i)
+                List<GeometryMesh> meshes = meshDataList;
+                _meshesToUpdate = meshes.Count;
+                List<GeometryMesh> kept = null;   // a copy without the gone meshes, once there is one
+                for (int i = 0; i < meshes.Count; ++i)
                 {
-                    GeometryMesh mesh = meshDataList[i];
+                    GeometryMesh mesh = meshes[i];
                     if (mesh.TrySetThisToVesselMatrixForTransform())
                     {
                         mesh.TransformBasis(worldToVesselMatrix);
+                        kept?.Add(mesh);
                     }
                     else
                     {
                         FARLogger.Info("A mesh on " + part.partInfo.title + " did not exist and was removed");
-                        meshDataList.RemoveAt(i);
-                        --i;
+                        // not removed from the list in place: a voxelization thread may be enumerating it
+                        if (kept == null) kept = meshes.GetRange(0, i);
                         lock (this)
                         {
                             --_meshesToUpdate;
                         }
                     }
                 }
+
+                if (kept != null)
+                    meshDataList = kept;
             }
 
             if (crossSectionAdjusters == null)
@@ -1091,6 +1091,8 @@ namespace FerramAerospaceResearch.FARPartGeometry
                 noRenderer = new List<string>();
             }
 
+            // coverage: only called at Debug log level (developer diagnostics)
+            [ExcludeFromCodeCoverage]
             public void Clear()
             {
                 meshes.Clear();
@@ -1098,6 +1100,8 @@ namespace FerramAerospaceResearch.FARPartGeometry
                 noRenderer.Clear();
             }
 
+            // coverage: only called at Debug log level (developer diagnostics)
+            [ExcludeFromCodeCoverage]
             public void Print(Part p)
             {
                 StringBuilder sb = StringBuilderCache.Acquire();

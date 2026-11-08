@@ -54,11 +54,12 @@ namespace FerramAerospaceResearch.FARPartGeometry
     {
         public static List<List<string>> ignorePartModuleTransforms;
 
-        // ReSharper disable once UnusedMember.Global
-        public static Bounds GetPartOverallLocalMeshBound(this Part part)
-        {
-            return GetPartOverallMeshBoundsInBasis(part, part.partTransform.worldToLocalMatrix);
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Global
+        // public static Bounds GetPartOverallLocalMeshBound(this Part part)
+        // {
+        //     return GetPartOverallMeshBoundsInBasis(part, part.partTransform.worldToLocalMatrix);
+        // }
 
         public static Bounds GetPartOverallMeshBoundsInBasis(this Part part, Matrix4x4 worldToBasisMatrix)
         {

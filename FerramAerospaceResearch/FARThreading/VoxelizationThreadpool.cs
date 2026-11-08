@@ -44,6 +44,7 @@ Copyright 2022, Michael Ferrara, aka Ferram4
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 
 namespace FerramAerospaceResearch.FARThreading
@@ -89,6 +90,8 @@ namespace FerramAerospaceResearch.FARThreading
             get { return _mainThread == Thread.CurrentThread; }
         }
 
+        // coverage: finalizer of a static singleton; never runs in a test
+        [ExcludeFromCodeCoverage]
         ~VoxelizationThreadpool()
         {
             for (int i = 0; i < _threads.Length; i++)

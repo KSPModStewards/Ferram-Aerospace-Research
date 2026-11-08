@@ -49,52 +49,53 @@ using PreFlightTests;
 namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.DesignConcerns
 {
     // ReSharper disable once UnusedMember.Global
-    internal class AeroStabilityConcern : DesignConcernBase
-    {
-        private readonly InstantConditionSim _instantSim;
-        private readonly InstantConditionSimInput _simInput;
-        private readonly EditorFacilities _editorFacility;
+    // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+    // internal class AeroStabilityConcern : DesignConcernBase
+    // {
+    //     private readonly InstantConditionSim _instantSim;
+    //     private readonly InstantConditionSimInput _simInput;
+    //     private readonly EditorFacilities _editorFacility;
 
-        public AeroStabilityConcern(InstantConditionSim instantSim, EditorFacilities editorFacility)
-        {
-            _instantSim = instantSim;
-            _editorFacility = editorFacility;
-            _simInput = new InstantConditionSimInput();
-        }
+    //     public AeroStabilityConcern(InstantConditionSim instantSim, EditorFacilities editorFacility)
+    //     {
+    //         _instantSim = instantSim;
+    //         _editorFacility = editorFacility;
+    //         _simInput = new InstantConditionSimInput();
+    //     }
 
-        public override bool TestCondition()
-        {
-            if (EditorLogic.SortedShipList.Count <= 0 || !_instantSim.Ready)
-                return true;
-            _simInput.alpha = -1;
-            _simInput.machNumber = 0.5;
-            _instantSim.GetClCdCmSteady(_simInput, out InstantConditionSimOutput output, true, true);
+    //     public override bool TestCondition()
+    //     {
+    //         if (EditorLogic.SortedShipList.Count <= 0 || !_instantSim.Ready)
+    //             return true;
+    //         _simInput.alpha = -1;
+    //         _simInput.machNumber = 0.5;
+    //         _instantSim.GetClCdCmSteady(_simInput, out InstantConditionSimOutput output, true, true);
 
-            double Cm_1 = output.Cm;
-            _simInput.alpha = 1;
-            _instantSim.GetClCdCmSteady(_simInput, out output, true, true);
+    //         double Cm_1 = output.Cm;
+    //         _simInput.alpha = 1;
+    //         _instantSim.GetClCdCmSteady(_simInput, out output, true, true);
 
-            return output.Cm <= Cm_1;
-        }
+    //         return output.Cm <= Cm_1;
+    //     }
 
-        public override string GetConcernTitle()
-        {
-            return Localizer.Format("FARDesignConcernStabTitle");
-        }
+    //     public override string GetConcernTitle()
+    //     {
+    //         return Localizer.Format("FARDesignConcernStabTitle");
+    //     }
 
-        public override string GetConcernDescription()
-        {
-            return Localizer.Format("FARDesignConcernDesc");
-        }
+    //     public override string GetConcernDescription()
+    //     {
+    //         return Localizer.Format("FARDesignConcernDesc");
+    //     }
 
-        public override DesignConcernSeverity GetSeverity()
-        {
-            return _editorFacility switch
-            {
-                EditorFacilities.VAB => DesignConcernSeverity.WARNING,
-                EditorFacilities.SPH => DesignConcernSeverity.CRITICAL,
-                _ => DesignConcernSeverity.WARNING
-            };
-        }
-    }
+    //     public override DesignConcernSeverity GetSeverity()
+    //     {
+    //         return _editorFacility switch
+    //         {
+    //             EditorFacilities.VAB => DesignConcernSeverity.WARNING,
+    //             EditorFacilities.SPH => DesignConcernSeverity.CRITICAL,
+    //             _ => DesignConcernSeverity.WARNING
+    //         };
+    //     }
+    // }
 }

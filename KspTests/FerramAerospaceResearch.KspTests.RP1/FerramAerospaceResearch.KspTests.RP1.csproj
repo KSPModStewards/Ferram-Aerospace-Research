@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!--
+        FAR's reentry tests in an RP-1 career (KCT simulations, MechJeb attitude holds): deployed only into installs with RP-1.
+        [UITest] methods the KspTest harness runs in a KSP session; loaded by KSP, so net48, built against the install in
+        KspDir (see ../Directory.Build.props). FerramAerospaceResearch.KspTests.Run runs them with dotnet test; FAR itself
+        does not depend on this.
+    -->
+    <PropertyGroup>
+        <TargetFramework>net48</TargetFramework>
+        <LangVersion>9</LangVersion>
+        <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+        <RootNamespace>FerramAerospaceResearch.KspTests.RP1</RootNamespace>
+        <IsPackable>false</IsPackable>
+        <IsTestProject>false</IsTestProject>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <!-- the harness and these modules from the KspTest submodule, compile-time only: the runner deploys them -->
+        <KspTestModules>MechJeb;RP1;Far;AtmosphereAutopilot</KspTestModules>
+    </PropertyGroup>
+
+    <!-- ksptest serve-plugin's fresh name for each build: changed tests run in a Serve session without a restart -->
+    <PropertyGroup Condition="'$(ServePluginName)' != ''">
+        <AssemblyName>$(ServePluginName)</AssemblyName>
+        <OutputPath>bin/serve-plugins/$(ServePluginName)/</OutputPath>
+        <Deterministic>false</Deterministic>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <!-- ThermalModeRp1Tests uses the thermal area modes; deployed beside this assembly -->
+        <ProjectReference Include="..\FerramAerospaceResearch.KspTests\FerramAerospaceResearch.KspTests.csproj" Private="false" />
+    </ItemGroup>
+
+    <Import Project="$(KspTestRoot)/build/KspTest.FromSource.targets" />
+
+</Project>

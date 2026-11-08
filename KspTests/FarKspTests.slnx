@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="FerramAerospaceResearch.KspTests/FerramAerospaceResearch.KspTests.csproj" />
+  <Project Path="FerramAerospaceResearch.KspTests.MechJeb/FerramAerospaceResearch.KspTests.MechJeb.csproj" />
+  <Project Path="FerramAerospaceResearch.KspTests.RP1/FerramAerospaceResearch.KspTests.RP1.csproj" />
+  <Project Path="FerramAerospaceResearch.KspTests.Run/FerramAerospaceResearch.KspTests.Run.csproj" />
+</Solution>

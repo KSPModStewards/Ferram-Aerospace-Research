@@ -67,10 +67,11 @@ namespace FerramAerospaceResearch.Resources
             ComputeShaderLoader.Unsubscribe();
         }
 
-        public void ReloadAssets()
-        {
-            MainThread.StartCoroutine(DoReloadAssets);
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public void ReloadAssets()
+        // {
+        //     MainThread.StartCoroutine(DoReloadAssets);
+        // }
 
         private IEnumerator LoadAssets()
         {

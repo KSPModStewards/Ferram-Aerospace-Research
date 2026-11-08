@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using FerramAerospaceResearch.Resources.Loading;
 using UnityEngine;
 
@@ -57,6 +58,8 @@ namespace FerramAerospaceResearch.Resources
             this[key] = request.Asset;
         }
 
+        // coverage: empty handler for a load error the tests cannot cause
+        [ExcludeFromCodeCoverage]
         private static void OnAssetError(string key, AssetRequest<T> request)
         {
         }

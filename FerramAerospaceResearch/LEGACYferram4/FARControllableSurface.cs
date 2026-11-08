@@ -1142,7 +1142,7 @@ namespace ferram4
                 AoAdesiredControl += RollLocation * roll * rollaxis * 0.01;
             if (!brakeRudder.NearlyEqual(0))
                 AoAdesiredControl +=
-                    BrakeRudderLocation * Math.Max(0.0, BrakeRudderSide * yawaxis) * brakeRudder * 0.01;
+                    BrakeRudderLocation * Math.Max(0.0, BrakeRudderSide * yaw) * brakeRudder * 0.01;
             AoAdesiredControl *= maxdeflect;
             if (!pitchaxisDueToAoA.NearlyEqual(0))
             {
@@ -1212,22 +1212,24 @@ namespace ferram4
         //For some reason, all the UIRange values are saved in the config files, and there is no way to prevent that
         //This makes the options limited for people loading old crafts with new FAR
         //This resets the values to what they should be
-        // ReSharper disable once UnusedMember.Local
-        private void FixAllUIRanges()
-        {
-            FixWrongUIRange("pitchaxis", 100, -100);
-            FixWrongUIRange("yawaxis", 100, -100);
-            FixWrongUIRange("rollaxis", 100, -100);
-            FixWrongUIRange("brakeRudder", 100, -100);
-            FixWrongUIRange("maxdeflect", 40, -40);
-            FixWrongUIRange("maxdeflectFlap", 85, -85);
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Local
+        // private void FixAllUIRanges()
+        // {
+        //     FixWrongUIRange("pitchaxis", 100, -100);
+        //     FixWrongUIRange("yawaxis", 100, -100);
+        //     FixWrongUIRange("rollaxis", 100, -100);
+        //     FixWrongUIRange("brakeRudder", 100, -100);
+        //     FixWrongUIRange("maxdeflect", 40, -40);
+        //     FixWrongUIRange("maxdeflectFlap", 85, -85);
+        // }
 
-        private void FixWrongUIRange(string field, float upperRange, float lowerRange)
-        {
-            var tmpUI = (UI_FloatRange)Fields[field].uiControlEditor;
-            tmpUI.maxValue = upperRange;
-            tmpUI.minValue = lowerRange;
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // private void FixWrongUIRange(string field, float upperRange, float lowerRange)
+        // {
+        //     var tmpUI = (UI_FloatRange)Fields[field].uiControlEditor;
+        //     tmpUI.maxValue = upperRange;
+        //     tmpUI.minValue = lowerRange;
+        // }
     }
 }

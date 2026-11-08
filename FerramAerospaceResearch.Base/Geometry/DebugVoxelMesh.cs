@@ -28,7 +28,8 @@ namespace FerramAerospaceResearch.Geometry
 
         private bool UInt32BitIndices
         {
-            get { return uInt32BitIndices; }
+            // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+            // get { return uInt32BitIndices; }
             set
             {
                 uInt32BitIndices = value;
@@ -66,14 +67,15 @@ namespace FerramAerospaceResearch.Geometry
             Renderer.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;
         }
 
-        public void Rebuild<T, Builder, Voxels>(Builder builder, Voxels voxels, int count)
-            where Builder : IDebugVoxelMeshBuilder<T> where Voxels : IEnumerator<T>
-        {
-            Clear(builder, count);
-            while (voxels.MoveNext())
-                Add(builder, voxels.Current);
-            Apply(builder);
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public void Rebuild<T, Builder, Voxels>(Builder builder, Voxels voxels, int count)
+        //     where Builder : IDebugVoxelMeshBuilder<T> where Voxels : IEnumerator<T>
+        // {
+        //     Clear(builder, count);
+        //     while (voxels.MoveNext())
+        //         Add(builder, voxels.Current);
+        //     Apply(builder);
+        // }
 
         private static void SetupNestedList<T>(List<List<T>> list, int meshes, int countPerSubmesh)
         {

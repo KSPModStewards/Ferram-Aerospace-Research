@@ -114,7 +114,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         private static int _zoomMach = -1, _zoomAlt = -1; // grid dims _zoom is valid for
         private static int _colorEpoch;                   // bumped on any zoom / metric / rescale change
 
-        public static bool ZoomActive => _zoomActive;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public static bool ZoomActive => _zoomActive;
 
         /// <summary>Bumps the colour epoch so every renderer recolours on its next draw. Call after a
         /// metric or rescale-toggle change.</summary>

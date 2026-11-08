@@ -43,6 +43,8 @@ Copyright 2022, Michael Ferrara, aka Ferram4
  */
 
 
+using System.Diagnostics.CodeAnalysis;
+
 namespace FerramAerospaceResearch.FARPartGeometry.GeometryModification
 {
     internal class StockProcAsteroidGeoUpdater : IGeometryUpdater
@@ -55,6 +57,8 @@ namespace FerramAerospaceResearch.FARPartGeometry.GeometryModification
             this.geoModule = geoModule;
         }
 
+        // coverage: empty interface member; asteroids never exist in the editor
+        [ExcludeFromCodeCoverage]
         public void EditorGeometryUpdate()
         {
         }

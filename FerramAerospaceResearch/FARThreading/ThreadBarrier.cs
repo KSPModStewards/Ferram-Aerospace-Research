@@ -49,55 +49,56 @@ namespace FerramAerospaceResearch.FARThreading
     //Allows multiple threads to wait before continuing
     //Is equivalent to the Barrier class from .NET 4.0
     // ReSharper disable once UnusedMember.Global
-    public class ThreadBarrier
-    {
-        private readonly object _lockerObject = new object();
-        private readonly int _threadParticipatingCount;
+    // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+    // public class ThreadBarrier
+    // {
+    //     private readonly object _lockerObject = new object();
+    //     private readonly int _threadParticipatingCount;
 
-        private int currentCountOdd;
-        private int currentCountEven;
+    //     private int currentCountOdd;
+    //     private int currentCountEven;
 
-        private bool useEvenCount;
+    //     private bool useEvenCount;
 
-        public ThreadBarrier(int threadParticipatingCount)
-        {
-            _threadParticipatingCount = threadParticipatingCount;
-        }
+    //     public ThreadBarrier(int threadParticipatingCount)
+    //     {
+    //         _threadParticipatingCount = threadParticipatingCount;
+    //     }
 
-        // ReSharper disable once UnusedMember.Global
-        public void SignalAndWait()
-        {
-            lock (_lockerObject)
-            {
-                if (useEvenCount)
-                {
-                    currentCountEven++;
-                    if (currentCountEven >= _threadParticipatingCount)
-                    {
-                        useEvenCount = false;
-                        currentCountOdd = 0;
-                        Monitor.PulseAll(_lockerObject);
-                    }
-                    else
-                    {
-                        Monitor.Wait(_lockerObject);
-                    }
-                }
-                else
-                {
-                    currentCountOdd++;
-                    if (currentCountOdd >= _threadParticipatingCount)
-                    {
-                        useEvenCount = true;
-                        currentCountEven = 0;
-                        Monitor.PulseAll(_lockerObject);
-                    }
-                    else
-                    {
-                        Monitor.Wait(_lockerObject);
-                    }
-                }
-            }
-        }
-    }
+    //     // ReSharper disable once UnusedMember.Global
+    //     public void SignalAndWait()
+    //     {
+    //         lock (_lockerObject)
+    //         {
+    //             if (useEvenCount)
+    //             {
+    //                 currentCountEven++;
+    //                 if (currentCountEven >= _threadParticipatingCount)
+    //                 {
+    //                     useEvenCount = false;
+    //                     currentCountOdd = 0;
+    //                     Monitor.PulseAll(_lockerObject);
+    //                 }
+    //                 else
+    //                 {
+    //                     Monitor.Wait(_lockerObject);
+    //                 }
+    //             }
+    //             else
+    //             {
+    //                 currentCountOdd++;
+    //                 if (currentCountOdd >= _threadParticipatingCount)
+    //                 {
+    //                     useEvenCount = true;
+    //                     currentCountEven = 0;
+    //                     Monitor.PulseAll(_lockerObject);
+    //                 }
+    //                 else
+    //                 {
+    //                     Monitor.Wait(_lockerObject);
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 }

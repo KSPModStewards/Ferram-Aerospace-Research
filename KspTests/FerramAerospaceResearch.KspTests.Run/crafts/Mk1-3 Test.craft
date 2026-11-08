@@ -1,0 +1,2725 @@
+ship = Mk1-3 Test
+version = 1.12.5
+description = 
+type = VAB
+size = 4.0000515,3.21145248,4.0000515
+steamPublishedFileId = 0
+persistentId = 3058221512
+rot = 0,0,0,0
+missionFlag = Squad/Flags/default
+vesselType = Debris
+OverrideDefault = False,False,False,False
+OverrideActionControl = 0,0,0,0
+OverrideAxisControl = 0,0,0,0
+OverrideGroupNames = ,,,
+_modVersions = Scale_Redist=3.3.2|ModuleManager=4.2.3|ClickThroughBlocker=2.1.10|0Harmony=2.2.1|HarmonyInstallChecker=2.2.1|Unity.Burst.Unsafe=1.0.0|Unity.Mathematics=1.0.0|Microsoft.Extensions.FileSystemGlobbing=6.0.21|System.IO.Compression=4.6.57|System.Runtime.CompilerServices.Unsafe=4.700.20|System.Runtime=4.0.0|Unity.Burst=1.7.4|System.IO.Compression.FileSystem=4.6.57|Unity.Collections=0.8.0|Unity.Jobs=0.2.9|KSPBurst=1.7.4|SerializationFix=1.0.1|BlendshapeModelLoader=1.6.4|TexturesUnlimited=1.6.4|aaa_Toolbar=1.8.1|ToolbarControl=0.1.9|SolverEngines=3.13.1|AJE=2.20.0|AtmosphereAutopilot.UI=1.0.0|AtmosphereAutopilot=1.6.1|B9PartSwitch=2.21.0|B9-PWings-Fork=0.46.1|BDAnimationModules=0.6.7|RNModules=1.2.1|BetterTimeWarpCont=2.3.14|CCK=5.1.0|Shabby=0.4.2|ConformalDecals=0.4.2|Unity.TextMeshPro=2.1.6|ContractConfigurator=2.13.4|CustomPreLaunchChecks=1.8.1|KerbalKonstructs=1.12.2|KerKonConConExt=2.0.0|CustomBarnKit=1.1.22|DepthMask=1.1.3|DistantObject=0.0.0|KSPe.Light.DOE=2.5.5|EditorExtensionsRedux=3.4.7|EngineGroupController=1.0.0|UnityGUIFramework=1.0.0|Atmosphere=1.11.7|CelestialShadows=1.11.7|CityLights=1.11.7|EVEManager=1.11.7|PartFX=1.11.7|PQSManager=1.11.7|ShaderLoader=1.11.7|Terrain=1.11.7|TextureConfig=1.11.7|Utils=1.11.7|_BuildManager=1.11.7|FerramAerospaceResearch.Base=0.16.1|ModularFlightIntegrator=1.2.10|FerramAerospaceResearch=0.16.1|ferramGraph=1.3.0|Firespitter=7.3.7660|HangerExtenderExtended=3.6.1|KerbalChangelog=1.4.2|Kerbalism=3.42.0|KerbalJointReinforcement=3.8.7|Renamer=1.7.0|HyperEdit=1.5.9|Kopernicus.Parser=1.0.0|SharpDX=4.2.0|SharpDX.DXGI=4.2.0|SharpDX.Direct3D11=4.2.0|KSPTextureLoader=1.0.36|Kopernicus=1.12.247|ICSharpCode.SharpZipLib=0.86.0|kOS.Safe=1.6.0|kOS=1.6.0|KSCSwitcher=2.2.0|0_MultipleModuleInPartAPI=1.0.0|KSPCommunityFixes=1.41.1|KSPTextureLoader.Burst=0.0.0|KSPUITest=0.0.0|KSPUITest.MechJeb=0.0.0|KSPUITest.RP1=0.0.0|KSPUITest.Tests.MechJeb=0.0.0|KSPUITest.Tests.RP1=0.0.0|KSPUITest.Tests.Stock=0.0.0|KSPWheel=0.0.0|alglib=1.0.0|MechJeb2=2.16.0|MechJebLib=1.0.0|MechJebLibBindings=1.0.0|Grass=0.0.0|ParallaxQualityLibrary=1.0.0|ParallaxOptimized=1.0.0|PatchManager=0.0.17|PlanetShine=0.2.6|ROUtils=1.2.0|ProceduralFairings=6.8.0|ProceduralParts=2.99.0|QuickExit=2.2.0|QuickStart=2.2.1|RCSBuildAid=1.0.6|RCSBuildAidToolbar=1.0.6|RealAntennas=2.12.0|RealChute=1.4.9059|RealFuels=15.15.0|RealHeat=5.1.0|RealismOverhaul=18.0.0|ROInstallChecker=1.1.0|RealSolarSystem=20.1.3|RetractableLiftingSurface=0.2.1|ROLib=2.1.0|ROEngines=2.16.0|ROHeatshields=1.3.0|RP0=3.0.0|CC_RP0=1.11.0|ClearInputLocks=1.0.0|RP0InstallChecker=1.0.0|RSSTimeFormatter=1.12.0|scatterer=0.878.0|Telecom=1.0.0|SmokeScreen=2.8.14|KSPSteamCtrlr=0.0.1|StagedAnimation=1.0.0|StockAlarmClockDisabler=1.0.0|TestFlightAPI=2.2.0|TestFlight=2.2.0|TestFlightContracts=2.2.0|TestFlightCore=2.2.0|TextureReplacer=4.5.3|KerbalAlarmClock=3.14.2|TransferWindowPlanner=1.9.1|Waterfall=0.11.0
+PART
+{
+	part = mk1-3pod_4293278004
+	partName = Part
+	persistentId = 3039681611
+	pos = 0,15.0363188,0
+	attPos = 0,0,0
+	attPos0 = 0,15,0
+	rot = 0,0,0,1
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = 0
+	sqor = 0
+	sepI = -1
+	attm = 0
+	sameVesselCollision = False
+	modCost = 41.1100006
+	modMass = 0.0204661768
+	modSize = 0,0,0
+	link = ROH-AdjustableHS_4293248970
+	attN = bottom,ROH-AdjustableHS_4293248970_0|-0.783797026|0_0|-1.63549995|0_0|-0.783797026|0_0|-1.63549995|0
+	attN = top,Null_0_0|1.95146215|0_0|1.63549995|0_0|1.95146215|0_0|1.63549995|0
+	EVENTS
+	{
+	}
+	ACTIONS
+	{
+		ToggleSameVesselInteraction
+		{
+			actionGroup = None
+		}
+		SetSameVesselInteraction
+		{
+			actionGroup = None
+		}
+		RemoveSameVesselInteraction
+		{
+			actionGroup = None
+		}
+		AutostrutOff
+		{
+			actionGroup = None
+		}
+		AutostrutRoot
+		{
+			actionGroup = None
+		}
+		AutostrutHeaviest
+		{
+			actionGroup = None
+		}
+		AutostrutGrandparent
+		{
+			actionGroup = None
+		}
+		ResourcesEnableFlow
+		{
+			actionGroup = None
+		}
+		ResourcesDisableFlow
+		{
+			actionGroup = None
+		}
+	}
+	PARTDATA
+	{
+	}
+	MODULE
+	{
+		name = ModuleCommand
+		isEnabled = True
+		hibernation = False
+		hibernateOnWarp = False
+		activeControlPointName = _default
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			MakeReferenceToggle
+			{
+				actionGroup = None
+			}
+			HibernateToggle
+			{
+				actionGroup = None
+				active = False
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleColorChanger
+		isEnabled = True
+		animState = False
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			ToggleAction
+			{
+				actionGroup = Light
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FlagDecal
+		isEnabled = True
+		flagDisplayed = True
+		isMirrored = False
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleConductionMultiplier
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleProbeControlPoint
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleInventoryPart
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		STOREDPARTS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = GeometryPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARAeroPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Habitat
+		isEnabled = True
+		state = enabled
+		perctDeployed = 0
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			Action
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Sensor
+		isEnabled = True
+		type = temperature
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Sensor
+		isEnabled = True
+		type = radiation
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Sensor
+		isEnabled = True
+		type = habitat_radiation
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = KOSNameTag
+		isEnabled = True
+		nameTag = 
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleAblator
+		isEnabled = True
+		nominalAmountRecip = -1
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleRCSFX
+		isEnabled = True
+		rcsEnabled = False
+		thrustPercentage = 100
+		currentShowToggles = False
+		enableYaw = True
+		enablePitch = True
+		enableRoll = True
+		enableX = True
+		enableY = True
+		enableZ = True
+		useThrottle = False
+		fullThrust = False
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			ToggleAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleFuelTanks
+		isEnabled = True
+		type = ServiceModule
+		utilization = 86
+		volume = 1050
+		mass = 0
+		_numberOfAddedMLILayers = 0
+		totalTankArea = 9.6080739282698229
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		TANK
+		{
+			name = NTO
+			note = (pressurized)
+			utilization = 1
+			mass = 8.09999983E-05
+			cost = 0.000300000014
+			loss_rate = 0
+			wallThickness = 0.10000000000000001
+			wallConduction = 205
+			insulationThickness = 0
+			insulationConduction = 1
+			isDewar = False
+			temperature = 300
+			fillable = True
+			techRequired = 
+			amount = 45
+			maxAmount = 45
+		}
+		TANK
+		{
+			name = MMH
+			note = (pressurized)
+			utilization = 1
+			mass = 8.09999983E-05
+			cost = 0.00719999988
+			loss_rate = 0
+			wallThickness = 0.10000000000000001
+			wallConduction = 205
+			insulationThickness = 0
+			insulationConduction = 1
+			isDewar = False
+			temperature = 300
+			fillable = True
+			techRequired = 
+			amount = 45
+			maxAmount = 45
+		}
+		TANK
+		{
+			name = Oxygen
+			note = (pressurized)
+			utilization = 200
+			mass = 2.99999992E-05
+			cost = 9.99999975E-05
+			loss_rate = 0
+			wallThickness = 0.10000000000000001
+			wallConduction = 205
+			insulationThickness = 0
+			insulationConduction = 1
+			isDewar = False
+			temperature = 300
+			fillable = True
+			techRequired = crewSurvivability
+			amount = 24872.400000000001
+			maxAmount = 24872.400000000001
+		}
+		TANK
+		{
+			name = Food
+			note = (pressurized)
+			utilization = 1
+			mass = 9.99999975E-06
+			cost = 9.99999975E-05
+			loss_rate = 0
+			wallThickness = 0.10000000000000001
+			wallConduction = 205
+			insulationThickness = 0
+			insulationConduction = 1
+			isDewar = False
+			temperature = 300
+			fillable = True
+			techRequired = crewSurvivability
+			amount = 245.69999999999999
+			maxAmount = 245.69999999999999
+		}
+		TANK
+		{
+			name = Water
+			note = (pressurized)
+			utilization = 1
+			mass = 9.99999975E-06
+			cost = 9.99999975E-05
+			loss_rate = 0
+			wallThickness = 0.10000000000000001
+			wallConduction = 205
+			insulationThickness = 0
+			insulationConduction = 1
+			isDewar = False
+			temperature = 300
+			fillable = True
+			techRequired = 
+			amount = 162.33000000000001
+			maxAmount = 162.33000000000001
+		}
+		TANK
+		{
+			name = CarbonDioxide
+			note = (pressurized)
+			utilization = 200
+			mass = 2.99999992E-05
+			cost = 9.99999975E-05
+			loss_rate = 0
+			wallThickness = 0.10000000000000001
+			wallConduction = 205
+			insulationThickness = 0
+			insulationConduction = 1
+			isDewar = False
+			temperature = 300
+			fillable = False
+			techRequired = 
+			amount = 0
+			maxAmount = 10815
+		}
+		TANK
+		{
+			name = Waste
+			note = (pressurized)
+			utilization = 1
+			mass = 9.99999975E-06
+			cost = 9.99999975E-05
+			loss_rate = 0
+			wallThickness = 0.10000000000000001
+			wallConduction = 205
+			insulationThickness = 0
+			insulationConduction = 1
+			isDewar = False
+			temperature = 300
+			fillable = False
+			techRequired = 
+			amount = 0
+			maxAmount = 22.260000000000002
+		}
+		TANK
+		{
+			name = WasteWater
+			note = (pressurized)
+			utilization = 1
+			mass = 9.99999975E-06
+			cost = 9.99999975E-05
+			loss_rate = 0
+			wallThickness = 0.10000000000000001
+			wallConduction = 205
+			insulationThickness = 0
+			insulationConduction = 1
+			isDewar = False
+			temperature = 300
+			fillable = False
+			techRequired = 
+			amount = 0
+			maxAmount = 206.84999999999999
+		}
+		TANK
+		{
+			name = LithiumHydroxide
+			note = (pressurized)
+			utilization = 1
+			mass = 9.99999975E-06
+			cost = 9.99999975E-05
+			loss_rate = 0
+			wallThickness = 0.10000000000000001
+			wallConduction = 205
+			insulationThickness = 0
+			insulationConduction = 1
+			isDewar = False
+			temperature = 300
+			fillable = True
+			techRequired = 
+			amount = 31.5
+			maxAmount = 31.5
+		}
+		TANK
+		{
+			name = ElectricCharge
+			note = (pressurized)
+			utilization = 1000
+			mass = 0.00288999989
+			cost = 0
+			loss_rate = 0
+			wallThickness = 0.10000000000000001
+			wallConduction = 205
+			insulationThickness = 0
+			insulationConduction = 1
+			isDewar = False
+			temperature = 300
+			fillable = True
+			techRequired = 
+			amount = 43200
+			maxAmount = 43200
+		}
+		UPGRADESAPPLIED
+		{
+			upgrade = MLI.Upgrade1
+			upgrade = MLI.Upgrade2
+			upgrade = MLI.Upgrade3
+			upgrade = MLI.Upgrade4
+			upgrade = MLI.Upgrade5
+		}
+	}
+	MODULE
+	{
+		name = AdjustableCoMShifter
+		isEnabled = True
+		offsetX = 0
+		offsetY = 0
+		offsetZ = 0
+		offsetPercent = 1
+		IsDescentMode = False
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			Toggle
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = MechJebCore
+		isEnabled = True
+		running = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			OnOrbitProgradeAction
+			{
+				actionGroup = None
+			}
+			OnOrbitRetrogradeAction
+			{
+				actionGroup = None
+			}
+			OnOrbitNormalAction
+			{
+				actionGroup = None
+			}
+			OnOrbitAntinormalAction
+			{
+				actionGroup = None
+			}
+			OnOrbitRadialInAction
+			{
+				actionGroup = None
+			}
+			OnOrbitRadialOutAction
+			{
+				actionGroup = None
+			}
+			OnKillRotationAction
+			{
+				actionGroup = None
+			}
+			OnDeactivateSmartASSAction
+			{
+				actionGroup = None
+			}
+			OnLandsomewhereAction
+			{
+				actionGroup = None
+			}
+			OnLandTargetAction
+			{
+				actionGroup = None
+			}
+			OnPanicAction
+			{
+				actionGroup = None
+			}
+			OnTranslatronOffAction
+			{
+				actionGroup = None
+			}
+			OnTranslatronKeepVertAction
+			{
+				actionGroup = None
+			}
+			OnTranslatronZeroSpeedAction
+			{
+				actionGroup = None
+			}
+			OnTranslatronPlusOneSpeedAction
+			{
+				actionGroup = None
+			}
+			OnTranslatronMinusOneSpeedAction
+			{
+				actionGroup = None
+			}
+			OnTranslatronToggleHSAction
+			{
+				actionGroup = None
+			}
+			OnAscentAPToggleAction
+			{
+				actionGroup = None
+			}
+		}
+		MechJebLocalSettings
+		{
+			MechJebModuleMenu
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleAscentClassicAutopilot
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleAscentClassicPathMenu
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleAscentMenu
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleAscentPSGAutopilot
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleAscentPSGSettingsMenu
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleAscentSettings
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleAscentSettingsMenu
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleAttitudeAdjustment
+			{
+				unlockParts = 
+				unlockTechs = start
+			}
+			MechJebModuleCustomWindowEditor
+			{
+				unlockParts = 
+				unlockTechs = start
+			}
+			MechJebModuleDebugArrows
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleDockingAutopilot
+			{
+				forceRol = False
+				overrideSafeDistance = False
+				overrideTargetSize = False
+				unlockParts = 
+				unlockTechs = 
+				rol
+				{
+					ValConfig = 0
+					TextConfig = 0
+				}
+			}
+			MechJebModuleDockingGuidance
+			{
+				unlockParts = 
+				unlockTechs = start
+			}
+			MechJebModuleGuidanceController
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleHoverslamAutopilot
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleHoverslamSimulation
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleInfoItems
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleLandingAutopilot
+			{
+				DeployGears = True
+				DeployChutes = True
+				RCSAdjustment = True
+				unlockParts = 
+				unlockTechs = 
+				TouchdownSpeed
+				{
+					ValConfig = 0.5
+					TextConfig = 0.5
+				}
+				LimitGearsStage
+				{
+					ValConfig = 0
+					TextConfig = 0
+				}
+				LimitChutesStage
+				{
+					ValConfig = 0
+					TextConfig = 0
+				}
+			}
+			MechJebModuleLandingGuidance
+			{
+				_landingSiteIdx = 0
+				unlockParts = 
+				unlockTechs = start
+			}
+			MechJebModuleLandingPredictions
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleManeuverPlanner
+			{
+				unlockParts = 
+				unlockTechs = start
+			}
+			MechJebModuleNodeEditor
+			{
+				unlockParts = 
+				unlockTechs = start
+			}
+			MechJebModuleNodeExecutor
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModulePSGGlueBall
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleRCSBalancerWindow
+			{
+				unlockParts = 
+				unlockTechs = start
+			}
+			MechJebModuleRendezvousAutopilot
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleRendezvousAutopilotWindow
+			{
+				unlockParts = 
+				unlockTechs = start
+			}
+			MechJebModuleRendezvousGuidance
+			{
+				unlockParts = 
+				unlockTechs = start
+			}
+			MechJebModuleRoverController
+			{
+				ControlHeading = False
+				ControlSpeed = False
+				BrakeOnEject = False
+				BrakeOnEnergyDepletion = False
+				WarpToDaylight = False
+				StabilityControl = False
+				LimitAcceleration = False
+				unlockParts = 
+				unlockTechs = 
+				heading
+				{
+					ValConfig = 0
+					TextConfig = 0
+				}
+				speed
+				{
+					ValConfig = 10
+					TextConfig = 10
+				}
+			}
+			MechJebModuleRoverWindow
+			{
+				unlockParts = 
+				unlockTechs = start
+			}
+			MechJebModuleSettings
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleSmartASS
+			{
+				mode = ORBITAL
+				target = OFF
+				advReference = SUN
+				advDirection = DOWN
+				forceRol = False
+				forcePitch = True
+				forceYaw = True
+				smoothControl = False
+				unlockParts = 
+				unlockTechs = start
+				srfHdg
+				{
+					ValConfig = 90
+					TextConfig = 90
+				}
+				srfPit
+				{
+					ValConfig = 90
+					TextConfig = 90
+				}
+				srfRol
+				{
+					ValConfig = 0
+					TextConfig = 0
+				}
+				srfVelYaw
+				{
+					ValConfig = 0
+					TextConfig = 0
+				}
+				srfVelPit
+				{
+					ValConfig = 0
+					TextConfig = 0
+				}
+				srfVelRol
+				{
+					ValConfig = 0
+					TextConfig = 0
+				}
+				rol
+				{
+					ValConfig = 0
+					TextConfig = 0
+				}
+				degreesPerSecond
+				{
+					ValConfig = 10
+					TextConfig = 10
+				}
+			}
+			MechJebModuleSmartRcs
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleSpinupController
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleStageStats
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleTargetController
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleThrustWindow
+			{
+				autostageSavedState = False
+				unlockParts = 
+				unlockTechs = start
+			}
+			MechJebModuleTranslatron
+			{
+				unlockParts = 
+				unlockTechs = start
+				trans_spd
+				{
+					ValConfig = 0
+					TextConfig = 0
+				}
+			}
+			MechJebModuleWarpHelper
+			{
+				unlockParts = 
+				unlockTechs = start
+				phaseAngle
+				{
+					ValConfig = 0
+					TextConfig = 0
+				}
+			}
+			MechJebModuleWaypointWindow
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleWaypointHelpWindow
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			ModExtensionDemo
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleCustomInfoWindow
+			{
+			}
+			MechJebModuleCustomInfoWindow
+			{
+			}
+			MechJebModuleCustomInfoWindow
+			{
+			}
+			MechJebModuleCustomInfoWindow
+			{
+			}
+			MechJebModuleCustomInfoWindow
+			{
+			}
+			MechJebModuleCustomInfoWindow
+			{
+			}
+			MechJebModuleCustomInfoWindow
+			{
+			}
+			MechJebModuleCustomInfoWindow
+			{
+			}
+			MechJebModuleCustomInfoWindow
+			{
+			}
+			MechJebModuleCustomInfoWindow
+			{
+			}
+			MechJebModuleWarpController
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleDeployableAntennaController
+			{
+				PrevShouldDeploy = False
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleSolarPanelController
+			{
+				PrevShouldDeploy = False
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleThrustController
+			{
+				LimitThrottle = False
+				LimiterMinThrottle = True
+				ElectricThrottle = False
+				unlockParts = 
+				unlockTechs = 
+				MaxThrottle
+				{
+					ValConfig = 1
+					TextConfig = 100
+				}
+				MinThrottle
+				{
+					ValConfig = 0.050000000000000003
+					TextConfig = 5
+				}
+				ElectricThrottleLo
+				{
+					ValConfig = 0.050000000000000003
+					TextConfig = 5
+				}
+				ElectricThrottleHi
+				{
+					ValConfig = 0.14999999999999999
+					TextConfig = 15
+				}
+			}
+			MechJebModuleRCSController
+			{
+				unlockParts = 
+				unlockTechs = 
+				Tf
+				{
+					ValConfig = 1
+					TextConfig = 1
+				}
+				Kp
+				{
+					ValConfig = 0.125
+					TextConfig = 0.125
+				}
+				Ki
+				{
+					ValConfig = 0.070000000000000007
+					TextConfig = 0.07
+				}
+				Kd
+				{
+					ValConfig = 0.53000000000000003
+					TextConfig = 0.53
+				}
+			}
+			MechJebModuleRCSBalancer
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleAttitudeController
+			{
+				unlockParts = 
+				unlockTechs = 
+				MJAttitudeController
+				{
+				}
+				KosAttitudeController
+				{
+				}
+				HybridController
+				{
+				}
+				BetterController
+				{
+				}
+				LQRController
+				{
+				}
+			}
+			MechJebModuleStagingController
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleFlightRecorder
+			{
+				MarkUT = 0
+				DeltaVExpended = 0
+				DragLosses = 0
+				GravityLosses = 0
+				SteeringLosses = 0
+				MarkLAN = 0
+				MarkLatitude = 0
+				MarkLongitude = 0
+				MarkAltitude = 0
+				MarkBodyIndex = 1
+				MaxDragGees = 0
+				unlockParts = 
+				unlockTechs = 
+			}
+			MechJebModuleFlightRecorderGraph
+			{
+				unlockParts = 
+				unlockTechs = 
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = kOSProcessor
+		isEnabled = True
+		bootFile = None
+		diskSpace = 50000
+		baseDiskSpace = 50000
+		baseModuleMass = 0
+		additionalCost = 0
+		diskSpaceCostFactor = 0.00100000005
+		diskSpaceMassFactor = 5.00000006E-08
+		MaxPartId = 100
+		ECPerInstruction = 7.99999995E-08
+		ECPerBytePerSecond = 0
+		RequiredPower = 0.000800000038
+		stagingEnabled = True
+		activated = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			Activate
+			{
+				actionGroup = None
+			}
+			Deactivate
+			{
+				actionGroup = None
+			}
+			Toggle
+			{
+				actionGroup = None
+			}
+			TogglePower
+			{
+				actionGroup = None
+			}
+			StartSuppressAutopilot
+			{
+				actionGroup = None
+			}
+			StopSuppressAutopilot
+			{
+				actionGroup = None
+			}
+			ToggleSuppressAutopilot
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = HardDrive
+		isEnabled = True
+		hdId = 0
+		effectiveDataCapacity = 5
+		effectiveSampleCapacity = 10
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			TransferDataAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleAvionics
+		isEnabled = True
+		currentWatts = 100
+		systemEnabled = True
+		dead = False
+		setToDebrisOnStage = False
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			ToggleAction
+			{
+				actionGroup = None
+			}
+			ShutdownAction
+			{
+				actionGroup = None
+			}
+			ActivateAction
+			{
+				actionGroup = None
+			}
+			KillAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = True
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = True
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = False
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = False
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = False
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = False
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = False
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = False
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = False
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = True
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = True
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = True
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = False
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = False
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = False
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = False
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = False
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = False
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = False
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = False
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = False
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Configure
+		isEnabled = True
+		cfg = $$None3Orbital Maneuvering-Visual Acuity;Star Occultation Navigation
+		prev_cfg = $$None3Orbital Maneuvering-Visual Acuity;Star Occultation Navigation
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleTagList
+		isEnabled = True
+		stagingEnabled = True
+		engineTags
+		{
+		}
+		tankTags
+		{
+		}
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleRealAntenna
+		isEnabled = True
+		Condition = Enabled
+		TxPower = 30
+		TechLevel = 10
+		AMWTemp = 0
+		antennaDiameter = 0
+		referenceGain = 1.5
+		referenceFrequency = 0
+		RFBand = UHF
+		xmitIncomplete = False
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			PermanentShutdownAction
+			{
+				actionGroup = None
+			}
+			StartTransmissionAction
+			{
+				actionGroup = None
+				active = False
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ProcessController
+		isEnabled = False
+		running = True
+		broken = False
+		stagingEnabled = True
+		persistentValveIndex = 0
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			Action
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ProcessController
+		isEnabled = False
+		running = True
+		broken = False
+		stagingEnabled = True
+		persistentValveIndex = 0
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			Action
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ProcessController
+		isEnabled = False
+		running = True
+		broken = False
+		stagingEnabled = True
+		persistentValveIndex = 0
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			Action
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ProcessController
+		isEnabled = True
+		running = True
+		broken = False
+		stagingEnabled = True
+		persistentValveIndex = 0
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			Action
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Configure
+		isEnabled = True
+		cfg = !8Advanced Vacuum Scrubber
+		prev_cfg = !8Advanced Vacuum Scrubber
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = Experiment
+		isEnabled = False
+		issue = 
+		situationId = 0
+		didPrepare = False
+		shrouded = False
+		remainingSampleMass = 0
+		privateHdId = 0
+		firstStart = True
+		prodFactor = 0
+		expState = Stopped
+		status = Stopped
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartAction
+			{
+				actionGroup = None
+			}
+			StopAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleShowInfo
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleTripLogger
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		Log
+		{
+			flight = 0
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	RESOURCE
+	{
+		name = Ablator
+		amount = 56.469999999999999
+		maxAmount = 56.469999999999999
+		flowState = True
+		isTweakable = True
+		hideFlow = False
+		isVisible = True
+		flowMode = Both
+	}
+	RESOURCE
+	{
+		name = CharredAblator
+		amount = 0
+		maxAmount = 45.170000000000002
+		flowState = True
+		isTweakable = False
+		hideFlow = False
+		isVisible = True
+		flowMode = Both
+	}
+	RESOURCE
+	{
+		name = NTO
+		amount = 45
+		maxAmount = 45
+		flowState = True
+		isTweakable = True
+		hideFlow = False
+		isVisible = True
+		flowMode = Both
+	}
+	RESOURCE
+	{
+		name = MMH
+		amount = 45
+		maxAmount = 45
+		flowState = True
+		isTweakable = True
+		hideFlow = False
+		isVisible = True
+		flowMode = Both
+	}
+	RESOURCE
+	{
+		name = Oxygen
+		amount = 24872.400000000001
+		maxAmount = 24872.400000000001
+		flowState = True
+		isTweakable = True
+		hideFlow = False
+		isVisible = True
+		flowMode = Both
+	}
+	RESOURCE
+	{
+		name = Food
+		amount = 245.69999999999999
+		maxAmount = 245.69999999999999
+		flowState = True
+		isTweakable = True
+		hideFlow = False
+		isVisible = True
+		flowMode = Both
+	}
+	RESOURCE
+	{
+		name = Water
+		amount = 162.33000000000001
+		maxAmount = 162.33000000000001
+		flowState = True
+		isTweakable = True
+		hideFlow = False
+		isVisible = True
+		flowMode = Both
+	}
+	RESOURCE
+	{
+		name = CarbonDioxide
+		amount = 0
+		maxAmount = 10815
+		flowState = True
+		isTweakable = True
+		hideFlow = False
+		isVisible = True
+		flowMode = Both
+	}
+	RESOURCE
+	{
+		name = Waste
+		amount = 0
+		maxAmount = 22.260000000000002
+		flowState = True
+		isTweakable = True
+		hideFlow = False
+		isVisible = True
+		flowMode = Both
+	}
+	RESOURCE
+	{
+		name = WasteWater
+		amount = 0
+		maxAmount = 206.84999999999999
+		flowState = True
+		isTweakable = True
+		hideFlow = False
+		isVisible = True
+		flowMode = Both
+	}
+	RESOURCE
+	{
+		name = LithiumHydroxide
+		amount = 31.5
+		maxAmount = 31.5
+		flowState = True
+		isTweakable = True
+		hideFlow = False
+		isVisible = True
+		flowMode = Both
+	}
+	RESOURCE
+	{
+		name = ElectricCharge
+		amount = 43200
+		maxAmount = 43200
+		flowState = True
+		isTweakable = True
+		hideFlow = False
+		isVisible = True
+		flowMode = Both
+	}
+	RESOURCE
+	{
+		name = Atmosphere
+		amount = 5900
+		maxAmount = 5900
+		flowState = True
+		isTweakable = False
+		hideFlow = False
+		isVisible = False
+		flowMode = Both
+	}
+	RESOURCE
+	{
+		name = WasteAtmosphere
+		amount = 0
+		maxAmount = 5900
+		flowState = True
+		isTweakable = False
+		hideFlow = False
+		isVisible = False
+		flowMode = Both
+	}
+	RESOURCE
+	{
+		name = Shielding
+		amount = 0
+		maxAmount = 15.710000000000001
+		flowState = True
+		isTweakable = True
+		hideFlow = False
+		isVisible = True
+		flowMode = Both
+	}
+	RESOURCE
+	{
+		name = _AdvScrubber
+		amount = 5.0099999999999998
+		maxAmount = 5.0099999999999998
+		flowState = True
+		isTweakable = False
+		hideFlow = False
+		isVisible = False
+		flowMode = Both
+	}
+}
+PART
+{
+	part = ROH-AdjustableHS_4293248970
+	partName = Part
+	persistentId = 3131755510
+	pos = 0,14.0800028,0
+	attPos = 0,0,0
+	attPos0 = 0,-0.956317306,0
+	rot = 0,0,0,1
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = 0
+	attm = 0
+	sameVesselCollision = False
+	modCost = 2963.45459
+	modMass = 0.278890043
+	modSize = 0,0,0
+	attN = top,mk1-3pod_4293278004_0|0.172520012|0_0|1|0_0|0.172520012|0_0|1|0
+	attN = bottom,Null_0_0|-0.172520012|0_0|-1|0_0|-0.172520012|0_0|-1|0
+	EVENTS
+	{
+	}
+	ACTIONS
+	{
+		ToggleSameVesselInteraction
+		{
+			actionGroup = None
+		}
+		SetSameVesselInteraction
+		{
+			actionGroup = None
+		}
+		RemoveSameVesselInteraction
+		{
+			actionGroup = None
+		}
+		AutostrutOff
+		{
+			actionGroup = None
+		}
+		AutostrutRoot
+		{
+			actionGroup = None
+		}
+		AutostrutHeaviest
+		{
+			actionGroup = None
+		}
+		AutostrutGrandparent
+		{
+			actionGroup = None
+		}
+		ResourcesEnableFlow
+		{
+			actionGroup = None
+			active = False
+		}
+		ResourcesDisableFlow
+		{
+			actionGroup = None
+			active = False
+		}
+	}
+	PARTDATA
+	{
+	}
+	MODULE
+	{
+		name = ModuleROHeatshield
+		isEnabled = True
+		heatShieldType = MercuryHS
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleROTank
+		isEnabled = True
+		korolevCross = False
+		isFinished = False
+		currentDiameter = 3.80000019
+		currentLength = 2
+		currentVScale = 1
+		currentNoseVScale = 1
+		currentMountVScale = 1
+		totalTankLength = 0.345040023
+		largestDiameter = 3.80000019
+		currentNoseRotation = 0
+		currentMountRotation = 0
+		currentVariant = Heatshield
+		currentNose = Model-None
+		currentCore = HS-SSTU
+		currentMount = Model-None
+		currentNoseTexture = default
+		currentCoreTexture = ROH-SSTU-A
+		currentMountTexture = default
+		noseModulePersistentData = 1,1,1,1,1,1;1,1,1,1,1,1;1,1,1,1,1,1
+		coreModulePersistentData = 0.1803922,0.1803922,0.1803922,0.1254902,0,1;0.5019608,0.5019608,0.5019608,0.6901961,1,1;0.1803922,0.1803922,0.1803922,0.1254902,0,1
+		mountModulePersistentData = 1,1,1,1,1,1;1,1,1,1,1,1;1,1,1,1,1,1
+		density = 0.180000007
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleDecouple
+		isEnabled = True
+		ejectionForcePercent = 100
+		isDecoupled = False
+		stagingEnabled = False
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			DecoupleAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleToggleCrossfeed
+		isEnabled = True
+		crossfeedStatus = False
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			ToggleAction
+			{
+				actionGroup = None
+			}
+			EnableAction
+			{
+				actionGroup = None
+			}
+			DisableAction
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleAblator
+		isEnabled = True
+		nominalAmountRecip = -1
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = SSTURecolorGUI
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = GeometryPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARAeroPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = KOSNameTag
+		isEnabled = True
+		nameTag = 
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleTagList
+		isEnabled = True
+		stagingEnabled = True
+		engineTags
+		{
+		}
+		tankTags
+		{
+		}
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleShowInfo
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	RESOURCE
+	{
+		name = Ablator
+		amount = 361
+		maxAmount = 361
+		flowState = True
+		isTweakable = True
+		hideFlow = False
+		isVisible = True
+		flowMode = Both
+	}
+	RESOURCE
+	{
+		name = CharredAblator
+		amount = 0
+		maxAmount = 361
+		flowState = True
+		isTweakable = False
+		hideFlow = False
+		isVisible = True
+		flowMode = Both
+	}
+}

@@ -33,17 +33,18 @@ namespace FerramAerospaceResearch.Threading
             FARLogger.Assert(Thread != null, "Calling main thread task before initialization");
         }
 
-        /// <summary>
-        ///     Run action on the main thread and wait for its execution.
-        /// </summary>
-        /// <param name="action">Action to run on the main thread</param>
-        public static Task StartTaskWait(Action action)
-        {
-            CheckStatus();
-            Task task = StartTask(action);
-            Wait(task);
-            return task;
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // /// <summary>
+        // ///     Run action on the main thread and wait for its execution.
+        // /// </summary>
+        // /// <param name="action">Action to run on the main thread</param>
+        // public static Task StartTaskWait(Action action)
+        // {
+        //     CheckStatus();
+        //     Task task = StartTask(action);
+        //     Wait(task);
+        //     return task;
+        // }
 
         public static CoroutineTask StartCoroutine(Func<IEnumerator> routine)
         {

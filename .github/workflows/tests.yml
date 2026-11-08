@@ -1,0 +1,638 @@
+name: Tests
+
+# FAR's test suite (KspTests/): unit tests outside the game, and in-game tests in KSP 1.12.5 on GitHub's runners.
+#
+# Both need the game: the unit tests its assemblies (a third of them need Unity's own code, which the public stripped
+# assemblies lack), the in-game tests the game itself. KSP comes from encrypted 7z volumes in a private repo's release
+# (KspTest/ci/Pack-KspGame.ps1); only the in-game jobs get the secrets, through the environment ksp-game:
+#   pushes and manual runs: everything, at once. A pull request from a branch of this repository has its branch's push
+#     runs (no pull_request trigger: it would run everything twice)
+#   pull requests from forks: on pull_request_target, so the workflow is the default branch's (GitHub takes it from
+#     there: a PR cannot change what runs) and the code checked out the PR's head. Nothing of the PR runs before the
+#     gate job lets it, which runs no code of it:
+#       - opened by someone with write access to this repository: at once, every push
+#       - anyone else's: when someone with write access, having read it, submits a review of its latest commit (a
+#         comment is enough) and labels it run-ingame. The gate takes the label off at once and runs the commit only if
+#         the labeller's review is of it: a push between the review and the label runs nothing. A new push runs
+#         nothing until reviewed and labelled again
+#     Let in, the PR's code builds and runs on runners with the game, its key and this repository's token and cache
+#     scope, as it would after a merge: it could write cache entries itself, later runs' test durations among them.
+#     The review is what trusts it; the workflow only leaves its timings out of the ones it saves.
+# The game folder is never cached or uploaded. Without the environment's KSP_GAME_REPO (a fork running its own pushes,
+# say) the in-game jobs are skipped with a notice and only the build runs.
+#
+# Environment ksp-game: the secrets KSP_GAME_KEY (the archive key) and KSP_GAME_TOKEN (fine-grained, Contents: read-only
+# on the game repo alone), the variable KSP_GAME_REPO (owner/name of the game repo). Label run-ingame. See
+# KspTests/README.md.
+
+on:
+  push:
+  # a fork's pull request, behind the gate job (see above): labeled for the run-ingame label
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: dotnet test --filter for the in-game tests (default all but the Explicit ones)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+# a new push to a branch other than the default one cancels its earlier run still going; every other run (the default
+# branch's, a fork's pull request's, whose events include other labels and gated-out pushes) is a group of its own
+concurrency:
+  group: tests-${{ github.event_name == 'push' && github.ref_name != github.event.repository.default_branch && github.ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  GAME_RELEASE: ksp-1.12.5
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+
+jobs:
+  # a fork's pull request: whether this run may run its code (see the top). Checks out nothing, runs nothing of the PR;
+  # its token may take the label off and say why it refused. Other labels than run-ingame start nothing at all
+  gate:
+    if: >-
+      github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
+      (github.event.action != 'labeled' || github.event.label.name == 'run-ingame')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          ACTION: ${{ github.event.action }}
+          SENDER: ${{ github.event.sender.login }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          writer() {
+            case "$(gh api "repos/$REPO/collaborators/$1/permission" --jq .permission 2>/dev/null || echo none)" in
+              admin|maintain|write) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+          refuse() {
+            echo "::warning::$1"
+            gh api "repos/$REPO/issues/$PR/comments" -f body="In-game tests not started: $1" --silent ||
+              echo "::warning::could not comment on the pull request"
+          }
+          run=false
+          if [ "$ACTION" = labeled ]; then
+            # spent: the label starts this run only; the next needs it again
+            gh api -X DELETE "repos/$REPO/issues/$PR/labels/run-ingame" --silent || echo "::warning::could not take the run-ingame label off"
+            if ! writer "$SENDER"; then
+              refuse "@$SENDER labelled it run-ingame, but only someone with write access starts the tests."
+            # the labeller's own review of this very commit: what they read is what runs (a review records its commit)
+            elif [ -z "$(gh api --paginate "repos/$REPO/pulls/$PR/reviews" \
+                        --jq '.[] | select(.user.login == env.SENDER and .commit_id == env.SHA and .state != "PENDING") | .id')" ]; then
+              refuse "no review by @$SENDER of the latest commit ${SHA::7}. Submit a review of it (a comment is enough), then label it run-ingame again."
+            else
+              run=true; echo "reviewed and labelled by $SENDER: running $SHA"
+            fi
+          elif writer "$AUTHOR"; then
+            run=true; echo "opened by $AUTHOR, who has write access: running $SHA"
+          else
+            echo "::notice::the in-game tests of $AUTHOR's pull request wait for a maintainer's review and run-ingame label"
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: gate
+    # where the run's jobs run (see the top): a fork's pull request only when its gate said so, never by its gate
+    # being skipped
+    if: >-
+      !cancelled() && (
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
+       needs.gate.outputs.run == 'true') ||
+      github.event_name != 'pull_request_target')
+    runs-on: ubuntu-24.04
+    env:
+      KSP_ROOT: /tmp/ksp
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # a fork's pull request (pull_request_target): its head as the event saw it (the commit labelled), not the
+          # base branch; checkout refuses a fork's code there unless told, which the gate before this makes safe to
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || '' }}
+          allow-unsafe-pr-checkout: ${{ github.event_name == 'pull_request_target' }}
+          persist-credentials: false
+      - run: git submodule update --init buildtools
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.x
+      - uses: KSPModdingLibs/KSPBuildTools/.github/actions/setup-ckan@1.1.1
+        with:
+          ckan-filters: ""
+      - uses: KSPModdingLibs/KSPBuildTools/.github/actions/install-dependencies@1.1.1
+        with:
+          dependency-identifiers: ModularFlightIntegrator KSPCommunityFixes KSPBurst ModuleManager
+      - name: Stamp commit SHA
+        run: |
+          cp .github/package.config.json config.json.user
+          python -m buildtools replace
+      - uses: KSPModdingLibs/KSPBuildTools/.github/actions/compile@1.1.1
+        with:
+          solution-file-path: FerramAerospaceResearch.sln
+      - uses: actions/upload-artifact@v6
+        with:
+          name: far-gamedata
+          path: GameData/FerramAerospaceResearch
+      # KSPBurst's Unity packages (Unity.Mathematics and the rest), which FAR's types need and the stock game the unit
+      # tests run against does not have
+      - uses: actions/upload-artifact@v6
+        with:
+          name: kspburst-unity
+          path: ${{ env.KSP_ROOT }}/GameData/000_KSPBurst/Plugins/Unity.*.dll
+          retention-days: 1
+          if-no-files-found: warn
+      # each leg's test durations from its earlier runs (the durations jobs keep them), restored once here and handed to
+      # every shard of this run as an artifact: the shards deal the tests between them by these, so they must all have
+      # the same, reruns of a failed shard included (a run's artifacts outlive its attempts; a cache entry saved since
+      # would not be the same). Workspace paths and cross-OS archives: the same entry restores on either OS
+      - uses: actions/cache/restore@v6
+        with:
+          path: durations/windows
+          key: ksptest-durations-windows-${{ github.run_id }}
+          restore-keys: ksptest-durations-windows-
+          enableCrossOsArchive: true
+      - uses: actions/cache/restore@v6
+        with:
+          path: durations/linux
+          key: ksptest-durations-linux-${{ github.run_id }}
+          restore-keys: ksptest-durations-linux-
+          enableCrossOsArchive: true
+      - name: Durations so far
+        run: |
+          mkdir -p durations/windows durations/linux
+          echo "windows: $(ls durations/windows | wc -l) sessions, linux: $(ls durations/linux | wc -l) sessions"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: durations
+          path: durations
+          include-hidden-files: true
+          if-no-files-found: ignore
+
+  # whether this repository has the game set up (the environment ksp-game and its KSP_GAME_REPO): without it the in-game
+  # jobs are skipped, not failed. Runs nothing of a pull request
+  game:
+    runs-on: ubuntu-24.04
+    environment:
+      name: ksp-game
+      deployment: false
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        env:
+          GAME_REPO: ${{ vars.KSP_GAME_REPO }}
+        run: |
+          if [ -n "$GAME_REPO" ]; then echo "ready=true" >> "$GITHUB_OUTPUT"
+          else echo "::notice::no game set up (the environment ksp-game's KSP_GAME_REPO): the in-game tests are skipped. See KspTests/README.md"; fi
+
+  # Each leg runs the in-game tests split between five jobs (KSPTEST_SHARD k/N: each runs the tests KspTest deals it, by
+  # the tests' durations in the leg's earlier runs, and skips the rest). The Windows jobs also measure
+  # FAR's line coverage: their in-game tests (and in the first, the unit tests) run against FAR instrumented by
+  # AltCover, one count per sequence point, which the coverage job merges into a report. FastVisit keeps that within a
+  # few percent of a plain run; Linux still tests the plain build. A failure to instrument leaves a job's tests on the
+  # plain build, with a warning and no counts.
+  # (two jobs, so what needs only the Windows ones - coverage, durations, their gallery - does not wait for Linux; the
+  # Linux job runs the same steps, ingame-steps)
+  ingame-windows:
+    needs: [build, game]
+    # after the build, whatever the gate before it did: without this a gate skipped (every run but a fork's pull
+    # request) skips these too, as GitHub skips a job below a skipped one unless its condition says otherwise
+    if: &after-build ${{ !cancelled() && needs.build.result == 'success' && needs.game.outputs.ready == 'true' }}
+    # the secrets (environment secrets); a fork's pull request is past its gate by the time its build has run. Not a
+    # deployment: the environment only holds the secrets, so no "Deploying to ksp-game" or deployment records
+    environment: &secrets
+      name: ksp-game
+      deployment: false
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # the game's window, and so the shots: Windows' largest desktop mode. shard: this job's share of its leg's
+          # tests; ksps: KSPs side by side in the job (a runner has 4 cores and 16 GB; a KSP takes about 3 GB)
+          - { name: windows-1, leg: windows, shard: 1/5, os: windows-2022, platform: windows, window: 1920x1080, coverage: true, ksps: 1 }
+          - { name: windows-2, leg: windows, shard: 2/5, os: windows-2022, platform: windows, window: 1920x1080, coverage: true, ksps: 1 }
+          - { name: windows-3, leg: windows, shard: 3/5, os: windows-2022, platform: windows, window: 1920x1080, coverage: true, ksps: 1 }
+          - { name: windows-4, leg: windows, shard: 4/5, os: windows-2022, platform: windows, window: 1920x1080, coverage: true, ksps: 1 }
+          - { name: windows-5, leg: windows, shard: 5/5, os: windows-2022, platform: windows, window: 1920x1080, coverage: true, ksps: 1 }
+    name: in-game (${{ matrix.leg }}${{ matrix.shard && format(' {0}', matrix.shard) || '' }}${{ matrix.coverage && ', coverage' || '' }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env: &ingame-env
+      TEST_FILTER: ${{ inputs.filter }}
+      ALTCOVER: "9.0.145"
+    steps: &ingame-steps
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || '' }}
+          allow-unsafe-pr-checkout: ${{ github.event_name == 'pull_request_target' }}
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.x
+      - uses: actions/setup-python@v6
+        if: matrix.coverage
+        with:
+          python-version: "3.12"
+      - name: Paths
+        run: |
+          w="$RUNNER_TEMP"
+          command -v cygpath >/dev/null && w=$(cygpath -m "$w")
+          echo "WORK=$w" >> "$GITHUB_ENV"
+          echo "KSPTEST_GAME=$w/ksp" >> "$GITHUB_ENV"
+          echo "KSPTEST_INSTANCES=$w/instances" >> "$GITHUB_ENV"
+          echo "KSPTEST_RESULTS=$w/results" >> "$GITHUB_ENV"
+          echo "KSPTEST_CKAN=$w/ckan/ckan.exe" >> "$GITHUB_ENV"
+          echo "KSPTEST_KSP_ARGS=-batchmode" >> "$GITHUB_ENV"
+          echo "KSPTEST_TEXTURES=low" >> "$GITHUB_ENV"
+          echo "KSPTEST_WINDOW=${{ matrix.window }}" >> "$GITHUB_ENV"
+          echo "KSPTEST_MAX_KSPS=${{ matrix.ksps }}" >> "$GITHUB_ENV"
+          if [ -n "${{ matrix.shard }}" ]; then echo "KSPTEST_SHARD=${{ matrix.shard }}" >> "$GITHUB_ENV"; fi
+          echo "KSPTEST_DURATIONS=$w/durations-all/${{ matrix.leg }}" >> "$GITHUB_ENV"
+          # KSPs sharing the runner's cores run slower: their waits stretched
+          echo "KSPTEST_TIMEOUT_SCALE=${{ matrix.ksps > 1 && 2 || 1 }}" >> "$GITHUB_ENV"
+          echo "COV=$w/cov" >> "$GITHUB_ENV"
+          # the plain build; Instrument FAR switches the coverage leg to its instrumented copy once that is complete
+          echo "FarGameData=$w/far/FerramAerospaceResearch" >> "$GITHUB_ENV"
+      - name: Linux packages
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            xvfb xauth x11-utils libgl1 libgl1-mesa-dri libglu1-mesa libegl1 \
+            libxcursor1 libxrandr2 libxi6 libxinerama1 libxss1 libxext6 libx11-6 libgtk-3-0 \
+            libpulse0 libasound2t64 libudev1 mono-runtime mono-devel ca-certificates-mono p7zip-full
+      - uses: actions/download-artifact@v8
+        with:
+          name: far-gamedata
+          path: ${{ runner.temp }}/far/FerramAerospaceResearch
+      - name: Download the game
+        env:
+          GH_TOKEN: ${{ secrets.KSP_GAME_TOKEN }}
+          GAME_REPO: ${{ vars.KSP_GAME_REPO }}
+        run: gh release download "$GAME_RELEASE-${{ matrix.platform }}" -R "$GAME_REPO" -p '*.7z.*' -D "$WORK/game-archive"
+      - name: Extract the game
+        env:
+          KSP_GAME_KEY: ${{ secrets.KSP_GAME_KEY }}
+        run: |
+          7z x -y -bso0 -bsp0 "-p$KSP_GAME_KEY" "-o$KSPTEST_GAME" "$WORK/game-archive/$GAME_RELEASE-${{ matrix.platform }}.7z.001"
+          rm -rf "$WORK/game-archive"
+          if [ -f "$KSPTEST_GAME/KSP.x86_64" ]; then chmod +x "$KSPTEST_GAME/KSP.x86_64"; fi
+      # a release pinned and checked, as AltCover is: a new CKAN cannot change a run overnight
+      - name: CKAN
+        env:
+          CKAN: v1.36.4
+          CKAN_SHA256: 7748082cdfcf2dbb5f502261b18afc85003193894c60427d04b0ac7a8dfef7de
+        run: |
+          mkdir -p "$WORK/ckan"
+          curl -fsSL -o "$KSPTEST_CKAN" "https://github.com/KSP-CKAN/CKAN/releases/download/$CKAN/ckan.exe"
+          echo "$CKAN_SHA256  $KSPTEST_CKAN" | sha256sum -c -
+      # coverage: .github/scripts/coverage.sh
+      - name: Instrument FAR
+        id: instrument
+        if: matrix.coverage
+        continue-on-error: true
+        run: |
+          bash .github/scripts/coverage.sh instrument ||
+            { echo "::warning::FAR not instrumented: the in-game tests run on the plain build"; exit 1; }
+      # the unit tests (.NET Framework 4.8: Windows), in the first Windows job, against the game's own assemblies (all of
+      # them run, as the public stripped ones do not let a third of them) and the instrumented FAR, for their counts too.
+      # A failure fails the job at its end (Unit test result), after the in-game tests have run
+      - uses: actions/download-artifact@v8
+        if: matrix.platform == 'windows' && startsWith(matrix.shard, '1/')
+        continue-on-error: true
+        with:
+          name: kspburst-unity
+          path: ${{ runner.temp }}/kspburst
+      - name: Unit tests
+        id: unit
+        if: matrix.platform == 'windows' && startsWith(matrix.shard, '1/')
+        continue-on-error: true
+        run: bash .github/scripts/coverage.sh unit
+      - name: Unit test summary
+        if: always() && matrix.platform == 'windows' && startsWith(matrix.shard, '1/')
+        continue-on-error: true
+        run: python -I .github/scripts/test_summary.py "Unit tests" "$RUNNER_TEMP/unit-trx" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v6
+        if: always() && matrix.platform == 'windows' && startsWith(matrix.shard, '1/')
+        with:
+          name: unit-results
+          path: ${{ runner.temp }}/unit-trx
+          if-no-files-found: warn
+      # batchmode's screen on Windows is no bigger than the desktop (the runner's is 1024x768, with modes up to
+      # 1920x1080); without the change FAR's windows run off its edges
+      - name: Desktop size
+        if: matrix.platform == 'windows'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Add-Type @'
+          using System.Runtime.InteropServices;
+          public static class Desktop
+          {
+              [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+              public struct DEVMODE
+              {
+                  [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;
+                  public short dmSpecVersion, dmDriverVersion, dmSize, dmDriverExtra;
+                  public int dmFields, dmPositionX, dmPositionY, dmDisplayOrientation, dmDisplayFixedOutput;
+                  public short dmColor, dmDuplex, dmYResolution, dmTTOption, dmCollate;
+                  [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmFormName;
+                  public short dmLogPixels;
+                  public int dmBitsPerPel, dmPelsWidth, dmPelsHeight, dmDisplayFlags, dmDisplayFrequency;
+                  public int dmICMMethod, dmICMIntent, dmMediaType, dmDitherType, dmReserved1, dmReserved2, dmPanningWidth, dmPanningHeight;
+              }
+              [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern bool EnumDisplaySettings(string device, int mode, ref DEVMODE dm);
+              [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int ChangeDisplaySettings(ref DEVMODE dm, int flags);
+          }
+          '@
+          function Mode([int]$i) { $dm = New-Object Desktop+DEVMODE; $dm.dmSize = [Runtime.InteropServices.Marshal]::SizeOf($dm); if ([Desktop]::EnumDisplaySettings([NullString]::Value, $i, [ref]$dm)) { $dm } }
+          $cur = Mode -1
+          "desktop $($cur.dmPelsWidth)x$($cur.dmPelsHeight)"
+          $modes = for ($i = 0; ($m = Mode $i); $i++) { $m }
+          "modes: " + (($modes | ForEach-Object { "$($_.dmPelsWidth)x$($_.dmPelsHeight)" } | Select-Object -Unique) -join ' ')
+          # the smallest that holds the window
+          $w, $h = $env:KSPTEST_WINDOW -split 'x' | ForEach-Object { [int]$_ }
+          $fit = $modes | Where-Object { $_.dmPelsWidth -ge $w -and $_.dmPelsHeight -ge $h } |
+            Sort-Object { $_.dmPelsWidth * $_.dmPelsHeight } | Select-Object -First 1
+          if (-not $fit) { "no mode holds ${w}x${h}"; exit 0 }
+          $cur.dmPelsWidth = $fit.dmPelsWidth; $cur.dmPelsHeight = $fit.dmPelsHeight; $cur.dmFields = 0x80000 -bor 0x100000
+          "setting $($fit.dmPelsWidth)x$($fit.dmPelsHeight)"
+          "ChangeDisplaySettings: $([Desktop]::ChangeDisplaySettings([ref]$cur, 0)) (0 is success)"
+          $now = Mode -1
+          "desktop now $($now.dmPelsWidth)x$($now.dmPelsHeight)"
+      - name: Virtual display
+        if: matrix.platform == 'linux'
+        run: |
+          Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp >"$WORK/xvfb.log" 2>&1 &
+          for i in $(seq 50); do xdpyinfo -display :99 >/dev/null 2>&1 && break; sleep 0.2; done
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+      # the leg's test durations the build job restored, which the jobs deal the tests by: every job of the run gets the
+      # same, so each test runs in one of them (without any, the tests are dealt by count)
+      - uses: actions/download-artifact@v8
+        if: matrix.shard != ''
+        continue-on-error: true
+        with:
+          name: durations
+          path: ${{ runner.temp }}/durations-all
+      - name: In-game tests
+        run: |
+          args=(test KspTests/FerramAerospaceResearch.KspTests.Run -p:KspDir="$KSPTEST_GAME"
+                --logger "console;verbosity=normal" --logger "trx;LogFileName=ingame-${{ matrix.name }}.trx" --results-directory "$WORK/trx")
+          [ -n "$TEST_FILTER" ] && args+=(--filter "$TEST_FILTER")
+          # without xUnit's "[xUnit.net 0:00:12.34] Assembly: " before each line: KspTest's lines carry their own stamp
+          # (the step's bash has pipefail: a failing run still fails it)
+          dotnet "${args[@]}" 2>&1 | sed -u -E 's/^\[xUnit\.net [0-9:.]+\] ([^ :]+: )?//'
+      - name: Coverage counts
+        if: always() && matrix.coverage && steps.instrument.outcome == 'success'
+        run: bash .github/scripts/coverage.sh collect ${{ matrix.name }}
+      # the counts only: never the game or an instance
+      - uses: actions/upload-artifact@v6
+        if: always() && matrix.coverage && steps.instrument.outcome == 'success'
+        with:
+          name: coverage-${{ matrix.name }}
+          path: |
+            ${{ runner.temp }}/cov/unit.xml
+            ${{ runner.temp }}/cov/ingame-*.xml
+          if-no-files-found: warn
+      # a crashed KSP leaves its native stack in Unity's Player.log and the crash folder, outside the results: beside
+      # them in the artifact, a folder per job (the leg's artifacts are merged), not a session of the gallery
+      - name: Crash reports
+        if: failure()
+        run: |
+          d="$WORK/crash/${{ matrix.name }}"; mkdir -p "$d"
+          if [ "${{ matrix.platform }}" = windows ]; then
+            p="$(cygpath -u "$USERPROFILE")/AppData/LocalLow/Squad/Kerbal Space Program"
+            c="$(cygpath -u "$LOCALAPPDATA")/Temp/Squad/Kerbal Space Program/Crashes"
+          else
+            p="$HOME/.config/unity3d/Squad/Kerbal Space Program"; c=""
+          fi
+          cp "$p"/Player*.log "$d/" 2>/dev/null || echo "no Player.log in $p"
+          if [ -n "$c" ] && [ -d "$c" ]; then cp -r "$c" "$d/"; fi
+          ls -laR "$d"
+      # results, logs and the test report only: never the game or an instance
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: ingame-results-${{ matrix.name }}
+          # the sessions' coverage counts go in the coverage artifact
+          path: |
+            ${{ runner.temp }}/results
+            ${{ runner.temp }}/trx
+            ${{ runner.temp }}/crash
+            !${{ runner.temp }}/results/*/collected
+          if-no-files-found: warn
+      - name: Unit test result
+        if: always() && steps.unit.outcome == 'failure'
+        run: |
+          echo "::error::unit tests failed: see the Unit tests step and the job summary"
+          exit 1
+
+  ingame-linux:
+    needs: [build, game]
+    if: *after-build
+    environment: *secrets
+    strategy:
+      matrix:
+        include:
+          # batchmode's screen on Linux is 640x480 whatever is asked: its shots are that drawn at twice the size
+          - { name: linux-1, leg: linux, shard: 1/5, os: ubuntu-24.04, platform: linux, window: 1280x960, coverage: false, ksps: 1 }
+          - { name: linux-2, leg: linux, shard: 2/5, os: ubuntu-24.04, platform: linux, window: 1280x960, coverage: false, ksps: 1 }
+          - { name: linux-3, leg: linux, shard: 3/5, os: ubuntu-24.04, platform: linux, window: 1280x960, coverage: false, ksps: 1 }
+          - { name: linux-4, leg: linux, shard: 4/5, os: ubuntu-24.04, platform: linux, window: 1280x960, coverage: false, ksps: 1 }
+          - { name: linux-5, leg: linux, shard: 5/5, os: ubuntu-24.04, platform: linux, window: 1280x960, coverage: false, ksps: 1 }
+      fail-fast: false
+    name: in-game (${{ matrix.leg }}${{ matrix.shard && format(' {0}', matrix.shard) || '' }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env: *ingame-env
+    steps: *ingame-steps
+
+  # one leg's test summary (the job summary) and its page of screenshots, uploaded unzipped so it opens as a single
+  # file. Its own job, from the uploaded results only: a pip install never runs beside the extracted game.
+  gallery-windows:
+    needs: ingame-windows
+    if: always() && needs.ingame-windows.result != 'skipped'
+    strategy:
+      matrix:
+        # status: the leg's commit status (the Status step); its number puts it before the jobs in a name-sorted list
+        include:
+          - { name: windows, status: "1 / In-game tests (Windows)" }
+    name: results (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    # statuses: the leg's commit status (the Status step)
+    permissions: &results-permissions
+      contents: read
+      statuses: write
+    steps: &gallery-steps
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      # the leg's jobs' results in one folder (their sessions' folders are named apart)
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          pattern: ingame-results-${{ matrix.name }}*
+          merge-multiple: true
+          path: ${{ runner.temp }}/results-${{ matrix.name }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Build the page
+        run: |
+          python -m pip install --quiet --disable-pip-version-check pillow || echo "no Pillow: the page embeds the PNGs"
+          python .github/scripts/shots_gallery.py "$RUNNER_TEMP/results-${{ matrix.name }}/results" \
+            "$RUNNER_TEMP/gallery/screenshots-${{ matrix.name }}.html" \
+            --title "FAR in-game tests: ${{ matrix.name }}, ${GITHUB_SHA::8}"
+      - uses: actions/upload-artifact@v7
+        with:
+          path: ${{ runner.temp }}/gallery/screenshots-${{ matrix.name }}.html
+          archive: false
+      # the leg's tests, its jobs' results merged (test_summary.py), for the job summary; fails the job when a test ran
+      # in none of the leg's jobs
+      - name: Summary
+        id: summary
+        if: always()
+        run: |
+          status=0
+          python -I .github/scripts/test_summary.py "In-game tests (${{ matrix.name }})" "$RUNNER_TEMP/results-${{ matrix.name }}" \
+            > "$RUNNER_TEMP/summary.md" || status=$?
+          cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+      # the leg as one commit status, described by its counts ("412 passed, 2 failed, 31 skipped") and linking to the
+      # run's summaries: a pull request's checks list it under its own name. A commit status rather than a check run:
+      # GitHub files a check run made with the workflow's token under one of the commit's workflow runs, prefixed with
+      # that workflow's name. On a fork's pull request, its head commit
+      - name: Status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          CONTEXT: ${{ matrix.status }}
+          PASSED: ${{ steps.summary.outputs.passed }}
+          FAILED: ${{ steps.summary.outputs.failed }}
+          SKIPPED: ${{ steps.summary.outputs.skipped }}
+          NOWHERE: ${{ steps.summary.outputs.nowhere }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$PASSED" ]; then state=failure; text="no summary: see the run"
+          elif [ $((PASSED + FAILED + SKIPPED + NOWHERE)) -eq 0 ]; then state=failure; text="no test results"
+          else
+            text="$PASSED passed, $FAILED failed, $SKIPPED skipped"
+            [ "$NOWHERE" -gt 0 ] && text="$text, $NOWHERE run in no job"
+            if [ "$FAILED" -gt 0 ] || [ "$NOWHERE" -gt 0 ]; then state=failure; else state=success; fi
+          fi
+          gh api "repos/$REPO/statuses/$SHA" -f state="$state" -f context="$CONTEXT" -f description="$text" \
+            -f target_url="$RUN_URL" --jq '"status \(.context): \(.state), \(.description)"'
+
+  gallery-linux:
+    needs: ingame-linux
+    if: always() && needs.ingame-linux.result != 'skipped'
+    strategy:
+      matrix:
+        include:
+          - { name: linux, status: "2 / In-game tests (Linux)" }
+    name: results (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    permissions: *results-permissions
+    steps: *gallery-steps
+
+  # the Windows jobs' coverage counts merged into one report (the job summary and the coverage artifact)
+  coverage:
+    needs: ingame-windows
+    if: always() && needs.ingame-windows.result != 'skipped'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: coverage-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/cov
+      - name: Report
+        run: COV="$RUNNER_TEMP/cov" bash .github/scripts/coverage.sh report
+      - uses: actions/upload-artifact@v6
+        with:
+          name: coverage
+          path: ${{ runner.temp }}/cov
+          if-no-files-found: warn
+
+  # this run's test durations of one leg added to those it dealt its jobs' tests by (the build job's artifact), for its
+  # next run: every job's sessions' result.json, the last 50 sessions' kept, saved cross-OS from the workspace path the
+  # build job restores
+  durations-windows:
+    needs: ingame-windows
+    # not from a fork's pull request: what later runs deal their tests by stays this repository's
+    if: always() && needs.ingame-windows.result != 'skipped' && github.event_name != 'pull_request_target'
+    strategy:
+      matrix:
+        leg: [windows]
+    name: durations (${{ matrix.leg }})
+    runs-on: ubuntu-24.04
+    steps: &durations-steps
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: durations
+          path: durations
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: ingame-results-${{ matrix.leg }}-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/new
+      - name: Durations
+        run: |
+          d="durations/${{ matrix.leg }}"; mkdir -p "$d"
+          for f in "$RUNNER_TEMP"/new/results/*/result.json; do
+            [ -f "$f" ] || continue
+            s="$d/$(basename "$(dirname "$f")")"; mkdir -p "$s"; cp "$f" "$s/"
+          done
+          ls -1d "$d"/*/ 2>/dev/null | sort | head -n -50 | xargs -r rm -rf
+          echo "$(ls -1d "$d"/*/ 2>/dev/null | wc -l) sessions' durations kept"
+      - uses: actions/cache/save@v6
+        with:
+          path: durations/${{ matrix.leg }}
+          key: ksptest-durations-${{ matrix.leg }}-${{ github.run_id }}-${{ github.run_attempt }}
+          enableCrossOsArchive: true
+
+  durations-linux:
+    needs: ingame-linux
+    # not from a fork's pull request: what later runs deal their tests by stays this repository's
+    if: always() && needs.ingame-linux.result != 'skipped' && github.event_name != 'pull_request_target'
+    strategy:
+      matrix:
+        leg: [linux]
+    name: durations (${{ matrix.leg }})
+    runs-on: ubuntu-24.04
+    steps: *durations-steps

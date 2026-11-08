@@ -47,25 +47,26 @@ namespace FerramAerospaceResearch.Reflection
             return loadedAssemblies;
         }
 
-        /// <summary>
-        /// Find types in the specified assembly that derive from T
-        /// </summary>
-        /// <param name="assembly"></param>
-        /// <param name="inherit"></param>
-        /// <typeparam name="T"></typeparam>
-        /// <returns>enumerable of Type</returns>
-        public static IEnumerable<Type> FindTypesInAssembly<T>(Assembly assembly, bool inherit = true)
-        {
-            // ReSharper disable once LoopCanBeConvertedToQuery
-            foreach (Type type in GetTypes(assembly))
-                if (type.IsDefined(typeof(T), inherit))
-                    yield return type;
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // /// <summary>
+        // /// Find types in the specified assembly that derive from T
+        // /// </summary>
+        // /// <param name="assembly"></param>
+        // /// <param name="inherit"></param>
+        // /// <typeparam name="T"></typeparam>
+        // /// <returns>enumerable of Type</returns>
+        // public static IEnumerable<Type> FindTypesInAssembly<T>(Assembly assembly, bool inherit = true)
+        // {
+        //     // ReSharper disable once LoopCanBeConvertedToQuery
+        //     foreach (Type type in GetTypes(assembly))
+        //         if (type.IsDefined(typeof(T), inherit))
+        //             yield return type;
+        // }
 
-        public static IEnumerable<Type> FindTypesInAssembly<T>(bool inherit = true)
-        {
-            return FindTypesInAssembly<T>(ExecutingAssembly, inherit);
-        }
+        // public static IEnumerable<Type> FindTypesInAssembly<T>(bool inherit = true)
+        // {
+        //     return FindTypesInAssembly<T>(ExecutingAssembly, inherit);
+        // }
 
         public static IEnumerable<Type> FindTypes<T>(IEnumerable<Type> types, bool inherit)
         {
@@ -96,18 +97,19 @@ namespace FerramAerospaceResearch.Reflection
             return FindTypes<T>(LoadedAssemblies, inherit);
         }
 
-        public static IEnumerable<Pair<T, Type>> FindAttributeInAssembly<T>(Assembly assembly, bool inherit = true)
-            where T : Attribute
-        {
-            foreach (Type type in GetTypes(assembly))
-                if (type.GetCustomAttribute(typeof(T), inherit) is T attribute)
-                    yield return Pair.Create(attribute, type);
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public static IEnumerable<Pair<T, Type>> FindAttributeInAssembly<T>(Assembly assembly, bool inherit = true)
+        //     where T : Attribute
+        // {
+        //     foreach (Type type in GetTypes(assembly))
+        //         if (type.GetCustomAttribute(typeof(T), inherit) is T attribute)
+        //             yield return Pair.Create(attribute, type);
+        // }
 
-        public static IEnumerable<Pair<T, Type>> FindAttributeInAssembly<T>(bool inherit = true) where T : Attribute
-        {
-            return FindAttributeInAssembly<T>(ExecutingAssembly, inherit);
-        }
+        // public static IEnumerable<Pair<T, Type>> FindAttributeInAssembly<T>(bool inherit = true) where T : Attribute
+        // {
+        //     return FindAttributeInAssembly<T>(ExecutingAssembly, inherit);
+        // }
 
         public static IEnumerable<Pair<T, Type>> FindAttribute<T>(IEnumerable<Assembly> assemblies, bool inherit = true)
             where T : Attribute
@@ -213,11 +215,12 @@ namespace FerramAerospaceResearch.Reflection
             return types;
         }
 
-        public static Type[] ReloadTypes(Assembly assembly)
-        {
-            LoadedTypes.Remove(assembly);
-            return GetTypes(assembly);
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public static Type[] ReloadTypes(Assembly assembly)
+        // {
+        //     LoadedTypes.Remove(assembly);
+        //     return GetTypes(assembly);
+        // }
 
         public static IEnumerable<Pair<T, FieldInfo>> GetFieldsWithAttribute<T>(
             this Type type,
@@ -416,14 +419,15 @@ namespace FerramAerospaceResearch.Reflection
             return InterfaceParameter(type, typeof(IList<>));
         }
 
-        /// <summary>
-        /// Check if type implements generic IList interface
-        /// </summary>
-        /// <param name="type">type to check</param>
-        /// <returns></returns>
-        public static bool IsListValue(Type type)
-        {
-            return ListType(type) != null;
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // /// <summary>
+        // /// Check if type implements generic IList interface
+        // /// </summary>
+        // /// <param name="type">type to check</param>
+        // /// <returns></returns>
+        // public static bool IsListValue(Type type)
+        // {
+        //     return ListType(type) != null;
+        // }
     }
 }

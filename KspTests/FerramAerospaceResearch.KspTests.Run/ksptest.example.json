@@ -1,0 +1,15 @@
+// Copy to ksptest.json (gitignored) beside this file, or set the environment variables instead (they win).
+// Relative paths are from the test assembly (bin/<config>/net8.0).
+{
+  // the KSP install the tests run in (KSPDIR); with none, they run in KSP instances KspTest makes (ksptest setup)
+  "install": "C:/Program Files (x86)/Steam/steamapps/common/Kerbal Space Program",
+  // where each run's results folder goes: result.json, screenshots, CSVs, KSP.log (KSPTEST_RESULTS)
+  "results": "../../../results",
+  // master volume 0 while the tests run (KSPTEST_MUTE)
+  "mute": true,
+  // your own crafts, files or folders of them, put into the test save's SPH or VAB (KSPTEST_CRAFTS, ";" separated)
+  "crafts": [],
+  // test parameters over the tests' own (KSPTEST_PARAMS), e.g. Far_ArCruise on your planes:
+  //   "params": "crafts=My Plane+My Other Plane;ffmpeg=C:/tools/ffmpeg.exe"
+  "params": ""
+}
