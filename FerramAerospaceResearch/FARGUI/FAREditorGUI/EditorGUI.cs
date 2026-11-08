@@ -357,6 +357,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         public static void ResetEditor()
         {
             Instance._areaRulingOverlay.RestartOverlay();
+            // a craft loaded, or an undo or redo: the wings find their neighbours again once it is voxelized. Their
+            // interactions are otherwise found again only when the part count changes, so a craft of the last one's
+            // part count kept the neighbours its wings found while it loaded, among the last craft's parts.
+            FARAeroUtil.ResetEditorParts();
+            Instance.prevPartCount = -1;
             RequestUpdateVoxel();
         }
 
@@ -713,7 +718,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         private void DebugVisualizationGUI()
         {
             GUILayout.BeginHorizontal();
-            GUI.enabled = !Instance.VoxelizationUpdateQueued;
+            // no model to show while one is queued or being built (the last one's chunks are given back as the next is queued)
+            GUI.enabled = !Instance.VoxelizationUpdateQueued && !_vehicleAero.Voxelizing;
             if (GUILayout.Button(Localizer.Format("FARDebugVoxels")))
                 ShowVoxels();
 

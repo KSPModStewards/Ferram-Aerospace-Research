@@ -1142,7 +1142,7 @@ namespace ferram4
                 AoAdesiredControl += RollLocation * roll * rollaxis * 0.01;
             if (!brakeRudder.NearlyEqual(0))
                 AoAdesiredControl +=
-                    BrakeRudderLocation * Math.Max(0.0, BrakeRudderSide * yawaxis) * brakeRudder * 0.01;
+                    BrakeRudderLocation * Math.Max(0.0, BrakeRudderSide * yaw) * brakeRudder * 0.01;
             AoAdesiredControl *= maxdeflect;
             if (!pitchaxisDueToAoA.NearlyEqual(0))
             {

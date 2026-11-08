@@ -927,6 +927,8 @@ namespace ferram4
 
         public void EditorUpdateWingInteractions()
         {
+            // the editor's parts as they are now, not the list this wing took when it last looked
+            UpdateShipPartsList();
             UpdateThisWingInteractions();
         }
 

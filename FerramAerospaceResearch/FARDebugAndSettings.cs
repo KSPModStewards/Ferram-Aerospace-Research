@@ -132,15 +132,27 @@ namespace FerramAerospaceResearch
                     return;
                 if (FARDebugButtonBlizzy != null)
                     return;
-                FARDebugButtonBlizzy = ToolbarManager.Instance.add("FerramAerospaceResearch", "FARDebugButtonBlizzy");
-                FARDebugButtonBlizzy.TexturePath = "FerramAerospaceResearch/Textures/icon_button_blizzy";
-                FARDebugButtonBlizzy.ToolTip = "FAR Debug Options";
-                FARDebugButtonBlizzy.OnClick += e => debugMenu = !debugMenu;
+                CreateBlizzyButton();
             }
             else
             {
-                FARDebugButtonBlizzy?.Destroy();
+                DestroyBlizzyButton();
             }
+        }
+
+        private static void CreateBlizzyButton()
+        {
+            FARDebugButtonBlizzy = ToolbarManager.Instance.add("FerramAerospaceResearch", "FARDebugButtonBlizzy");
+            FARDebugButtonBlizzy.TexturePath = "FerramAerospaceResearch/Textures/icon_button_blizzy";
+            FARDebugButtonBlizzy.ToolTip = "FAR Debug Options";
+            FARDebugButtonBlizzy.OnClick += e => debugMenu = !debugMenu;
+        }
+
+        // destroyed and forgotten: a destroyed button kept here stopped the next Space Center visit making a new one
+        private static void DestroyBlizzyButton()
+        {
+            FARDebugButtonBlizzy?.Destroy();
+            FARDebugButtonBlizzy = null;
         }
 
         // ReSharper disable once MemberCanBeMadeStatic.Local -> static does not work with GameEvents
@@ -576,15 +588,10 @@ namespace FerramAerospaceResearch
 
                 if (tmp != FARDebugValues.useBlizzyToolbar)
                 {
-                    FARDebugButtonBlizzy?.Destroy();
+                    DestroyBlizzyButton();
 
                     if (FARDebugValues.useBlizzyToolbar)
-                    {
-                        FARDebugButtonBlizzy = ToolbarManager.Instance.add("ferram4", "FARDebugButtonBlizzy");
-                        FARDebugButtonBlizzy.TexturePath = "FerramAerospaceResearch/Textures/icon_button_blizzy";
-                        FARDebugButtonBlizzy.ToolTip = "FAR Debug Options";
-                        FARDebugButtonBlizzy.OnClick += e => debugMenu = !debugMenu;
-                    }
+                        CreateBlizzyButton();
                 }
             }
 
@@ -705,7 +712,7 @@ namespace FerramAerospaceResearch
         {
             GameEvents.onGameSceneSwitchRequested.Remove(OnSceneChange);
 
-            FARDebugButtonBlizzy?.Destroy();
+            DestroyBlizzyButton();
         }
 
         // ReSharper disable once UnusedMember.Local -> AtmComposition
