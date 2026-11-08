@@ -481,6 +481,10 @@ jobs:
         name: [windows]
     name: results (${{ matrix.name }})
     runs-on: ubuntu-24.04
+    # checks: the leg's check run (the Check step)
+    permissions: &results-permissions
+      contents: read
+      checks: write
     steps: &gallery-steps
       - uses: actions/checkout@v6
         with:
@@ -509,10 +513,42 @@ jobs:
       # the leg's tests, its jobs' results merged (test_summary.py), for the job summary; fails the job when a test ran
       # in none of the leg's jobs
       - name: Summary
+        id: summary
         if: always()
         run: |
+          status=0
           python -I .github/scripts/test_summary.py "In-game tests (${{ matrix.name }})" "$RUNNER_TEMP/results-${{ matrix.name }}" \
-            >> "$GITHUB_STEP_SUMMARY"
+            > "$RUNNER_TEMP/summary.md" || status=$?
+          cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+      # the leg as one check on the commit, titled with its counts ("412 passed, 2 failed, 31 skipped"), the summary its
+      # details: a pull request's checks list it beside the leg's jobs. On a fork's pull request, its head commit
+      - name: Check
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          NAME: In-game tests (${{ matrix.name }})
+          PASSED: ${{ steps.summary.outputs.passed }}
+          FAILED: ${{ steps.summary.outputs.failed }}
+          SKIPPED: ${{ steps.summary.outputs.skipped }}
+          NOWHERE: ${{ steps.summary.outputs.nowhere }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$PASSED" ]; then conclusion=failure; title="no summary: see the run"
+          elif [ $((PASSED + FAILED + SKIPPED + NOWHERE)) -eq 0 ]; then conclusion=failure; title="no test results"
+          else
+            title="$PASSED passed, $FAILED failed, $SKIPPED skipped"
+            [ "$NOWHERE" -gt 0 ] && title="$title, $NOWHERE run in no job"
+            if [ "$FAILED" -gt 0 ] || [ "$NOWHERE" -gt 0 ]; then conclusion=failure; else conclusion=success; fi
+          fi
+          touch "$RUNNER_TEMP/summary.md"
+          jq -n --arg name "$NAME" --arg sha "$SHA" --arg conclusion "$conclusion" --arg title "$title" --arg url "$RUN_URL" \
+                --rawfile summary "$RUNNER_TEMP/summary.md" \
+                '{name: $name, head_sha: $sha, status: "completed", conclusion: $conclusion, details_url: $url,
+                  output: {title: $title, summary: ($summary | .[0:65000])}}' |
+            gh api "repos/$REPO/check-runs" --input - --jq '"check \(.name): \(.conclusion), \(.output.title)"'
 
   gallery-linux:
     needs: ingame-linux
@@ -522,6 +558,7 @@ jobs:
         name: [linux]
     name: results (${{ matrix.name }})
     runs-on: ubuntu-24.04
+    permissions: *results-permissions
     steps: *gallery-steps
 
   # the Windows jobs' coverage counts merged into one report (the job summary and the coverage artifact)

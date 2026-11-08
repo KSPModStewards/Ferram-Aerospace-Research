@@ -72,6 +72,14 @@ def clock(sec):
     return f"{sec:.0f} s" if sec >= 1 else f"{sec * 1000:.0f} ms"
 
 
+def step_outputs(passed, failed, skipped, nowhere):
+    """The totals as step outputs, on GitHub Actions: the workflow's per-leg check run is titled with them."""
+    path = os.environ.get("GITHUB_OUTPUT")
+    if path:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"passed={passed}\nfailed={failed}\nskipped={skipped}\nnowhere={nowhere}\n")
+
+
 def main(title, paths):
     trx, results = [], []
     for p in paths:
@@ -121,6 +129,7 @@ def main(title, paths):
 
     nowhere = sorted(elsewhere - set(tests))
     if not tests and not nowhere:
+        step_outputs(0, 0, 0, 0)
         print(f"## {title}\n\nNo test results." + "".join(f"\n- unreadable: {u}" for u in unreadable) + "\n")
         return 0
 
@@ -128,6 +137,7 @@ def main(title, paths):
     for name, (outcome, msg, sec, job) in tests.items():
         by.setdefault(outcome, []).append((name, msg, sec, job))
     passed, failed, skipped = len(by["Passed"]), len(by["Failed"]), len(by["NotExecuted"])
+    step_outputs(passed, failed, skipped, len(nowhere))
     verdict = ", ".join(v for v in (f"{failed} failed" if failed else "", f"{len(nowhere)} run in no job" if nowhere else "") if v) or "all passed"
     out = [f"## {title}: {verdict}", "",
            f"**{passed} passed, {failed} failed, {skipped} skipped** of {len(tests)}", ""]
