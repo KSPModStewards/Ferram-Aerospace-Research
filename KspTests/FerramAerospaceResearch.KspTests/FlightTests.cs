@@ -69,12 +69,34 @@ namespace FerramAerospaceResearch.KspTests
         public static IEnumerator Flight_SnapshotIsThreadSafeAndTakesControls(TestContext ctx) => Snapshot(ctx, againstApplied: false);
 
         /// <summary>
-        /// The snapshot's prediction at the state the vessel flies in is the force FAR applies there. Explicit: on master the
-        /// snapshot path predicts like the altitude-only API, the Aeris 4A at Mach 0.5, 3 km, 4 deg with 8.6 kN of drag against
-        /// 14.2 kN applied and 138.0 kN of total force against 128.1 (measured).
+        /// The snapshot's prediction at the state the vessel flies in is the force FAR applies there. Before predictions
+        /// took the game atmosphere, ram drag and settled wings, the Aeris 4A at Mach 0.5, 3 km, 4 deg was predicted with
+        /// 8.6 kN of drag against 14.2 kN applied and 138.0 kN of total force against 128.1 (measured).
         /// </summary>
-        [UITest(Kind = "Check", Explicit = true, StartsAt = StartState.Flight, Craft = Far.Plane, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 900)]
+        [UITest(Kind = "Check", StartsAt = StartState.Flight, Craft = Far.Plane, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 900)]
         public static IEnumerator Flight_SnapshotPredictsTheAppliedForce(TestContext ctx) => Snapshot(ctx, againstApplied: true);
+
+        /// <summary>
+        /// FAR's prediction API (FARAPI.CalculateVesselAeroForcesAt) at the state the vessel flies in gives the force FAR
+        /// applies there. The altitude-only API it replaced predicted the Aeris 4A at Mach 0.5, 3 km, 4 deg with 40% too
+        /// little drag and 8% too much lift (8.5 against 14.1 kN, 137.9 against 127.3 kN).
+        /// </summary>
+        [UITest(Kind = "Check", StartsAt = StartState.Flight, Craft = Far.Plane, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 900)]
+        public static IEnumerator Flight_PredictionIsTheAppliedForce(TestContext ctx)
+        {
+            yield return Wait.Seconds(5);
+            FarFlightProbe.Condition c = Far.At(0.5, 3000, 4, "cruise 4");
+            yield return Airborne(c);
+            Assert.True(FarApi.HasPredictAt, "FAR has FARAPI.CalculateVesselAeroForcesAt");
+            var samples = new List<FarFlightProbe.Sample>();
+            yield return FarFlightProbe.Hold(c, 25, 50, samples);
+            double drag = samples.Average(s => s.Flight[0]), lift = samples.Average(s => s.Flight[1]);
+            double predDrag = samples.Average(s => s.Predicted[0]), predLift = samples.Average(s => s.Predicted[1]);
+            ctx.Record("drag", $"applied {drag:F2} kN, predicted {predDrag:F2}");
+            ctx.Record("lift", $"applied {lift:F2} kN, predicted {predLift:F2}");
+            Assert.Near(drag, predDrag, 0.03 * drag + 0.05, "FAR's prediction of the drag it applies");
+            Assert.Near(lift, predLift, 0.03 * lift + 0.05, "FAR's prediction of the lift it applies");
+        }
 
         private static IEnumerator Snapshot(TestContext ctx, bool againstApplied)
         {
@@ -340,7 +362,7 @@ namespace FerramAerospaceResearch.KspTests
 
                 yield return Wait.Frames(3);
                 ctx.Record("offThreadWarnings", string.Join(" | ", logged.Select(l => $"{l.Type} main={l.MainThread}: {l.Text}")));
-                Assert.Equal(warnedBefore ? 0 : 1, Logged("CalculateVesselAeroForces called off the main thread"),
+                Assert.Equal(warnedBefore ? 0 : 1, Logged("CalculateVesselAeroForces(At) called off the main thread"),
                              "the prediction's warning, once (if not already given this session)");
                 Assert.Equal(directWarnedBefore ? 0 : 1, Logged("FARVesselAero.SimulateAeroProperties called off the main thread"),
                              "FARVesselAero's prediction warning, once a session");
@@ -645,7 +667,8 @@ namespace FerramAerospaceResearch.KspTests
                 Assert.Near(0, (back.Force - p0.Force).magnitude, 1e-3 * p0.Force.magnitude, "the default prediction again");
 
                 ctx.Step("a hotter atmosphere, and a lighter gas, of the same density and speed of sound");
-                FARAtmosphere.SetTemperatureFunction((b, lla, ut) => 1.21 * b.GetTemperature(lla.z));
+                // hotter than the game's temperature at the point, which a prediction takes by default
+                FARAtmosphere.SetTemperatureFunction((b, lla, ut) => 1.21 * FARAtmosphere.GameTemperature(b, lla, ut));
                 var hot = Predict();
                 FARAtmosphere.SetTemperatureFunctionThreadSafe(null);
                 FARAtmosphere.SetGasConstantFunction((b, lla, ut) => 1.21 * PhysicsGlobals.IdealGasConstant / b.atmosphereMolarMass);

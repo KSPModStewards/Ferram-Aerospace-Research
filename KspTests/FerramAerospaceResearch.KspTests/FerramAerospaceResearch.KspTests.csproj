@@ -19,7 +19,7 @@
     </PropertyGroup>
     <PropertyGroup>
         <!-- the harness and these modules from the KspTest submodule, compile-time only: the runner deploys them -->
-        <KspTestModules>Far;AtmosphereAutopilot</KspTestModules>
+        <KspTestModules>Far;Trajectories;AtmosphereAutopilot</KspTestModules>
     </PropertyGroup>
     <ItemGroup>
         <!-- the game loads FAR from GameData: compiled against, never copied -->
