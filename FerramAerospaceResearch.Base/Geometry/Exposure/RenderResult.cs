@@ -86,6 +86,8 @@ public class RenderResult<T> : RenderResult, IReadOnlyDictionary<T, double> wher
 
     public struct Enumerator : IEnumerator<KeyValuePair<T, double>>, IDictionaryEnumerator
     {
+        private readonly Renderer<T> renderer;
+        private readonly List<double> areas;
         private Dictionary<T, int>.KeyCollection.Enumerator keys;
         private List<double>.Enumerator values;
 
@@ -96,6 +98,8 @@ public class RenderResult<T> : RenderResult, IReadOnlyDictionary<T, double> wher
             if (areas is null)
                 throw new ArgumentNullException(nameof(areas));
 
+            this.renderer = renderer;
+            this.areas = areas;
             keys = renderer.Keys.GetEnumerator();
             values = areas.GetEnumerator();
         }
@@ -113,8 +117,11 @@ public class RenderResult<T> : RenderResult, IReadOnlyDictionary<T, double> wher
 
         void IEnumerator.Reset()
         {
-            ((IEnumerator)keys).Reset();
-            ((IEnumerator)values).Reset();
+            // fresh ones: the struct enumerators reset through IEnumerator are boxed copies, leaving these where they were
+            keys.Dispose();
+            values.Dispose();
+            keys = renderer.Keys.GetEnumerator();
+            values = areas.GetEnumerator();
         }
 
         public KeyValuePair<T, double> Current

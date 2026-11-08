@@ -85,7 +85,9 @@ public class Executor : MonoSingleton<Executor>
 
         public void Cancel()
         {
-            cancelled = false;
+            // the job's owner frees its arrays once its readback is in (RenderBatch's JobData.Dispose): a cancelled CPU
+            // job must not go on to count pixels in them
+            cancelled = true;
 
             // cancelled, disable callback as well
             info.callback = null;

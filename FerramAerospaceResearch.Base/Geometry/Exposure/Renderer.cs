@@ -440,6 +440,8 @@ public class Renderer<T> : IDisposable, IReadOnlyDictionary<T, int> where T : Ob
     {
         foreach (HashSet<UnityEngine.Renderer> set in renderers)
             renderersPool.Release(set);
+        // the sets are the pool's again (shared by every renderer): kept here, new objects' sets would go after them
+        renderers.Clear();
         objects.Clear();
         isDirty = true;
     }

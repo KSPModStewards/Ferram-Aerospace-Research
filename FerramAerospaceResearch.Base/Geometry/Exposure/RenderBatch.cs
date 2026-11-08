@@ -139,7 +139,8 @@ public class RenderBatch : IDisposable
         get { return device; }
         set
         {
-            isDirty = (value != device);
+            // set, not cleared: the same device again must not drop a rebuild another change (size, material) asked for
+            isDirty |= value != device;
             device = value;
         }
     }
