@@ -478,13 +478,15 @@ jobs:
     if: always() && needs.ingame-windows.result != 'skipped'
     strategy:
       matrix:
-        name: [windows]
+        # status: the leg's commit status (the Status step); its number puts it before the jobs in a name-sorted list
+        include:
+          - { name: windows, status: "1 / In-game tests (Windows)" }
     name: results (${{ matrix.name }})
     runs-on: ubuntu-24.04
-    # checks: the leg's check run (the Check step)
+    # statuses: the leg's commit status (the Status step)
     permissions: &results-permissions
       contents: read
-      checks: write
+      statuses: write
     steps: &gallery-steps
       - uses: actions/checkout@v6
         with:
@@ -521,41 +523,40 @@ jobs:
             > "$RUNNER_TEMP/summary.md" || status=$?
           cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"
           exit $status
-      # the leg as one check on the commit, titled with its counts ("412 passed, 2 failed, 31 skipped"), the summary its
-      # details: a pull request's checks list it beside the leg's jobs. On a fork's pull request, its head commit
-      - name: Check
+      # the leg as one commit status, described by its counts ("412 passed, 2 failed, 31 skipped") and linking to the
+      # run's summaries: a pull request's checks list it under its own name. A commit status rather than a check run:
+      # GitHub files a check run made with the workflow's token under one of the commit's workflow runs, prefixed with
+      # that workflow's name. On a fork's pull request, its head commit
+      - name: Status
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          NAME: In-game tests (${{ matrix.name }})
+          CONTEXT: ${{ matrix.status }}
           PASSED: ${{ steps.summary.outputs.passed }}
           FAILED: ${{ steps.summary.outputs.failed }}
           SKIPPED: ${{ steps.summary.outputs.skipped }}
           NOWHERE: ${{ steps.summary.outputs.nowhere }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          if [ -z "$PASSED" ]; then conclusion=failure; title="no summary: see the run"
-          elif [ $((PASSED + FAILED + SKIPPED + NOWHERE)) -eq 0 ]; then conclusion=failure; title="no test results"
+          if [ -z "$PASSED" ]; then state=failure; text="no summary: see the run"
+          elif [ $((PASSED + FAILED + SKIPPED + NOWHERE)) -eq 0 ]; then state=failure; text="no test results"
           else
-            title="$PASSED passed, $FAILED failed, $SKIPPED skipped"
-            [ "$NOWHERE" -gt 0 ] && title="$title, $NOWHERE run in no job"
-            if [ "$FAILED" -gt 0 ] || [ "$NOWHERE" -gt 0 ]; then conclusion=failure; else conclusion=success; fi
+            text="$PASSED passed, $FAILED failed, $SKIPPED skipped"
+            [ "$NOWHERE" -gt 0 ] && text="$text, $NOWHERE run in no job"
+            if [ "$FAILED" -gt 0 ] || [ "$NOWHERE" -gt 0 ]; then state=failure; else state=success; fi
           fi
-          touch "$RUNNER_TEMP/summary.md"
-          jq -n --arg name "$NAME" --arg sha "$SHA" --arg conclusion "$conclusion" --arg title "$title" --arg url "$RUN_URL" \
-                --rawfile summary "$RUNNER_TEMP/summary.md" \
-                '{name: $name, head_sha: $sha, status: "completed", conclusion: $conclusion, details_url: $url,
-                  output: {title: $title, summary: ($summary | .[0:65000])}}' |
-            gh api "repos/$REPO/check-runs" --input - --jq '"check \(.name): \(.conclusion), \(.output.title)"'
+          gh api "repos/$REPO/statuses/$SHA" -f state="$state" -f context="$CONTEXT" -f description="$text" \
+            -f target_url="$RUN_URL" --jq '"status \(.context): \(.state), \(.description)"'
 
   gallery-linux:
     needs: ingame-linux
     if: always() && needs.ingame-linux.result != 'skipped'
     strategy:
       matrix:
-        name: [linux]
+        include:
+          - { name: linux, status: "2 / In-game tests (Linux)" }
     name: results (${{ matrix.name }})
     runs-on: ubuntu-24.04
     permissions: *results-permissions

@@ -73,7 +73,7 @@ def clock(sec):
 
 
 def step_outputs(passed, failed, skipped, nowhere):
-    """The totals as step outputs, on GitHub Actions: the workflow's per-leg check run is titled with them."""
+    """The totals as step outputs, on GitHub Actions: the workflow's per-leg commit status is described by them."""
     path = os.environ.get("GITHUB_OUTPUT")
     if path:
         with open(path, "a", encoding="utf-8") as f:
