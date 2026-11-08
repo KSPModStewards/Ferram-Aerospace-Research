@@ -79,6 +79,7 @@ namespace FerramAerospaceResearch.FARPartGeometry
         private int xLength, yLength, zLength;
         private int xCellLength, yCellLength, zCellLength;
         private int threadsQueued;
+        private bool chunksRecycled;
 
         private VehicleVoxel(Vessel vessel)
         {
@@ -136,7 +137,9 @@ namespace FerramAerospaceResearch.FARPartGeometry
                 int chunksForQueue =
                     (int)Math.Ceiling(FARSettingsScenarioModule.VoxelSettings.numVoxelsControllableVessel * 0.034375);
 
-                if (MAX_CHUNKS_IN_QUEUE == chunksForQueue)
+                // the pool's chunks have the subvoxel format they were made with: a new format needs new chunks
+                bool sameFormat = clearedChunks.Count == 0 || clearedChunks.Peek().HighRes == useHigherResVoxels;
+                if (MAX_CHUNKS_IN_QUEUE == chunksForQueue && sameFormat)
                     return;
                 clearedChunks.Clear();
                 MAX_CHUNKS_IN_QUEUE = chunksForQueue;
@@ -395,6 +398,14 @@ namespace FerramAerospaceResearch.FARPartGeometry
         {
             lock (clearedChunks)
             {
+                // once only: a chunk given back twice is in the pool twice, or there while another model has it, and is
+                // handed to two places of a model at once
+                if (chunksRecycled)
+                {
+                    ThreadSafeDebugLogger.Warning("Voxel chunks given back twice: the second time ignored\n" + Environment.StackTrace);
+                    return;
+                }
+                chunksRecycled = true;
                 RecycleChunksFromArray();
                 chunksInUse -= xLength * yLength * zLength;
                 Monitor.Pulse(clearedChunks);
@@ -413,6 +424,9 @@ namespace FerramAerospaceResearch.FARPartGeometry
 
                         chunk.ClearChunk();
 
+                        // one made before the subvoxel setting changed is not reused
+                        if (chunk.HighRes != useHigherResVoxels)
+                            continue;
                         if (clearedChunks.Count < MAX_CHUNKS_IN_QUEUE)
                             clearedChunks.Push(chunk);
                         else

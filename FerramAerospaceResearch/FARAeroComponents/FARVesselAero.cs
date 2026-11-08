@@ -907,6 +907,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
             BumpSnapshotVersion();
             Unsubscribe();
             DisableModule();
+            // a voxel model kept (debugInFlight), or one still being built when the vessel goes (a voxelization ending
+            // outside flight skips its own cleanup), gives its chunks back to the pool here or nowhere
+            _vehicleAero?.ForceCleanup();
         }
 
         private void DisableModule()

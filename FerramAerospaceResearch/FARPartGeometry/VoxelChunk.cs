@@ -54,6 +54,9 @@ namespace FerramAerospaceResearch.FARPartGeometry
         private readonly PartSizePair[] voxelPoints;
         private Dictionary<Part, int> partPriorities;
 
+        /// <summary>8-bit subvoxels (high-res) rather than 4-bit: fixed for the chunk's life.</summary>
+        public bool HighRes { get; }
+
         private double _size;
 
         private Vector3d lowerCorner;
@@ -72,6 +75,7 @@ namespace FerramAerospaceResearch.FARPartGeometry
             _size = size;
             offset = iOffset + 8 * jOffset + 64 * kOffset;
             voxelPoints = new PartSizePair[512];
+            HighRes = usePartSize256;
             if (usePartSize256)
                 for (int i = 0; i < voxelPoints.Length; i++)
                     voxelPoints[i] = new PartSizePair8Bit();

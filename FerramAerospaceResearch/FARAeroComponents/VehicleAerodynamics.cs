@@ -108,6 +108,11 @@ namespace FerramAerospaceResearch.FARAeroComponents
         private bool visualizing;
         public bool Voxelizing { get; private set; }
 
+        // a ForceCleanup asked for while a voxelization runs, left to the voxelization; under the lock, a voxelization's
+        // end (with the cleanup left to it) and ForceCleanup come one after the other
+        private readonly object _cleanupLock = new object();
+        private volatile bool _cleanupRequested;
+
         public Bounds VoxelBounds
         {
             get { return _voxel?.Bounds ?? new Bounds(); }
@@ -139,9 +144,31 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         public void ForceCleanup()
         {
+            // while a voxelization runs (queued or on its thread) it does the cleanup when it ends: done now, the model
+            // it is building would never be given back to the chunk pool, and it would go on with these cleared under it.
+            // The voxelization thread can wait on the main thread's tasks, so this cannot wait for it.
+            lock (_cleanupLock)
+            {
+                if (Voxelizing)
+                    _cleanupRequested = true;
+                else
+                    Cleanup(true);
+            }
+        }
+
+        /// <summary>
+        /// Gives the voxel model's chunks back and drops the lists. Off the main thread (a cleanup left to the
+        /// voxelization) only the chunks: clearing the debug voxel mesh waits on the main thread, which runs no FAR tasks
+        /// once the editor has gone, and the mesh goes with the scene.
+        /// </summary>
+        private void Cleanup(bool onMainThread)
+        {
             if (_voxel != null)
             {
-                _voxel.CleanupVoxel();
+                if (onMainThread)
+                    _voxel.CleanupVoxel();
+                else
+                    _voxel.RecycleVoxelChunks();
                 _voxel = null;
             }
 
@@ -310,12 +337,15 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         private void ClearDebugVoxel()
         {
-            _voxel.ClearVisualVoxels();
+            _voxel?.ClearVisualVoxels();
             visualizing = false;
         }
 
         private void DisplayDebugVoxels(Matrix4x4 localToWorldMatrix)
         {
+            // none while a new one is built
+            if (_voxel == null)
+                return;
             _voxel.VisualizeVoxel(localToWorldMatrix);
             visualizing = true;
         }
@@ -371,7 +401,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 //If the voxel still exists, cleanup everything so we can continue;
                 visualizing = false;
 
+                // its chunks go back to the pool for the new one: nothing may use or give back the old one after this
                 _voxel?.CleanupVoxel();
+                _voxel = null;
 
                 //set flag so that this function can't run again before voxelizing completes and queue voxelizing thread
                 Voxelizing = true;
@@ -391,8 +423,13 @@ namespace FerramAerospaceResearch.FARAeroComponents
             {
                 try
                 {
+                    // cleaned up before it started or while it was built: nobody wants the result
+                    if (_cleanupRequested)
+                        return;
                     //Actually voxelize it
                     _voxel = VehicleVoxel.CreateNewVoxel(_currentGeoModules, _voxelCount, vessel: vessel);
+                    if (_cleanupRequested)
+                        return;
                     if (_vehicleCrossSection.Length < _voxel.MaxArrayLength)
                         _vehicleCrossSection = _voxel.EmptyCrossSectionArray;
 
@@ -415,8 +452,14 @@ namespace FerramAerospaceResearch.FARAeroComponents
                         _voxel = null;
                     }
 
-                    //And unset the flag so that the main thread can queue it again
-                    Voxelizing = false;
+                    //And unset the flag so that the main thread can queue it again, a cleanup left to this done first
+                    lock (_cleanupLock)
+                    {
+                        if (_cleanupRequested)
+                            Cleanup(false);
+                        _cleanupRequested = false;
+                        Voxelizing = false;
+                    }
                 }
             }
         }
@@ -1531,6 +1574,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     }
                 }
 
+            // left with a cleanup to do (the editor gone), no main thread tasks: none may run until another scene
+            if (_cleanupRequested)
+                return;
             if (_moduleAndAreasDict.Count > 0)
                 VoxelizationThreadpool.Instance.RunOnMainThread(() =>
                 {
@@ -1559,6 +1605,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
             _newUnusedAeroModules.Clear();
 
+            if (_cleanupRequested)
+                return;
             VoxelizationThreadpool.Instance.RunOnMainThread(() =>
             {
                 foreach (GeometryPartModule geoModule in _currentGeoModules)
