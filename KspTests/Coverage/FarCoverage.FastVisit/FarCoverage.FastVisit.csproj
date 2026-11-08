@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Coverage runs only: stands in for AltCover's recorder at every instrumented point of FAR (CovPatch rewrites the
+        calls after AltCover instruments it), passing only a point's first visit on. Goes beside AltCover.Recorder.g.dll
+        in the instrumented FAR's Plugins folder and the unit tests' output; loaded by KSP's Mono, so net472.
+    -->
+    <PropertyGroup>
+        <TargetFramework>net472</TargetFramework>
+        <AssemblyName>FarCoverage.FastVisit</AssemblyName>
+        <LangVersion>latest</LangVersion>
+        <Optimize>true</Optimize>
+        <IsPackable>false</IsPackable>
+        <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    </PropertyGroup>
+</Project>

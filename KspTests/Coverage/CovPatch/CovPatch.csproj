@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Coverage runs only: rewrites the AltCover visit calls in instrumented assemblies to FarCoverage.FastVisit.Visit.
+        Run with the assemblies as its arguments (dotnet run, or the built CovPatch.exe); each is rewritten in place,
+        and it fails on one with no visit calls.
+    -->
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net8.0</TargetFramework>
+        <RollForward>Major</RollForward>
+        <Nullable>disable</Nullable>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+    <ItemGroup>
+        <!-- the version AltCover 9.0.145 ships -->
+        <PackageReference Include="Mono.Cecil" Version="0.11.6" />
+    </ItemGroup>
+</Project>

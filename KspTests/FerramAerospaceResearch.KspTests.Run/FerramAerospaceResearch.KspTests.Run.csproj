@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!--
+        Runs FAR's in-game tests in KSP with dotnet test: every [UITest] in the in-game projects below is a test here
+        (KspTest.Xunit's generator makes them), which deploys the KspTest harness and the in-game test assemblies into a
+        KSP instance KspTest makes with the mods below (or the install configured), lays this repository's FAR build over
+        CKAN's, starts KSP on a new game (sandbox, unless the test says otherwise) with crafts/ in its save, and passes
+        when the in-game test does. Its Kind (Check, Measure), mods, new game and whether it is explicit (run by name
+        only) are on its [UITest].
+    -->
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <RollForward>Major</RollForward>
+        <Nullable>enable</Nullable>
+        <IsPackable>false</IsPackable>
+        <IsTestProject>true</IsTestProject>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+        <PackageReference Include="xunit" Version="2.9.3" />
+        <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+    </ItemGroup>
+    <ItemGroup>
+        <!-- built and copied to ksp-plugins/<name>/ for the runner to deploy; not referenced. The MechJeb and RP-1 ones
+             only go into installs with that mod: KSP drops an assembly whose types do not load. -->
+        <ProjectReference Include="..\FerramAerospaceResearch.KspTests\FerramAerospaceResearch.KspTests.csproj"
+                          ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" OutputItemType="KspTestPlugin" />
+        <ProjectReference Include="..\FerramAerospaceResearch.KspTests.MechJeb\FerramAerospaceResearch.KspTests.MechJeb.csproj"
+                          ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" OutputItemType="KspTestPlugin"
+                          KspRequires="MechJeb2/Plugins/MechJeb2.dll" />
+        <ProjectReference Include="..\FerramAerospaceResearch.KspTests.RP1\FerramAerospaceResearch.KspTests.RP1.csproj"
+                          ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" OutputItemType="KspTestPlugin"
+                          KspRequires="MechJeb2/Plugins/MechJeb2.dll;RP-1/Plugins/RP0.dll" />
+    </ItemGroup>
+    <ItemGroup>
+        <!-- the instance's mods (CKAN identifiers): FAR and what it needs, and the small mods FAR talks to (procedural
+             parts and wings rebuild FAR's geometry and wing model and are parts of crafts/, AtmosphereAutopilot takes
+             the flight heatmap's cruise targets); a test adds its own with [UITest(Mods)] -->
+        <KspMod Include="FerramAerospaceResearchContinued;KSPBurst;ProceduralParts;B9-PWings-Fork;AtmosphereAutopilot" />
+        <!-- this repository's FAR build over CKAN's: FarGameData (a property, or the environment), else GameData/ -->
+        <KspOverlay Include="$(FarGameData)" Condition="'$(FarGameData)' != ''" />
+        <KspOverlay Include="..\..\GameData\FerramAerospaceResearch" Condition="'$(FarGameData)' == ''" />
+    </ItemGroup>
+    <ItemGroup>
+        <!-- the crafts the tests fly that KSP and FAR do not ship as they are, put into every run's save -->
+        <KspTestCraft Include="crafts/*.craft" />
+        <!-- a player's save (local only, not checked in): Far_UserSaveEntry_RP1 -->
+        <KspTestSave Include="saves/user-gemini" Condition="Exists('saves/user-gemini')" />
+        <None Include="ksptest.json" Condition="Exists('ksptest.json')" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+    <!-- KspTest.Xunit, the runner and the harness from the KspTest submodule -->
+    <Import Project="$(KspTestRoot)/build/KspTest.FromSource.targets" />
+</Project>

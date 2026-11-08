@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using FerramAerospaceResearch.Resources;
 using Unity.Collections;
@@ -46,6 +47,8 @@ public class RenderBatch : IDisposable
             GC.SuppressFinalize(this);
         }
 
+        // coverage: finalizer: runs only at GC time when Dispose was missed
+        [ExcludeFromCodeCoverage]
         ~JobData()
         {
             Dispose(false);
@@ -139,7 +142,8 @@ public class RenderBatch : IDisposable
         get { return device; }
         set
         {
-            isDirty = (value != device);
+            // set, not cleared: the same device again must not drop a rebuild another change (size, material) asked for
+            isDirty |= value != device;
             device = value;
         }
     }
@@ -182,6 +186,8 @@ public class RenderBatch : IDisposable
         GC.SuppressFinalize(this);
     }
 
+    // coverage: finalizer: runs only at GC time when Dispose was missed
+    [ExcludeFromCodeCoverage]
     ~RenderBatch()
     {
         Dispose(false);

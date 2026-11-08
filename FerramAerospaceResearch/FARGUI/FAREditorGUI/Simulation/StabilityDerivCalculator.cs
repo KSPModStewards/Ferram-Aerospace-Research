@@ -283,13 +283,16 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
 
             if (area.NearlyEqual(0))
             {
+                // no wings: the body's reference values as they are, as InstantConditionSim uses them
                 area = _instantCondition._maxCrossSectionFromBody;
                 MAC = _instantCondition._bodyLength;
                 b = 1;
             }
-
-            MAC /= area;
-            b /= area;
+            else
+            {
+                MAC /= area;
+                b /= area;
+            }
 
             stabDerivOutput.b = b;
             stabDerivOutput.MAC = MAC;

@@ -151,41 +151,44 @@ namespace FerramAerospaceResearch
             return Math.Abs(p - q) < error;
         }
 
-        public static double ArithmeticGeometricMean(double a, double b, double error)
-        {
-            while (!Approximately(a, b, error))
-            {
-                double tmpA = 0.5 * (a + b);
-                b = Math.Sqrt(a * b);
-                a = tmpA;
-            }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public static double ArithmeticGeometricMean(double a, double b, double error)
+        // {
+        //     while (!Approximately(a, b, error))
+        //     {
+        //         double tmpA = 0.5 * (a + b);
+        //         b = Math.Sqrt(a * b);
+        //         a = tmpA;
+        //     }
 
-            return (a + b) * 0.5;
-        }
+        //     return (a + b) * 0.5;
+        // }
 
-        public static double ModifiedArithmeticGeometricMean(double a, double b, double error)
-        {
-            double c = 0;
-            while (!Approximately(a, b, error))
-            {
-                double tmpA = 0.5 * (a + b);
-                double tmpSqrt = Math.Sqrt((a - c) * (b - c));
-                b = c + tmpSqrt;
-                c -= tmpSqrt;
-                a = tmpA;
-            }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public static double ModifiedArithmeticGeometricMean(double a, double b, double error)
+        // {
+        //     double c = 0;
+        //     while (!Approximately(a, b, error))
+        //     {
+        //         double tmpA = 0.5 * (a + b);
+        //         double tmpSqrt = Math.Sqrt((a - c) * (b - c));
+        //         b = c + tmpSqrt;
+        //         c -= tmpSqrt;
+        //         a = tmpA;
+        //     }
 
-            return (a + b) * 0.5;
-        }
+        //     return (a + b) * 0.5;
+        // }
 
-        // ReSharper disable once UnusedMember.Global
-        public static double CompleteEllipticIntegralSecondKind(double k, double error)
-        {
-            double value = 2 * ArithmeticGeometricMean(1, k, error);
-            value = Math.PI * ModifiedArithmeticGeometricMean(1, k * k, error) / value;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Global
+        // public static double CompleteEllipticIntegralSecondKind(double k, double error)
+        // {
+        //     double value = 2 * ArithmeticGeometricMean(1, k, error);
+        //     value = Math.PI * ModifiedArithmeticGeometricMean(1, k * k, error) / value;
 
-            return value;
-        }
+        //     return value;
+        // }
 
         //Approximation of Math.Pow(), as implemented here: http://martin.ankerl.com/2007/10/04/optimized-pow-approximation-for-java-and-c-c/
         public static double PowApprox(double a, double b)

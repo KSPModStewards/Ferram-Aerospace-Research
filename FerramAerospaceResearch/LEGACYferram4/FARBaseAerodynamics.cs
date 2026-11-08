@@ -44,6 +44,7 @@ Copyright 2022, Michael Ferrara, aka Ferram4
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using FerramAerospaceResearch;
 using FerramAerospaceResearch.FARGUI.FAREditorGUI;
 using KSPCommunityFixes;
@@ -209,11 +210,15 @@ namespace ferram4
             return velocity;
         }
 
+        // coverage: base virtual: the only subclass overrides it and no cfg uses FARBaseAerodynamics as a module
+        [ExcludeFromCodeCoverage]
         protected virtual void ResetCenterOfLift()
         {
             // Clear state when preparing CoL computation
         }
 
+        // coverage: base virtual: the only subclass overrides it and no cfg uses FARBaseAerodynamics as a module
+        [ExcludeFromCodeCoverage]
         public virtual Vector3d PrecomputeCenterOfLift(
             Vector3d velocity,
             double MachNumber,

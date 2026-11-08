@@ -38,3 +38,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyFileVersion("0.16.2.0")]
 [assembly: KSPAssemblyDependency("ModularFlightIntegrator", 1, 0)]
 [assembly: KSPAssemblyDependency("KSPCommunityFixes", 1, 36)]
+
+// the test suite (KspTests/): unit tests outside the game, in-game tests in it
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("FerramAerospaceResearch.UnitTests")]
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("FerramAerospaceResearch.KspTests")]

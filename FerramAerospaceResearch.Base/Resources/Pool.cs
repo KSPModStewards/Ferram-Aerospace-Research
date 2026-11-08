@@ -65,10 +65,11 @@ namespace FerramAerospaceResearch.Resources
             objects.Push(obj);
         }
 
-        public Disposable<T> Borrow()
-        {
-            return new Disposable<T>(Acquire(), this);
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public Disposable<T> Borrow()
+        // {
+        //     return new Disposable<T>(Acquire(), this);
+        // }
 
         public Stack<T>.Enumerator GetEnumerator()
         {

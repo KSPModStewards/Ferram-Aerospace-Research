@@ -50,10 +50,11 @@ public class Executor : MonoSingleton<Executor>
             get { return job.done; }
         }
 
-        public State CurrentState
-        {
-            get { return job.state; }
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public State CurrentState
+        // {
+        //     get { return job.state; }
+        // }
 
         /// <summary>
         /// Cancel the associated job, may not have an immediate effect as jobs are executed asynchronously
@@ -85,7 +86,9 @@ public class Executor : MonoSingleton<Executor>
 
         public void Cancel()
         {
-            cancelled = false;
+            // the job's owner frees its arrays once its readback is in (RenderBatch's JobData.Dispose): a cancelled CPU
+            // job must not go on to count pixels in them
+            cancelled = true;
 
             // cancelled, disable callback as well
             info.callback = null;

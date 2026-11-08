@@ -45,6 +45,7 @@ Copyright 2022, Daumantas Kavolis, aka dkavolis
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using KSP.Localization;
 using UnityEngine;
@@ -147,15 +148,16 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
             coroutine = null;
         }
 
-        public void PauseLogging()
-        {
-            if (!IsActive)
-                return;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public void PauseLogging()
+        // {
+        //     if (!IsActive)
+        //         return;
 
-            FARLogger.Debug($"Pausing logging to {FileName}");
-            StopCoroutine(coroutine);
-            coroutine = null;
-        }
+        //     FARLogger.Debug($"Pausing logging to {FileName}");
+        //     StopCoroutine(coroutine);
+        //     coroutine = null;
+        // }
 
         private IEnumerator DoLogging()
         {
@@ -207,6 +209,8 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
             }
         }
 
+        // coverage: only reached from DoLogging's defensive guards (null vessel or FlightGUI)
+        [ExcludeFromCodeCoverage]
         private void LogError(string msg)
         {
             FARLogger.Error(msg);

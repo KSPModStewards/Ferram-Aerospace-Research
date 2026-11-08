@@ -1,0 +1,2 @@
+# shell scripts keep LF on checkout (a Windows runner's bash cannot run CRLF)
+*.sh text eol=lf

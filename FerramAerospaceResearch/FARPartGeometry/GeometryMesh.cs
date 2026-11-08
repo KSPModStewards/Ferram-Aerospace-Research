@@ -203,14 +203,15 @@ namespace FerramAerospaceResearch.FARPartGeometry
             }
         }
 
-        // ReSharper disable once UnusedMember.Global
-        public void MultithreadTransformBasis(object newThisToVesselMatrixObj)
-        {
-            lock (this)
-            {
-                TransformBasis((Matrix4x4)newThisToVesselMatrixObj);
-            }
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Global
+        // public void MultithreadTransformBasis(object newThisToVesselMatrixObj)
+        // {
+        //     lock (this)
+        //     {
+        //         TransformBasis((Matrix4x4)newThisToVesselMatrixObj);
+        //     }
+        // }
 
         public static Bounds TransformBounds(Bounds oldBounds, Matrix4x4 matrix)
         {

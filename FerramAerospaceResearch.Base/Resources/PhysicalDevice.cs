@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using JetBrains.Annotations;
 using UnityEngine;
 
@@ -64,7 +65,7 @@ public static class PhysicalDeviceExtensions
         if (device is not PhysicalDevice.GPU || supportsComputeShaders)
             return device;
 
-        if (!computeWarningIssued)
+        if (computeWarningIssued)
             return PhysicalDevice.CPU;
 
         FARLogger.Warning("Compute shaders are not supported on your system!");

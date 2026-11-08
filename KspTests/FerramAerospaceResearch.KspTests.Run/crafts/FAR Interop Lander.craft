@@ -1,0 +1,157 @@
+ship = FAR Interop Lander
+version = 1.12.5
+description = For FAR's interop tests (InteropTests.cs): a Mk1 pod with RealChute's stack chute on top and two KSPWheel gears (Kerbal Foundries' small adjustable gear and aero leg) on its sides. Needs RealChute and KerbalFoundriesContinued.
+type = VAB
+size = 2,2,2
+steamPublishedFileId = 0
+persistentId = 3100000100
+rot = 0,0,0,1
+missionFlag = Squad/Flags/default
+vesselType = Ship
+PART
+{
+	part = mk1pod.v2_4294000101
+	partName = Part
+	persistentId = 3100000101
+	pos = 0,15,0
+	attPos = 0,0,0
+	attPos0 = 0,15,0
+	rot = 0,0,0,1
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 0
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = RC.stack_4294000102
+	link = KF-ALG-Small_4294000103
+	link = KF-LegAero_4294000104
+	attN = top,RC.stack_4294000102_0|0.6423756|0
+	EVENTS
+	{
+	}
+	ACTIONS
+	{
+	}
+	PARTDATA
+	{
+	}
+}
+PART
+{
+	part = RC.stack_4294000102
+	partName = Part
+	persistentId = 3100000102
+	pos = 0,15.7727756,0
+	attPos = 0,0,0
+	attPos0 = 0,0.7727756,0
+	rot = 0,0,0,1
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = 0
+	sqor = 0
+	sepI = -1
+	attm = 0
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	attN = bottom,mk1pod.v2_4294000101_0|-0.1304|0
+	EVENTS
+	{
+	}
+	ACTIONS
+	{
+	}
+	PARTDATA
+	{
+	}
+}
+PART
+{
+	part = KF-ALG-Small_4294000103
+	partName = Part
+	persistentId = 3100000103
+	pos = 0.65,14.8,0
+	attPos = 0,0,0
+	attPos0 = 0.65,-0.2,0
+	rot = 0,0,0.707106769,0.707106769
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0.707106769,0.707106769
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,mk1pod.v2_4294000101
+	EVENTS
+	{
+	}
+	ACTIONS
+	{
+	}
+	PARTDATA
+	{
+	}
+}
+PART
+{
+	part = KF-LegAero_4294000104
+	partName = Part
+	persistentId = 3100000104
+	pos = -0.78,14.8,0
+	attPos = 0,0,0
+	attPos0 = -0.78,-0.2,0
+	rot = 0,0,0,1
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Radial
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,mk1pod.v2_4294000101
+	EVENTS
+	{
+	}
+	ACTIONS
+	{
+	}
+	PARTDATA
+	{
+	}
+}

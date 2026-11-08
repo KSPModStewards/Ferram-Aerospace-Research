@@ -1,3 +1,4 @@
+
 namespace FerramAerospaceResearch.FARAeroComponents
 {
     public sealed class DummyAirstreamShield : IAirstreamShield

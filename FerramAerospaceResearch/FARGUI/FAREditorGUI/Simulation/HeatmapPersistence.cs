@@ -97,8 +97,13 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             try
             {
                 Directory.CreateDirectory(CacheDir);
-                string path = Path.Combine(CacheDir,
-                    Sanitize(results[0].CraftName) + "." + results[0].PartCount + "." + DateTime.Now.Ticks + ".farheat");
+                // the clock can read the same for saves in quick succession (on Windows it ticks every ~16 ms): the
+                // next free tick then, so neither overwrites the other
+                string prefix = Sanitize(results[0].CraftName) + "." + results[0].PartCount + ".";
+                long ticks = DateTime.Now.Ticks;
+                string path;
+                while (File.Exists(path = Path.Combine(CacheDir, prefix + ticks + ".farheat")))
+                    ticks++;
                 using (FileStream fs = File.Create(path))
                 using (var gz = new GZipStream(fs, CompressionMode.Compress))
                 using (var w = new BinaryWriter(gz))

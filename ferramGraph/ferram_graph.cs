@@ -75,6 +75,7 @@ namespace ferram4
             foreach (KeyValuePair<string, ferramGraphLine> pair in allLines)
                 pair.Value.ClearTextures();
             allLines = null;
+            Object.Destroy(graph);
         }
 
         public void SetBoundaries(double minx, double maxx, double miny, double maxy)

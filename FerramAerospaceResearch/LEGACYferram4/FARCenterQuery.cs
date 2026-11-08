@@ -86,28 +86,31 @@ namespace ferram4
         }
 
         // Merge two force sets
-        // ReSharper disable once UnusedMember.Global
-        public void AddAll(FARCenterQuery q2)
-        {
-            force += q2.force;
-            torque += q2.torque;
-            pos += q2.pos;
-            amount += q2.amount;
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Global
+        // public void AddAll(FARCenterQuery q2)
+        // {
+        //     force += q2.force;
+        //     torque += q2.torque;
+        //     pos += q2.pos;
+        //     amount += q2.amount;
+        // }
 
         // Returns a center of weight-like average of force positions.
         // Unless all forces are strictly parallel it doesn't mean much.
-        public Vector3d GetPos()
-        {
-            return amount > 0 ? pos / amount : Vector3d.zero;
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public Vector3d GetPos()
+        // {
+        //     return amount > 0 ? pos / amount : Vector3d.zero;
+        // }
 
-        // ReSharper disable once UnusedMember.Global
-        public void SetPos(Vector3d npos)
-        {
-            pos = npos;
-            amount = 1;
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Global
+        // public void SetPos(Vector3d npos)
+        // {
+        //     pos = npos;
+        //     amount = 1;
+        // }
 
         // Compensating torque at different origin.
         public Vector3d TorqueAt(Vector3d origin)
@@ -118,32 +121,35 @@ namespace ferram4
         // Returns a point that requires minimal residual torque
         // (or even 0 if possible) and is closest to origin.
         // Any remaining torque is always parallel to force.
-        public Vector3d GetMinTorquePos(Vector3d origin)
-        {
-            double fmag = force.sqrMagnitude;
-            if (fmag <= 0)
-                return origin;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public Vector3d GetMinTorquePos(Vector3d origin)
+        // {
+        //     double fmag = force.sqrMagnitude;
+        //     if (fmag <= 0)
+        //         return origin;
 
-            return origin + Vector3d.Cross(force, TorqueAt(origin)) / fmag;
-        }
+        //     return origin + Vector3d.Cross(force, TorqueAt(origin)) / fmag;
+        // }
 
-        // ReSharper disable once UnusedMember.Global
-        public Vector3d GetMinTorquePos()
-        {
-            return GetMinTorquePos(GetPos());
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Global
+        // public Vector3d GetMinTorquePos()
+        // {
+        //     return GetMinTorquePos(GetPos());
+        // }
 
         // The physics engine limits torque that can be applied to a single
         // object. This tries to replicate it based on results of experiments.
         // In practice this is probably not necessary for FAR, but since this
         // knowledge has been obtained, might as well turn it into code.
-        // ReSharper disable once UnusedMember.Global
-        public static float TorqueClipFactor(Vector3 torque, Rigidbody body)
-        {
-            Vector3 tq = Quaternion.Inverse(body.rotation * body.inertiaTensorRotation) * torque;
-            Vector3 tensor = body.inertiaTensor;
-            float acceleration = new Vector3(tq.x / tensor.x, tq.y / tensor.y, tq.z / tensor.z).magnitude;
-            return Mathf.Max(1.0f, acceleration * Time.fixedDeltaTime / body.maxAngularVelocity);
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Global
+        // public static float TorqueClipFactor(Vector3 torque, Rigidbody body)
+        // {
+        //     Vector3 tq = Quaternion.Inverse(body.rotation * body.inertiaTensorRotation) * torque;
+        //     Vector3 tensor = body.inertiaTensor;
+        //     float acceleration = new Vector3(tq.x / tensor.x, tq.y / tensor.y, tq.z / tensor.z).magnitude;
+        //     return Mathf.Max(1.0f, acceleration * Time.fixedDeltaTime / body.maxAngularVelocity);
+        // }
     }
 }

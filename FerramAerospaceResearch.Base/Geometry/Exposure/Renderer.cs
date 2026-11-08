@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -26,10 +27,11 @@ public struct ColorUintConverter
         return new ColorUintConverter { u = value }.c;
     }
 
-    public static uint AsUint(Color32 color)
-    {
-        return new ColorUintConverter { c = color }.u;
-    }
+    // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+    // public static uint AsUint(Color32 color)
+    // {
+    //     return new ColorUintConverter { c = color }.u;
+    // }
 }
 
 [BurstCompile]
@@ -363,6 +365,8 @@ public class Renderer<T> : IDisposable, IReadOnlyDictionary<T, int> where T : Ob
         GC.SuppressFinalize(this);
     }
 
+    // coverage: finalizer: runs only at GC time when Dispose was missed
+    [ExcludeFromCodeCoverage]
     ~Renderer()
     {
         Dispose(false);
@@ -440,6 +444,8 @@ public class Renderer<T> : IDisposable, IReadOnlyDictionary<T, int> where T : Ob
     {
         foreach (HashSet<UnityEngine.Renderer> set in renderers)
             renderersPool.Release(set);
+        // the sets are the pool's again (shared by every renderer): kept here, new objects' sets would go after them
+        renderers.Clear();
         objects.Clear();
         isDirty = true;
     }

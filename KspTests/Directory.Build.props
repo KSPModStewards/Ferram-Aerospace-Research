@@ -1,0 +1,12 @@
+<Project>
+  <!-- Not FAR's Directory.Build.props: its KSPBuildTools reference, output path and postbuild are for the mod. Only
+       KSP_DIR_BUILD from FAR's Directory.Build.props.user. The KSP install the in-game tests are built against and run
+       in: KspDir, else the KSPDIR environment variable, else KSP_DIR_BUILD -->
+  <Import Project="../Directory.Build.props.user" Condition="Exists('../Directory.Build.props.user')" />
+  <PropertyGroup>
+    <KspDir Condition="'$(KspDir)' == ''">$(KSP_DIR_BUILD)</KspDir>
+    <!-- the KspTest submodule; KSPTEST_ROOT (or KspTestRoot) points at another checkout, to work on KspTest and these together -->
+    <KspTestRoot Condition="'$(KspTestRoot)' == ''">$(KSPTEST_ROOT)</KspTestRoot>
+    <KspTestRoot Condition="'$(KspTestRoot)' == ''">$(MSBuildThisFileDirectory)KspTest</KspTestRoot>
+  </PropertyGroup>
+</Project>

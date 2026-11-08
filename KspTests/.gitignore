@@ -1,0 +1,4 @@
+# local test settings and what the runs leave
+ksptest.json
+results/
+saves/

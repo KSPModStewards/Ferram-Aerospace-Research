@@ -129,13 +129,16 @@ namespace FerramAerospaceResearch.FARPartGeometry.GeometryModification
         {
         }
 
-        public static IntakeCrossSectionAdjuster CreateAdjuster(PartModule intake, Matrix4x4 worldToVesselMatrix)
-        {
-            var adjuster = new IntakeCrossSectionAdjuster();
-            adjuster.SetupAdjuster(intake, worldToVesselMatrix);
-
-            return adjuster;
-        }
+        // Unused: GeometryPartModule makes adjusters only for a ModuleResourceIntake (AJE's AJEInlet derives from it). For any
+        // other module this left the adjuster without an intake, an error logged and its transform never set. Commented out
+        // after the test suite's coverage run.
+        // public static IntakeCrossSectionAdjuster CreateAdjuster(PartModule intake, Matrix4x4 worldToVesselMatrix)
+        // {
+        //     var adjuster = new IntakeCrossSectionAdjuster();
+        //     adjuster.SetupAdjuster(intake, worldToVesselMatrix);
+        //
+        //     return adjuster;
+        // }
 
         public static IntakeCrossSectionAdjuster CreateAdjuster(
             ModuleResourceIntake intake,
@@ -148,13 +151,16 @@ namespace FerramAerospaceResearch.FARPartGeometry.GeometryModification
             return adjuster;
         }
 
-        public void SetupAdjuster(PartModule intake, Matrix4x4 worldToVesselMatrix)
-        {
-            if (intake is ModuleResourceIntake module)
-                SetupAdjuster(module, worldToVesselMatrix);
-            else
-                FARLogger.Error($"{intake} is not typeof ModuleResourceIntake");
-        }
+        // Unused: GeometryPartModule makes adjusters only for a ModuleResourceIntake (AJE's AJEInlet derives from it). For any
+        // other module this left the adjuster without an intake, an error logged and its transform never set. Commented out
+        // after the test suite's coverage run.
+        // public void SetupAdjuster(PartModule intake, Matrix4x4 worldToVesselMatrix)
+        // {
+        //     if (intake is ModuleResourceIntake module)
+        //         SetupAdjuster(module, worldToVesselMatrix);
+        //     else
+        //         FARLogger.Error($"{intake} is not typeof ModuleResourceIntake");
+        // }
 
         public void SetupAdjuster(ModuleResourceIntake intake, Matrix4x4 worldToVesselMatrix)
         {

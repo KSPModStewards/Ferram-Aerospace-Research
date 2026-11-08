@@ -98,16 +98,18 @@ namespace FerramAerospaceResearch.FARThreading
             }
         }
 
-        [Conditional("LOG_TRACE")]
-        public static void Trace(string message)
-        {
-            Log(LogLevel.Trace, message);
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // [Conditional("LOG_TRACE")]
+        // public static void Trace(string message)
+        // {
+        //     Log(LogLevel.Trace, message);
+        // }
 
-        public static void Debug(string message)
-        {
-            Log(LogLevel.Debug, message);
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public static void Debug(string message)
+        // {
+        //     Log(LogLevel.Debug, message);
+        // }
 
         public static void Info(string message)
         {

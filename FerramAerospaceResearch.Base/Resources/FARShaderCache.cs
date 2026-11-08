@@ -38,10 +38,11 @@ namespace FerramAerospaceResearch.Resources
         {
             private ShaderMaterialPair Items { get; } = new();
 
-            public bool IsSupported
-            {
-                get { return Asset != null && Asset.isSupported; }
-            }
+            // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+            // public bool IsSupported
+            // {
+            //     get { return Asset != null && Asset.isSupported; }
+            // }
 
             public Material Material
             {

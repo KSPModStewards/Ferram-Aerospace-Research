@@ -244,8 +244,12 @@ namespace FerramAerospaceResearch
 
         public static bool IsCustom { get; private set; }
 
+        /// <summary>Changes each time a function is set: a result computed under the old functions is stale.</summary>
+        internal static int Version { get; private set; }
+
         private static void UpdateIsCustom()
         {
+            Version++;
             IsCustom = windFunction.IsCustom ||
                        pressureFunction.IsCustom ||
                        temperatureFunction.IsCustom ||

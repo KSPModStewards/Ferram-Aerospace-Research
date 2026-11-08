@@ -158,15 +158,16 @@ namespace FerramAerospaceResearch.RealChuteLite
             return watch;
         }
 
-        /// <summary>
-        ///     Creates a new PhysicsWatch from a certain amount of time, starts it, and returns the current instance
-        /// </summary>
-        /// <param name="seconds">Time to start the watch at, in seconds</param>
-        public static PhysicsWatch StartNewFromTime(double seconds)
-        {
-            var watch = new PhysicsWatch(seconds);
-            watch.Start();
-            return watch;
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // /// <summary>
+        // ///     Creates a new PhysicsWatch from a certain amount of time, starts it, and returns the current instance
+        // /// </summary>
+        // /// <param name="seconds">Time to start the watch at, in seconds</param>
+        // public static PhysicsWatch StartNewFromTime(double seconds)
+        // {
+        //     var watch = new PhysicsWatch(seconds);
+        //     watch.Start();
+        //     return watch;
+        // }
     }
 }

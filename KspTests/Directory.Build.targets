@@ -1,0 +1,3 @@
+<Project>
+  <!-- Stops FAR's Directory.Build.targets (its postbuild and install) applying to the test projects -->
+</Project>
