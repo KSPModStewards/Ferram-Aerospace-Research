@@ -502,13 +502,22 @@ namespace FerramAerospaceResearch
 
         /// <summary>
         ///     The temperature a prediction takes: a custom temperature function as it is, else the game's temperature
-        ///     at the point (<see cref="GameTemperature" />). Main thread.
+        ///     at the point (<see cref="GameTemperature" />), which is also what a throwing custom function falls back to.
+        ///     Main thread.
         /// </summary>
         internal static double GetPredictionTemperature(CelestialBody body, Vector3d latLonAltitude, double ut)
         {
-            return temperatureFunction.IsCustom
-                       ? GetTemperature(body, latLonAltitude, ut)
-                       : GameTemperature(body, latLonAltitude, ut);
+            if (!temperatureFunction.IsCustom)
+                return GameTemperature(body, latLonAltitude, ut);
+            try
+            {
+                return temperatureFunction.Function(body, latLonAltitude, ut);
+            }
+            catch (Exception e)
+            {
+                FARLogger.InfoFormat("FARAtmosphere.Temperature: exception {0}\n{1}", e.Message, e.StackTrace);
+                return GameTemperature(body, latLonAltitude, ut);
+            }
         }
 
         /// <summary>
