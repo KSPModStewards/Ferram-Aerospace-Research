@@ -14,7 +14,8 @@ using UnityEngine;
 
 namespace FerramAerospaceResearch
 {
-    [FARAddon(800)]
+    // persistent: FARAddonLoader destroys a non-persistent addon in the frame it makes it, before Unity calls its Start
+    [FARAddon(800, true)]
     internal class InstallChecker : MonoBehaviour
     {
         protected void Start()

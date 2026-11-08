@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using UnityEngine;
 
 namespace FerramAerospaceResearch
@@ -90,7 +91,8 @@ namespace FerramAerospaceResearch
                 new Serializer
                 {
                     Parse = (string s, out object value) => TryParse<Rect>(s, out value, TryParseRect),
-                    Save = (node, s, value) => node.AddValue(s, value)
+                    // as TryParseRect reads it back ("x,y,w,h"): AddValue(object) wrote Rect.ToString(), which it cannot
+                    Save = (node, s, value) => node.AddValue(s, FormatRect((Rect)value))
                 }
             },
             {
@@ -146,7 +148,8 @@ namespace FerramAerospaceResearch
                 new Serializer
                 {
                     Parse = (string s, out object value) => TryParse<string[]>(s, out value, TryParseStringArray),
-                    Save = (node, s, value) => node.AddValue(s, (string[])value)
+                    // a comma list, as TryParseStringArray reads it back: AddValue(object) wrote "System.String[]"
+                    Save = (node, s, value) => node.AddValue(s, string.Join(",", (string[])value))
                 }
             }
         };
@@ -180,6 +183,9 @@ namespace FerramAerospaceResearch
         {
             return ParseExtensions.TryParseQuaternion(str, out value);
         }
+
+        private static string FormatRect(Rect r) =>
+            string.Format(CultureInfo.InvariantCulture, "{0:R},{1:R},{2:R},{3:R}", r.x, r.y, r.width, r.height);
 
         public static bool TryParseRect(string str, out Rect value)
         {
