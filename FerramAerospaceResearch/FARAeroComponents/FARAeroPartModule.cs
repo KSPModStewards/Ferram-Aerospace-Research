@@ -221,7 +221,20 @@ namespace FerramAerospaceResearch.FARAeroComponents
         private bool updateVisualization;
         public FARWingAerodynamicModel LegacyWingModel { get; private set; }
 
-        public Func<Part, Vector3, Vector3> AeroForceModifier { get; set; }
+        private Func<Part, Vector3, Vector3> aeroForceModifier;
+
+        public Func<Part, Vector3, Vector3> AeroForceModifier
+        {
+            get { return aeroForceModifier; }
+            set
+            {
+                aeroForceModifier = value;
+                ForceModifierVersion++;
+            }
+        }
+
+        /// <summary>Changes each time any part's modifier is set: a prediction made before it is stale.</summary>
+        internal static int ForceModifierVersion { get; private set; }
 
         public ProjectedArea ProjectedAreas
         {
@@ -684,6 +697,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         private void ApplyAeroStressFailure()
         {
+            // the vessel the part failed on: decoupled, the part (and its children) are vessels of their own
+            Vessel failedOn = vessel;
             bool failureOccured = false;
             if (part.FindModuleImplementingFast<ModuleProceduralFairing>() is ModuleProceduralFairing fairing)
             {
@@ -694,8 +709,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
             }
 
             List<Part> children = part.children;
-            // ReSharper disable once ForCanBeConvertedToForeach -> decouple modifies collection
-            for (int i = 0; i < children.Count; i++)
+            // decouple takes the child out of part.children: from the last back, or every second one stays on
+            for (int i = children.Count - 1; i >= 0; i--)
             {
                 Part child = children[i];
                 child.decouple(25);
@@ -709,9 +724,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 failureOccured = true;
             }
 
-            if (!failureOccured || !vessel)
+            if (!failureOccured || !failedOn)
                 return;
-            vessel.SendMessage("AerodynamicFailureStatus");
+            failedOn.SendMessage("AerodynamicFailureStatus");
             string msg = Localizer.Format("FARFlightLogAeroFailure",
                                           KSPUtil.PrintTimeStamp(FlightLogger.met),
                                           part.partInfo.title);

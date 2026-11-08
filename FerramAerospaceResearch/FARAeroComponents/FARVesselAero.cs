@@ -61,11 +61,20 @@ namespace FerramAerospaceResearch.FARAeroComponents
         public readonly Vector3d Position;
         public readonly Vector3 Force;
         public readonly Vector3 Torque;
+        // the vessel's aerodynamic model, the atmosphere functions and the parts' force modifiers the result was
+        // computed with
+        public readonly long ModelVersion;
+        public readonly int AtmosphereVersion;
+        public readonly int ForceModifierVersion;
 
-        public CachedSimResults(Vector3 velocityVector, Vector3d position, Vector3 force, Vector3 torque)
+        public CachedSimResults(Vector3 velocityVector, Vector3d position, Vector3 force, Vector3 torque,
+                                long modelVersion, int atmosphereVersion, int forceModifierVersion)
         {
             VelocityVector = velocityVector;
             Position = position;
+            ModelVersion = modelVersion;
+            AtmosphereVersion = atmosphereVersion;
+            ForceModifierVersion = forceModifierVersion;
             Force = force;
             Torque = torque;
         }
@@ -240,6 +249,11 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 BumpSnapshotVersion();
             }
 
+            // the body FAR's shock and wind math takes (FARAeroUtil.CurrentBody): the active vessel's, kept up to date here
+            // on the main thread, where its curves may be rebuilt (the editor's analysis windows set the body they analyse,
+            // which flight otherwise kept, as it kept Kerbin past the first SOI change)
+            if (FlightGlobals.ready && vessel && vessel == FlightGlobals.ActiveVessel && vessel.mainBody != null)
+                FARAeroUtil.UpdateCurrentActiveBody(vessel.mainBody);
             if (FlightGlobals.ready && _currentAeroSections != null && vessel)
                 CalculateAndApplyVesselAeroProperties();
             if (_currentGeoModules.Count > geoModulesReady)
@@ -326,7 +340,12 @@ namespace FerramAerospaceResearch.FARAeroComponents
             CachedSimResults memo;
             lock (lastSimResultsLock)
                 memo = lastSimResults;
-            if (velocityWorldVector.NearlyEqual(memo.VelocityVector) &&
+            long modelVersion = SnapshotVersion;
+            int atmosphereVersion = FARAtmosphere.Version;
+            int forceModifierVersion = FARAeroPartModule.ForceModifierVersion;
+            if (memo.ModelVersion == modelVersion && memo.AtmosphereVersion == atmosphereVersion &&
+                memo.ForceModifierVersion == forceModifierVersion &&
+                velocityWorldVector.NearlyEqual(memo.VelocityVector) &&
                 (FARAtmosphere.IsCustom
                      // Custom atmospheres are not guaranteed to be independent of latitude and longitude
                      ? position.NearlyEqual(memo.Position)
@@ -410,7 +429,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
             aeroTorque = center.TorqueAt(vessel.CoM);
 
             lock (lastSimResultsLock)
-                lastSimResults = new CachedSimResults(velocityWorldVector, position, aeroForce, aeroTorque);
+                lastSimResults = new CachedSimResults(velocityWorldVector, position, aeroForce, aeroTorque,
+                                                      modelVersion, atmosphereVersion, forceModifierVersion);
         }
 
         /// <summary>

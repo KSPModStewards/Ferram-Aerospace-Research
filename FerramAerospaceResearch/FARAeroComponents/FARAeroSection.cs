@@ -476,11 +476,13 @@ namespace FerramAerospaceResearch.FARAeroComponents
                         y = velNormalForce.magnitude,
                         z = torqueVector.magnitude,
                     };
-                    float3 newLocalForce = forceModifier(aeroModule.part, localForce);
-                    float3 multiplier = newLocalForce / localForce;
+                    Vector3 newLocalForce = forceModifier(aeroModule.part, localForce);
 
-                    forceVector = velParallelForce * multiplier.x + velNormalForce * multiplier.y;
-                    torqueVector *= multiplier.z;
+                    // a component that is zero has nothing to scale (and 0 / 0 would make the section's force NaN,
+                    // which drops it)
+                    forceVector = velParallelForce * ModifierRatio(newLocalForce.x, localForce.x) +
+                                  velNormalForce * ModifierRatio(newLocalForce.y, localForce.y);
+                    torqueVector *= ModifierRatio(newLocalForce.z, localForce.z);
                 }
 
                 forceVector *= data.dragFactor;
@@ -488,6 +490,11 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
                 forceContext.ApplyForce(data, velLocal, forceVector, torqueVector);
             }
+        }
+
+        private static float ModifierRatio(float modified, float original)
+        {
+            return original != 0 ? modified / original : 1;
         }
 
         // One force context per thread slot (see SimThreadContext); an array index is much cheaper

@@ -359,17 +359,22 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             output.Cn += Vector3d.Dot(centerMoment, liftDown);
             output.C_roll += Vector3d.Dot(centerMoment, velocity);
 
+            double recipArea;
             if (area.NearlyEqual(0))
             {
+                // no wings: the body's reference values as they are, not area-weighted sums to divide
                 area = _maxCrossSectionFromBody;
                 b_2 = 1;
                 MAC = _bodyLength;
+                recipArea = 1 / area;
+            }
+            else
+            {
+                recipArea = 1 / area;
+                MAC *= recipArea;
+                b_2 *= recipArea;
             }
 
-            double recipArea = 1 / area;
-
-            MAC *= recipArea;
-            b_2 *= recipArea;
             output.Cl *= recipArea;
             output.Cd *= recipArea;
             output.Cm *= recipArea / MAC;

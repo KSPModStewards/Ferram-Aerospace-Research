@@ -106,7 +106,8 @@ namespace FerramAerospaceResearch
             {
                 if (!(currentBody is null))
                     return currentBody;
-                if (FlightGlobals.Bodies[1] || !FlightGlobals.ActiveVessel)
+                // Kerbin until there is a vessel to take the body of (FARVesselAero keeps it up to date in flight)
+                if (!FlightGlobals.ActiveVessel)
                     currentBody = FlightGlobals.Bodies[1];
                 else
                     currentBody = FlightGlobals.ActiveVessel.mainBody;
