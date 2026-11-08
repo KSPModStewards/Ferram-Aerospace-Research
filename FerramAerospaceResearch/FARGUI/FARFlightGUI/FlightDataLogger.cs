@@ -147,15 +147,16 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
             coroutine = null;
         }
 
-        public void PauseLogging()
-        {
-            if (!IsActive)
-                return;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public void PauseLogging()
+        // {
+        //     if (!IsActive)
+        //         return;
 
-            FARLogger.Debug($"Pausing logging to {FileName}");
-            StopCoroutine(coroutine);
-            coroutine = null;
-        }
+        //     FARLogger.Debug($"Pausing logging to {FileName}");
+        //     StopCoroutine(coroutine);
+        //     coroutine = null;
+        // }
 
         private IEnumerator DoLogging()
         {

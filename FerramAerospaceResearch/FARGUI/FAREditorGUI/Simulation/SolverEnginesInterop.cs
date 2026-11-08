@@ -371,29 +371,30 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             return (bool)engineUseZaxis.GetValue(engine);
         }
 
-        /// <summary>
-        /// Ratio of the solver's engine temperature to the part's maximum, after the last
-        /// UpdateSolver. In flight, EngineModule.UpdateTemp explodes the part once this exceeds 1 —
-        /// which is what stops a turbojet at high Mach, where ram heating drives the compressor-face
-        /// temperature past the limit. Returns 0 (no limit known) if either member is unbound or the
-        /// max is non-positive, so an old SolverEngines simply skips the check rather than breaking.
-        ///
-        /// Bound separately from Available: sampling must still work without it.
-        /// </summary>
-        /// <summary>
-        /// The fuel's autoignition temperature, K, or a non-positive value if unknown/disabled.
-        /// A compressor-less engine (ramjet) only combusts once ram heating brings the inlet above
-        /// this — the check flight applies via CanAutoRestart and that direct solver sampling
-        /// otherwise skips.
-        /// </summary>
-        public static double GetAutoignitionTemp(PartModule engine)
-        {
-            if (engineAutoignitionTemp == null)
-                return 0;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // /// <summary>
+        // /// Ratio of the solver's engine temperature to the part's maximum, after the last
+        // /// UpdateSolver. In flight, EngineModule.UpdateTemp explodes the part once this exceeds 1 —
+        // /// which is what stops a turbojet at high Mach, where ram heating drives the compressor-face
+        // /// temperature past the limit. Returns 0 (no limit known) if either member is unbound or the
+        // /// max is non-positive, so an old SolverEngines simply skips the check rather than breaking.
+        // ///
+        // /// Bound separately from Available: sampling must still work without it.
+        // /// </summary>
+        // /// <summary>
+        // /// The fuel's autoignition temperature, K, or a non-positive value if unknown/disabled.
+        // /// A compressor-less engine (ramjet) only combusts once ram heating brings the inlet above
+        // /// this — the check flight applies via CanAutoRestart and that direct solver sampling
+        // /// otherwise skips.
+        // /// </summary>
+        // public static double GetAutoignitionTemp(PartModule engine)
+        // {
+        //     if (engineAutoignitionTemp == null)
+        //         return 0;
 
-            var t = (float)engineAutoignitionTemp.GetValue(engine);
-            return float.IsInfinity(t) ? 0 : t;
-        }
+        //     var t = (float)engineAutoignitionTemp.GetValue(engine);
+        //     return float.IsInfinity(t) ? 0 : t;
+        // }
 
         public static double GetThermalRatio(PartModule engine)
         {

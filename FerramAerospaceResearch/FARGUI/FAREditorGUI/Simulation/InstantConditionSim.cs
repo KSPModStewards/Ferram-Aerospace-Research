@@ -81,7 +81,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
         private List<FARAeroPartModule> _currentAeroModules;
         private List<FARWingAerodynamicModel> _wingAerodynamicModel;
 
-        internal List<FARWingAerodynamicModel> WingModels => _wingAerodynamicModel;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // internal List<FARWingAerodynamicModel> WingModels => _wingAerodynamicModel;
 
         public double _maxCrossSectionFromBody;
         public double _bodyLength;

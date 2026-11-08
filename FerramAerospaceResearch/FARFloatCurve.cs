@@ -88,20 +88,21 @@ namespace FerramAerospaceResearch
             }
         }
 
-        // ReSharper disable once UnusedMember.Global
-        public void Scale(double scalar)
-        {
-            for (int i = 0; i < sections.Length; ++i)
-            {
-                CubicSection tmpSection = sections[i];
-                tmpSection.a *= scalar;
-                tmpSection.b *= scalar;
-                tmpSection.c *= scalar;
-                tmpSection.d *= scalar;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Global
+        // public void Scale(double scalar)
+        // {
+        //     for (int i = 0; i < sections.Length; ++i)
+        //     {
+        //         CubicSection tmpSection = sections[i];
+        //         tmpSection.a *= scalar;
+        //         tmpSection.b *= scalar;
+        //         tmpSection.c *= scalar;
+        //         tmpSection.d *= scalar;
 
-                sections[i] = tmpSection;
-            }
-        }
+        //         sections[i] = tmpSection;
+        //     }
+        // }
 
         /// <summary>
         ///     If num curve sections are identical, adds the curve coefficients together, keeping the limits of this curve

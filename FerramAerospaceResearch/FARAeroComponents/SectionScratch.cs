@@ -16,28 +16,29 @@ using UnityEngine;
 
 namespace FerramAerospaceResearch.FARAeroComponents
 {
-    /// <summary>
-    /// Per-thread substitute for <see cref="FARAeroSection"/>'s instance
-    /// <c>simContext</c> field. Holds the per-call inputs (freestream velocity, density)
-    /// plus the <see cref="FARCenterQuery"/> the parallel evaluator accumulates forces
-    /// into.
-    ///
-    /// Allocated once per worker thread (not per call) — <see cref="Center"/> is reset
-    /// before each cell evaluation by the caller. One scratch is shared across all
-    /// sections within a single per-thread evaluation since
-    /// <see cref="FARAeroSection.CalculateAeroForces"/> only reads instance-immutable
-    /// data and writes exclusively through the force context.
-    /// </summary>
-    public sealed class SectionScratch
-    {
-        public Vector3 WorldVel;
-        public float AtmDensity;
+    // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+    // /// <summary>
+    // /// Per-thread substitute for <see cref="FARAeroSection"/>'s instance
+    // /// <c>simContext</c> field. Holds the per-call inputs (freestream velocity, density)
+    // /// plus the <see cref="FARCenterQuery"/> the parallel evaluator accumulates forces
+    // /// into.
+    // ///
+    // /// Allocated once per worker thread (not per call) — <see cref="Center"/> is reset
+    // /// before each cell evaluation by the caller. One scratch is shared across all
+    // /// sections within a single per-thread evaluation since
+    // /// <see cref="FARAeroSection.CalculateAeroForces"/> only reads instance-immutable
+    // /// data and writes exclusively through the force context.
+    // /// </summary>
+    // public sealed class SectionScratch
+    // {
+    //     public Vector3 WorldVel;
+    //     public float AtmDensity;
 
-        /// <summary>
-        /// Accumulator passed in by the caller; force application calls
-        /// <c>AddForce</c>/<c>AddTorque</c> on this. Reset by the caller before each
-        /// evaluation.
-        /// </summary>
-        public FARCenterQuery Center = new FARCenterQuery();
-    }
+    //     /// <summary>
+    //     /// Accumulator passed in by the caller; force application calls
+    //     /// <c>AddForce</c>/<c>AddTorque</c> on this. Reset by the caller before each
+    //     /// evaluation.
+    //     /// </summary>
+    //     public FARCenterQuery Center = new FARCenterQuery();
+    // }
 }

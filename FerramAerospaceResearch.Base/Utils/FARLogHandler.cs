@@ -78,17 +78,18 @@ namespace FerramAerospaceResearch
             LogHandler.LogException(exception, null);
         }
 
-        public void LogAssert(bool condition, string tag, object message)
-        {
-            if (condition)
-                return;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public void LogAssert(bool condition, string tag, object message)
+        // {
+        //     if (condition)
+        //         return;
 
-            if (EnabledFor(LogLevel.Assert))
-                LogHandler.LogFormat(LogType.Assert, null, "{0}: {1}", tag, message);
+        //     if (EnabledFor(LogLevel.Assert))
+        //         LogHandler.LogFormat(LogType.Assert, null, "{0}: {1}", tag, message);
 
-            // throw an assertion error to match behaviour with assert in other languages
-            throw new AssertionException("Assertion condition failed", "");
-        }
+        //     // throw an assertion error to match behaviour with assert in other languages
+        //     throw new AssertionException("Assertion condition failed", "");
+        // }
 
         public void LogFormat(LogLevel logLevel, string tag, string format, params object[] args)
         {

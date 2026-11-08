@@ -940,27 +940,28 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             }
         }
 
-        /// <summary>Evaluates one cell for a single engine set — BeginCell/EvaluateWithAero/EndCell in one call.</summary>
-        public CellResult EvaluateCell(
-            CelestialBody body,
-            double alt,
-            double mach,
-            int flapSetting,
-            bool spoilers,
-            EditorEngineDeck deck,
-            VehicleProperties props
-        )
-        {
-            AeroContext ctx = BeginCell(body, alt, mach, flapSetting, spoilers, props);
-            try
-            {
-                return EvaluateWithAero(ctx, body, alt, mach, deck, props);
-            }
-            finally
-            {
-                EndCell();
-            }
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // /// <summary>Evaluates one cell for a single engine set — BeginCell/EvaluateWithAero/EndCell in one call.</summary>
+        // public CellResult EvaluateCell(
+        //     CelestialBody body,
+        //     double alt,
+        //     double mach,
+        //     int flapSetting,
+        //     bool spoilers,
+        //     EditorEngineDeck deck,
+        //     VehicleProperties props
+        // )
+        // {
+        //     AeroContext ctx = BeginCell(body, alt, mach, flapSetting, spoilers, props);
+        //     try
+        //     {
+        //         return EvaluateWithAero(ctx, body, alt, mach, deck, props);
+        //     }
+        //     finally
+        //     {
+        //         EndCell();
+        //     }
+        // }
 
         /// <summary>
         /// Finds the throttle where thrust along the wind equals <paramref name="dragN" />.

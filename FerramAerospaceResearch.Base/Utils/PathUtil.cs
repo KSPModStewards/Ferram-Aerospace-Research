@@ -48,15 +48,17 @@ namespace FerramAerospaceResearch
             return s => AbsPath(Combine(root, s));
         }
 
-        public static Func<string, string, string> CombineDelegate2(string root)
-        {
-            return (d, s) => AbsPath(Combine(root, d, s));
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public static Func<string, string, string> CombineDelegate2(string root)
+        // {
+        //     return (d, s) => AbsPath(Combine(root, d, s));
+        // }
 
-        public static Func<string, string, string, string> CombineDelegate3(string root)
-        {
-            return (d1, d2, s) => AbsPath(Combine(root, d1, d2, s));
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public static Func<string, string, string, string> CombineDelegate3(string root)
+        // {
+        //     return (d1, d2, s) => AbsPath(Combine(root, d1, d2, s));
+        // }
 
         public static bool IsAbsolute(string path, bool retry = true)
         {

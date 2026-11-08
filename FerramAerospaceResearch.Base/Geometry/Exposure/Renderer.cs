@@ -26,10 +26,11 @@ public struct ColorUintConverter
         return new ColorUintConverter { u = value }.c;
     }
 
-    public static uint AsUint(Color32 color)
-    {
-        return new ColorUintConverter { c = color }.u;
-    }
+    // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+    // public static uint AsUint(Color32 color)
+    // {
+    //     return new ColorUintConverter { c = color }.u;
+    // }
 }
 
 [BurstCompile]

@@ -50,10 +50,11 @@ public class Executor : MonoSingleton<Executor>
             get { return job.done; }
         }
 
-        public State CurrentState
-        {
-            get { return job.state; }
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public State CurrentState
+        // {
+        //     get { return job.state; }
+        // }
 
         /// <summary>
         /// Cancel the associated job, may not have an immediate effect as jobs are executed asynchronously

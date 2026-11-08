@@ -85,10 +85,12 @@ namespace FerramAerospaceResearch
 
         public static bool loaded;
 
-        private static List<FARWingAerodynamicModel> curEditorWingCache;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // private static List<FARWingAerodynamicModel> curEditorWingCache;
 
-        // Parts currently added to the vehicle in the editor
-        private static List<Part> CurEditorPartsCache;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // Parts currently added to the vehicle in the editor
+        // private static List<Part> CurEditorPartsCache;
 
         // Parts currently added, plus the ghost part(s) about to be attached
         private static List<Part> AllEditorPartsCache;
@@ -148,29 +150,31 @@ namespace FerramAerospaceResearch
             }
         }
 
-        public static FloatCurve PrandtlMeyerMach
-        {
-            get
-            {
-                lock (curveLock)
-                {
-                    BuildPrandtlMeyerCurves();
-                    return prandtlMeyerMach;
-                }
-            }
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public static FloatCurve PrandtlMeyerMach
+        // {
+        //     get
+        //     {
+        //         lock (curveLock)
+        //         {
+        //             BuildPrandtlMeyerCurves();
+        //             return prandtlMeyerMach;
+        //         }
+        //     }
+        // }
 
-        public static FloatCurve PrandtlMeyerAngle
-        {
-            get
-            {
-                lock (curveLock)
-                {
-                    BuildPrandtlMeyerCurves();
-                    return prandtlMeyerAngle;
-                }
-            }
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public static FloatCurve PrandtlMeyerAngle
+        // {
+        //     get
+        //     {
+        //         lock (curveLock)
+        //         {
+        //             BuildPrandtlMeyerCurves();
+        //             return prandtlMeyerAngle;
+        //         }
+        //     }
+        // }
 
         // The exact Prandtl-Meyer curve asked for, built for the current adiabatic index if it is not there (at first
         // use, or after UpdateCurrentActiveBody discarded the last body's).
@@ -286,16 +290,18 @@ namespace FerramAerospaceResearch
             FARWingInteraction.GenerateCamberCurves();
         }
 
-        // ReSharper disable once UnusedMember.Global
-        public static List<FARWingAerodynamicModel> CurEditorWings
-        {
-            get { return curEditorWingCache ??= ListEditorWings(); }
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Global
+        // public static List<FARWingAerodynamicModel> CurEditorWings
+        // {
+        //     get { return curEditorWingCache ??= ListEditorWings(); }
+        // }
 
-        public static List<Part> CurEditorParts
-        {
-            get { return CurEditorPartsCache ??= ListEditorParts(false); }
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public static List<Part> CurEditorParts
+        // {
+        //     get { return CurEditorPartsCache ??= ListEditorParts(false); }
+        // }
 
         public static List<Part> AllEditorParts
         {
@@ -346,20 +352,21 @@ namespace FerramAerospaceResearch
                 massStressPower = 1.2;
         }
 
-        // ReSharper disable once UnusedMember.Global
-        public static double MaxPressureCoefficientCalc(double M)
-        {
-            double gamma = CurrentAdiabaticIndex;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Global
+        // public static double MaxPressureCoefficientCalc(double M)
+        // {
+        //     double gamma = CurrentAdiabaticIndex;
 
-            if (M <= 0)
-                return 1;
-            double value = RayleighPitotTubeStagPressure(M);
-            //and now to convert to pressure coefficient
-            value--;
-            value *= 2 / (gamma * M * M);
+        //     if (M <= 0)
+        //         return 1;
+        //     double value = RayleighPitotTubeStagPressure(M);
+        //     //and now to convert to pressure coefficient
+        //     value--;
+        //     value *= 2 / (gamma * M * M);
 
-            return value;
-        }
+        //     return value;
+        // }
 
         public static double StagnationPressureCalc(double M)
         {
@@ -428,8 +435,7 @@ namespace FerramAerospaceResearch
 
         public static void ResetEditorParts()
         {
-            AllEditorPartsCache = CurEditorPartsCache = null;
-            curEditorWingCache = null;
+            AllEditorPartsCache = null;
         }
 
         // Checks if there are any ghost parts almost attached to the craft
@@ -458,20 +464,21 @@ namespace FerramAerospaceResearch
             return list;
         }
 
-        public static List<FARWingAerodynamicModel> ListEditorWings()
-        {
-            List<Part> list = CurEditorParts;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public static List<FARWingAerodynamicModel> ListEditorWings()
+        // {
+        //     List<Part> list = CurEditorParts;
 
-            var wings = new List<FARWingAerodynamicModel>();
-            foreach (Part p in list)
-            {
-                FARWingAerodynamicModel wing = p.GetComponent<FARWingAerodynamicModel>();
-                if (!(wing is null))
-                    wings.Add(wing);
-            }
+        //     var wings = new List<FARWingAerodynamicModel>();
+        //     foreach (Part p in list)
+        //     {
+        //         FARWingAerodynamicModel wing = p.GetComponent<FARWingAerodynamicModel>();
+        //         if (!(wing is null))
+        //             wings.Add(wing);
+        //     }
 
-            return wings;
-        }
+        //     return wings;
+        // }
 
         private static void RecursePartList(List<Part> list, Part part)
         {
@@ -727,38 +734,40 @@ namespace FerramAerospaceResearch
             return Math.Sqrt(sin2def);
         }
 
-        // ReSharper disable once UnusedMember.Global
-        public static double MaxShockAngleCheck(double MachNumber, double gamma, out bool attachedShock)
-        {
-            double M2 = MachNumber * MachNumber;
-            double gamP1_2_M2 = (gamma + 1) * 0.5 * M2;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Global
+        // public static double MaxShockAngleCheck(double MachNumber, double gamma, out bool attachedShock)
+        // {
+        //     double M2 = MachNumber * MachNumber;
+        //     double gamP1_2_M2 = (gamma + 1) * 0.5 * M2;
 
-            double b = gamP1_2_M2;
-            b = 2 - b;
-            b *= M2;
+        //     double b = gamP1_2_M2;
+        //     b = 2 - b;
+        //     b *= M2;
 
-            double a = gamma * M2 * M2;
+        //     double a = gamma * M2 * M2;
 
-            double c = gamP1_2_M2 + 1;
-            c = -c;
+        //     double c = gamP1_2_M2 + 1;
+        //     c = -c;
 
-            double tmp = b * b - 4 * a * c;
+        //     double tmp = b * b - 4 * a * c;
 
-            attachedShock = tmp > 0;
+        //     attachedShock = tmp > 0;
 
-            return tmp;
-        }
+        //     return tmp;
+        // }
 
         //Calculates Oswald's Efficiency e using Shevell's Method
-        // ReSharper disable once UnusedMember.Global
-        public static double CalculateOswaldsEfficiency(double AR, double CosSweepAngle, double Cd0)
-        {
-            double e = 1 - 0.02 * FARMathUtil.PowApprox(AR, 0.7) * FARMathUtil.PowApprox(Math.Acos(CosSweepAngle), 2.2);
-            double tmp = AR * Cd0 * Mathf.PI + 1;
-            e /= tmp;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Global
+        // public static double CalculateOswaldsEfficiency(double AR, double CosSweepAngle, double Cd0)
+        // {
+        //     double e = 1 - 0.02 * FARMathUtil.PowApprox(AR, 0.7) * FARMathUtil.PowApprox(Math.Acos(CosSweepAngle), 2.2);
+        //     double tmp = AR * Cd0 * Mathf.PI + 1;
+        //     e /= tmp;
 
-            return e;
-        }
+        //     return e;
+        // }
 
         //More modern, accurate Oswald's Efficiency
         //http://www.fzt.haw-hamburg.de/pers/Scholz/OPerA/OPerA_PUB_DLRK_12-09-10.pdf

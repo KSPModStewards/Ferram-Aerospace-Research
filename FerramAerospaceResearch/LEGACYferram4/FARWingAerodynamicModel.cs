@@ -553,22 +553,24 @@ namespace ferram4
             wingInteraction?.ResolveWingGroup();
         }
 
-        // ReSharper disable once UnusedMember.Global
-        public double GetCl()
-        {
-            double ClUpwards = 1;
-            if (HighLogic.LoadedSceneIsFlight)
-                ClUpwards = Vector3.Dot(liftDirection, -vessel.vesselTransform.forward);
-            ClUpwards *= Cl;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Global
+        // public double GetCl()
+        // {
+        //     double ClUpwards = 1;
+        //     if (HighLogic.LoadedSceneIsFlight)
+        //         ClUpwards = Vector3.Dot(liftDirection, -vessel.vesselTransform.forward);
+        //     ClUpwards *= Cl;
 
-            return ClUpwards;
-        }
+        //     return ClUpwards;
+        // }
 
-        // ReSharper disable once UnusedMember.Global
-        public double GetCd()
-        {
-            return Cd;
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Global
+        // public double GetCd()
+        // {
+        //     return Cd;
+        // }
 
         public Vector3d GetAerodynamicCenter()
         {
@@ -590,20 +592,23 @@ namespace ferram4
             return liftDirection;
         }
 
-        public double GetRawLiftSlope()
-        {
-            return _scratch.rawLiftSlope;
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public double GetRawLiftSlope()
+        // {
+        //     return _scratch.rawLiftSlope;
+        // }
 
-        public double GetCosSweepAngle()
-        {
-            return _scratch.cosSweepAngle;
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public double GetCosSweepAngle()
+        // {
+        //     return _scratch.cosSweepAngle;
+        // }
 
-        public double GetCd0()
-        {
-            return _scratch.zeroLiftCdIncrement;
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public double GetCd0()
+        // {
+        //     return _scratch.zeroLiftCdIncrement;
+        // }
 
         /// <summary>
         /// Editor-side force evaluation.
@@ -635,18 +640,19 @@ namespace ferram4
             return CalculateForces(velocityVector, M, AoA, density, true, skinFrictionOverride);
         }
 
-        public void ComputeClCdEditor(Vector3d velocityVector, double M, double density)
-        {
-            _scratch.velocityEditor = velocityVector;
-            if (SimThreadContext.Slot == 0)
-            {
-                velocityEditor = velocityVector;
-                rho = density;
-            }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public void ComputeClCdEditor(Vector3d velocityVector, double M, double density)
+        // {
+        //     _scratch.velocityEditor = velocityVector;
+        //     if (SimThreadContext.Slot == 0)
+        //     {
+        //         velocityEditor = velocityVector;
+        //         rho = density;
+        //     }
 
-            double AoA = CalculateAoA(velocityVector);
-            CalculateForces(velocityVector, M, AoA, density);
-        }
+        //     double AoA = CalculateAoA(velocityVector);
+        //     CalculateForces(velocityVector, M, AoA, density);
+        // }
 
         protected override void ResetCenterOfLift()
         {

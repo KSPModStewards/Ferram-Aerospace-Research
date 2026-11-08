@@ -1832,14 +1832,15 @@ namespace FerramAerospaceResearch.FARAeroComponents
             return cP;
         }
 
-        // ReSharper disable once UnusedMember.Local
-        private double CalculateCpNoseDiscont(int index, double noseAreaSlope, double sectionThickness)
-        {
-            double cP_noseDiscont = index * sectionThickness * Math.PI;
-            cP_noseDiscont = noseAreaSlope / cP_noseDiscont;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Local
+        // private double CalculateCpNoseDiscont(int index, double noseAreaSlope, double sectionThickness)
+        // {
+        //     double cP_noseDiscont = index * sectionThickness * Math.PI;
+        //     cP_noseDiscont = noseAreaSlope / cP_noseDiscont;
 
-            return cP_noseDiscont;
-        }
+        //     return cP_noseDiscont;
+        // }
 
         private static double AdjustVelForFinitePressure(double vel)
         {
@@ -1981,107 +1982,109 @@ namespace FerramAerospaceResearch.FARAeroComponents
             return -drag; //force is negative
         }
 
-        // ReSharper disable once UnusedMember.Local
-        private double CalcAllTransonicWaveDrag(
-            VoxelCrossSection[] sections,
-            int front,
-            int numSections,
-            double sectionThickness
-        )
-        {
-            double drag = 0;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Local
+        // private double CalcAllTransonicWaveDrag(
+        //     VoxelCrossSection[] sections,
+        //     int front,
+        //     int numSections,
+        //     double sectionThickness
+        // )
+        // {
+        //     double drag = 0;
 
-            for (int j = 0; j < numSections; j++)
-            {
-                double accumulator = 0;
+        //     for (int j = 0; j < numSections; j++)
+        //     {
+        //         double accumulator = 0;
 
-                double Lj = (j + 0.5) * Math.Log(j + 0.5);
-                if (j > 0)
-                    Lj -= (j - 0.5) * Math.Log(j - 0.5);
+        //         double Lj = (j + 0.5) * Math.Log(j + 0.5);
+        //         if (j > 0)
+        //             Lj -= (j - 0.5) * Math.Log(j - 0.5);
 
-                for (int i = j; i < numSections; i++)
-                    accumulator += sections[front + i].secondAreaDeriv * sections[front + i - j].secondAreaDeriv;
+        //         for (int i = j; i < numSections; i++)
+        //             accumulator += sections[front + i].secondAreaDeriv * sections[front + i - j].secondAreaDeriv;
 
-                drag += accumulator * Lj;
-            }
+        //         drag += accumulator * Lj;
+        //     }
 
-            drag *= -sectionThickness * sectionThickness / Math.PI;
-            return drag;
-        }
+        //     drag *= -sectionThickness * sectionThickness / Math.PI;
+        //     return drag;
+        // }
 
-        // ReSharper disable once UnusedMember.Local
-        private double CalculateTransonicWaveDrag(
-            int i,
-            int index,
-            int numSections,
-            int front,
-            double sectionThickness,
-            double cutoff
-        )
-        {
-            double currentSectAreaCrossSection = MathClampAbs(_vehicleCrossSection[index].secondAreaDeriv, cutoff);
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Local
+        // private double CalculateTransonicWaveDrag(
+        //     int i,
+        //     int index,
+        //     int numSections,
+        //     int front,
+        //     double sectionThickness,
+        //     double cutoff
+        // )
+        // {
+        //     double currentSectAreaCrossSection = MathClampAbs(_vehicleCrossSection[index].secondAreaDeriv, cutoff);
 
-            if (currentSectAreaCrossSection.NearlyEqual(0)) //quick escape for 0 cross-section section drag
-                return 0;
+        //     if (currentSectAreaCrossSection.NearlyEqual(0)) //quick escape for 0 cross-section section drag
+        //         return 0;
 
-            int limDoubleDrag = Math.Min(i, numSections - i);
-            double sectionThicknessSq = sectionThickness * sectionThickness;
+        //     int limDoubleDrag = Math.Min(i, numSections - i);
+        //     double sectionThicknessSq = sectionThickness * sectionThickness;
 
-            double lj3rdTerm = Math.Log(sectionThickness) - 1;
+        //     double lj3rdTerm = Math.Log(sectionThickness) - 1;
 
-            double lj2ndTerm = 0.5 * Math.Log(0.5);
-            double drag = currentSectAreaCrossSection * (lj2ndTerm + lj3rdTerm);
+        //     double lj2ndTerm = 0.5 * Math.Log(0.5);
+        //     double drag = currentSectAreaCrossSection * (lj2ndTerm + lj3rdTerm);
 
 
-            for (int j = 1; j <= limDoubleDrag; j++) //section of influence from ahead and behind
-            {
-                double thisLj = (j + 0.5) * Math.Log(j + 0.5);
-                double tmp = thisLj;
-                thisLj -= lj2ndTerm;
-                lj2ndTerm = tmp;
+        //     for (int j = 1; j <= limDoubleDrag; j++) //section of influence from ahead and behind
+        //     {
+        //         double thisLj = (j + 0.5) * Math.Log(j + 0.5);
+        //         double tmp = thisLj;
+        //         thisLj -= lj2ndTerm;
+        //         lj2ndTerm = tmp;
 
-                tmp = MathClampAbs(_vehicleCrossSection[index + j].secondAreaDeriv, cutoff);
-                tmp += MathClampAbs(_vehicleCrossSection[index - j].secondAreaDeriv, cutoff);
+        //         tmp = MathClampAbs(_vehicleCrossSection[index + j].secondAreaDeriv, cutoff);
+        //         tmp += MathClampAbs(_vehicleCrossSection[index - j].secondAreaDeriv, cutoff);
 
-                thisLj += lj3rdTerm;
+        //         thisLj += lj3rdTerm;
 
-                drag += tmp * thisLj;
-            }
+        //         drag += tmp * thisLj;
+        //     }
 
-            if (i < numSections - i)
-                for (int j = 2 * i + 1; j < numSections; j++)
-                {
-                    double thisLj = (j - i + 0.5) * Math.Log(j - i + 0.5);
-                    double tmp = thisLj;
-                    thisLj -= lj2ndTerm;
-                    lj2ndTerm = tmp;
+        //     if (i < numSections - i)
+        //         for (int j = 2 * i + 1; j < numSections; j++)
+        //         {
+        //             double thisLj = (j - i + 0.5) * Math.Log(j - i + 0.5);
+        //             double tmp = thisLj;
+        //             thisLj -= lj2ndTerm;
+        //             lj2ndTerm = tmp;
 
-                    tmp = MathClampAbs(_vehicleCrossSection[j + front].secondAreaDeriv, cutoff);
+        //             tmp = MathClampAbs(_vehicleCrossSection[j + front].secondAreaDeriv, cutoff);
 
-                    thisLj += lj3rdTerm;
+        //             thisLj += lj3rdTerm;
 
-                    drag += tmp * thisLj;
-                }
-            else if (i > numSections - i)
-                for (int j = numSections - 2 * i - 2; j >= 0; j--)
-                {
-                    double thisLj = (i - j + 0.5) * Math.Log(i - j + 0.5);
-                    double tmp = thisLj;
-                    thisLj -= lj2ndTerm;
-                    lj2ndTerm = tmp;
+        //             drag += tmp * thisLj;
+        //         }
+        //     else if (i > numSections - i)
+        //         for (int j = numSections - 2 * i - 2; j >= 0; j--)
+        //         {
+        //             double thisLj = (i - j + 0.5) * Math.Log(i - j + 0.5);
+        //             double tmp = thisLj;
+        //             thisLj -= lj2ndTerm;
+        //             lj2ndTerm = tmp;
 
-                    tmp = MathClampAbs(_vehicleCrossSection[j + front].secondAreaDeriv, cutoff);
+        //             tmp = MathClampAbs(_vehicleCrossSection[j + front].secondAreaDeriv, cutoff);
 
-                    thisLj += lj3rdTerm;
+        //             thisLj += lj3rdTerm;
 
-                    drag += tmp * thisLj;
-                }
+        //             drag += tmp * thisLj;
+        //         }
 
-            drag *= sectionThicknessSq;
-            drag /= 2 * Math.PI;
-            drag *= currentSectAreaCrossSection;
-            return drag;
-        }
+        //     drag *= sectionThicknessSq;
+        //     drag /= 2 * Math.PI;
+        //     drag *= currentSectAreaCrossSection;
+        //     return drag;
+        // }
 
         private static double CalculateCriticalMachNumber(double finenessRatio)
         {

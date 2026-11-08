@@ -318,11 +318,12 @@ namespace FerramAerospaceResearch.FARPartGeometry
                 CheckAnimations();
         }
 
-        public void ClearMeshData()
-        {
-            meshDataList = null;
-            _ready = false;
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // public void ClearMeshData()
+        // {
+        //     meshDataList = null;
+        //     _ready = false;
+        // }
 
         public void GeometryPartModuleRebuildMeshData()
         {
@@ -551,41 +552,22 @@ namespace FerramAerospaceResearch.FARPartGeometry
             else if (part.Modules.Contains("ModuleResourceIntake"))
                 intakeType = "ModuleResourceIntake";
 
-            if (intakeType != "" && engineType != "")
+            // the adjusters take a ModuleResourceIntake, as AJE's AJEInlet is (one by that name that is not would be
+            // left out: an adjuster without its intake would have no transform)
+            var intake = intakeType != "" ? part.Modules[intakeType] as ModuleResourceIntake : null;
+
+            if (intake != null && engineType != "")
             {
-                PartModule module = part.Modules[intakeType];
-
-                if (module is ModuleResourceIntake intake)
-                {
-                    var intakeAdjuster =
-                        IntegratedIntakeEngineCrossSectionAdjuster.CreateAdjuster(intake, worldToVesselMatrix);
-                    crossSectionAdjusters.Add(intakeAdjuster);
-                }
-                else
-                {
-                    var intakeAdjuster =
-                        IntegratedIntakeEngineCrossSectionAdjuster.CreateAdjuster(module, worldToVesselMatrix);
-                    crossSectionAdjusters.Add(intakeAdjuster);
-                }
-
+                var intakeAdjuster =
+                    IntegratedIntakeEngineCrossSectionAdjuster.CreateAdjuster(intake, worldToVesselMatrix);
+                crossSectionAdjusters.Add(intakeAdjuster);
                 return;
             }
 
-            if (intakeType != "")
+            if (intake != null)
             {
-                PartModule module = part.Modules[intakeType];
-
-                if (module is ModuleResourceIntake intake)
-                {
-                    var intakeAdjuster = IntakeCrossSectionAdjuster.CreateAdjuster(intake, worldToVesselMatrix);
-                    crossSectionAdjusters.Add(intakeAdjuster);
-                }
-                else
-                {
-                    var intakeAdjuster = IntakeCrossSectionAdjuster.CreateAdjuster(module, worldToVesselMatrix);
-                    crossSectionAdjusters.Add(intakeAdjuster);
-                }
-
+                var intakeAdjuster = IntakeCrossSectionAdjuster.CreateAdjuster(intake, worldToVesselMatrix);
+                crossSectionAdjusters.Add(intakeAdjuster);
                 return;
             }
 

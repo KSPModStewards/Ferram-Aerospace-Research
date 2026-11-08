@@ -1494,45 +1494,46 @@ namespace FerramAerospaceResearch.FARPartGeometry
         }
 
         //Use when guaranteed that you will not attempt to write to the same section simultaneously
-        // ReSharper disable once UnusedMember.Local
-        private void SetVoxelPointPartOnlyNoLock(int i, int j, int k, Part part)
-        {
-            //Find the voxel section that this point points to
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Local
+        // private void SetVoxelPointPartOnlyNoLock(int i, int j, int k, Part part)
+        // {
+        //     //Find the voxel section that this point points to
 
-            int iSec = i >> 3;
-            int jSec = j >> 3;
-            int kSec = k >> 3;
+        //     int iSec = i >> 3;
+        //     int jSec = j >> 3;
+        //     int kSec = k >> 3;
 
-            VoxelChunk section = voxelChunks[iSec, jSec, kSec];
-            if (section == null)
-            {
-                lock (clearedChunks)
-                {
-                    if (clearedChunks.Count > 0)
-                        section = clearedChunks.Pop();
-                }
+        //     VoxelChunk section = voxelChunks[iSec, jSec, kSec];
+        //     if (section == null)
+        //     {
+        //         lock (clearedChunks)
+        //         {
+        //             if (clearedChunks.Count > 0)
+        //                 section = clearedChunks.Pop();
+        //         }
 
-                if (section == null)
-                    section = new VoxelChunk(ElementSize,
-                                             LocalLowerRightCorner + new Vector3d(iSec, jSec, kSec) * ElementSize * 8,
-                                             iSec * 8,
-                                             jSec * 8,
-                                             kSec * 8,
-                                             partPriorities,
-                                             useHigherResVoxels);
-                else
-                    section.SetChunk(ElementSize,
-                                     LocalLowerRightCorner + new Vector3d(iSec, jSec, kSec) * ElementSize * 8,
-                                     iSec * 8,
-                                     jSec * 8,
-                                     kSec * 8,
-                                     partPriorities);
+        //         if (section == null)
+        //             section = new VoxelChunk(ElementSize,
+        //                                      LocalLowerRightCorner + new Vector3d(iSec, jSec, kSec) * ElementSize * 8,
+        //                                      iSec * 8,
+        //                                      jSec * 8,
+        //                                      kSec * 8,
+        //                                      partPriorities,
+        //                                      useHigherResVoxels);
+        //         else
+        //             section.SetChunk(ElementSize,
+        //                              LocalLowerRightCorner + new Vector3d(iSec, jSec, kSec) * ElementSize * 8,
+        //                              iSec * 8,
+        //                              jSec * 8,
+        //                              kSec * 8,
+        //                              partPriorities);
 
-                voxelChunks[iSec, jSec, kSec] = section;
-            }
+        //         voxelChunks[iSec, jSec, kSec] = section;
+        //     }
 
-            section.SetVoxelPointPartOnlyGlobalIndexNoLock(i + j * 8 + k * 64, part);
-        }
+        //     section.SetVoxelPointPartOnlyGlobalIndexNoLock(i + j * 8 + k * 64, part);
+        // }
 
         //Use when guaranteed that you will not attempt to write to the same section simultaneously
         private void SetVoxelPointNoLock(int i, int j, int k, Part part)
@@ -1619,16 +1620,17 @@ namespace FerramAerospaceResearch.FARPartGeometry
             section.SetVoxelPointGlobalIndex(i + j * 8 + k * 64, part, location, plane);
         }
 
-        // ReSharper disable once UnusedMember.Local
-        private VoxelChunk GetVoxelChunk(int i, int j, int k)
-        {
-            //Find the voxel section that this point points to
-            int iSec = i >> 3;
-            int jSec = j >> 3;
-            int kSec = k >> 3;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Local
+        // private VoxelChunk GetVoxelChunk(int i, int j, int k)
+        // {
+        //     //Find the voxel section that this point points to
+        //     int iSec = i >> 3;
+        //     int jSec = j >> 3;
+        //     int kSec = k >> 3;
 
-            return voxelChunks[iSec, jSec, kSec];
-        }
+        //     return voxelChunks[iSec, jSec, kSec];
+        // }
 
         private bool VoxelPointExistsAtPos(int i, int j, int k)
         {
@@ -1655,11 +1657,12 @@ namespace FerramAerospaceResearch.FARPartGeometry
             return voxelChunks[iSec, jSec, kSec]?.GetVoxelPartGlobalIndex(i + j * 8 + k * 64);
         }
 
-        // ReSharper disable once UnusedMember.Local
-        private Part GetPartAtVoxelPos(int i, int j, int k, ref VoxelChunk section)
-        {
-            return section.GetVoxelPartGlobalIndex(i + j * 8 + k * 64);
-        }
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Local
+        // private Part GetPartAtVoxelPos(int i, int j, int k, ref VoxelChunk section)
+        // {
+        //     return section.GetVoxelPartGlobalIndex(i + j * 8 + k * 64);
+        // }
 
         private void UpdateFromMesh(object meshParamsObject)
         {
@@ -1738,33 +1741,34 @@ namespace FerramAerospaceResearch.FARPartGeometry
             }
         }
 
-        // ReSharper disable once UnusedMember.Local
-        private void CalculateVoxelShellFromTinyMesh(Vector3 minMesh, Vector3 maxMesh, Part part)
-        {
-            Vector3 min = (minMesh - LocalLowerRightCorner) * invElementSize;
-            Vector3 max = (maxMesh - LocalLowerRightCorner) * invElementSize;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Local
+        // private void CalculateVoxelShellFromTinyMesh(Vector3 minMesh, Vector3 maxMesh, Part part)
+        // {
+        //     Vector3 min = (minMesh - LocalLowerRightCorner) * invElementSize;
+        //     Vector3 max = (maxMesh - LocalLowerRightCorner) * invElementSize;
 
-            int lowerI = (int)min.x;
-            int lowerJ = (int)min.y;
-            int lowerK = (int)min.z;
+        //     int lowerI = (int)min.x;
+        //     int lowerJ = (int)min.y;
+        //     int lowerK = (int)min.z;
 
-            int upperI = (int)(max.x + 1);
-            int upperJ = (int)(max.y + 1);
-            int upperK = (int)(max.z + 1);
+        //     int upperI = (int)(max.x + 1);
+        //     int upperJ = (int)(max.y + 1);
+        //     int upperK = (int)(max.z + 1);
 
-            lowerI = Math.Max(lowerI, 0);
-            lowerJ = Math.Max(lowerJ, 0);
-            lowerK = Math.Max(lowerK, 0);
+        //     lowerI = Math.Max(lowerI, 0);
+        //     lowerJ = Math.Max(lowerJ, 0);
+        //     lowerK = Math.Max(lowerK, 0);
 
-            upperI = Math.Min(upperI, xCellLength - 1);
-            upperJ = Math.Min(upperJ, yCellLength - 1);
-            upperK = Math.Min(upperK, zCellLength - 1);
+        //     upperI = Math.Min(upperI, xCellLength - 1);
+        //     upperJ = Math.Min(upperJ, yCellLength - 1);
+        //     upperK = Math.Min(upperK, zCellLength - 1);
 
-            for (int i = lowerI; i <= upperI; i++)
-                for (int j = lowerJ; j <= upperJ; j++)
-                    for (int k = lowerK; k <= upperK; k++)
-                        SetVoxelPoint(i, j, k, part, VoxelOrientationPlane.FILL_VOXEL, 1);
-        }
+        //     for (int i = lowerI; i <= upperI; i++)
+        //         for (int j = lowerJ; j <= upperJ; j++)
+        //             for (int k = lowerK; k <= upperK; k++)
+        //                 SetVoxelPoint(i, j, k, part, VoxelOrientationPlane.FILL_VOXEL, 1);
+        // }
 
         private void CalculateVoxelShellForTriangle(
             Vector3 vert1,
@@ -2272,37 +2276,39 @@ namespace FerramAerospaceResearch.FARPartGeometry
         }
 
 
-        // ReSharper disable once UnusedMember.Local
-        private Vector4d CalculateEquationOfPlane(Vector3d pt1, Vector3d pt2, Vector3d pt3)
-        {
-            Vector3d p1p2 = pt2 - pt1;
-            Vector3d p1p3 = pt3 - pt1;
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Local
+        // private Vector4d CalculateEquationOfPlane(Vector3d pt1, Vector3d pt2, Vector3d pt3)
+        // {
+        //     Vector3d p1p2 = pt2 - pt1;
+        //     Vector3d p1p3 = pt3 - pt1;
 
-            var tmp = Vector3d.Cross(p1p2, p1p3);
+        //     var tmp = Vector3d.Cross(p1p2, p1p3);
 
-            var result = new Vector4d(tmp.x, tmp.y, tmp.z);
+        //     var result = new Vector4d(tmp.x, tmp.y, tmp.z);
 
-            result.w = -(pt1.x * result.x + pt1.y * result.y + pt1.z * result.z);
+        //     result.w = -(pt1.x * result.x + pt1.y * result.y + pt1.z * result.z);
 
-            return result;
-        }
+        //     return result;
+        // }
 
-        // ReSharper disable once UnusedMember.Local
-        private Vector4d TransformPlaneToIndices(Vector4d plane)
-        {
-            var newPlane = new Vector4d
-            {
-                x = plane.x * ElementSize,
-                y = plane.y * ElementSize,
-                z = plane.z * ElementSize,
-                w = plane.w +
-                    plane.x * LocalLowerRightCorner.x +
-                    plane.y * LocalLowerRightCorner.y +
-                    plane.z * LocalLowerRightCorner.z
-            };
+        // Unused: nothing in FAR calls it (commented out after the test suite's coverage run)
+        // // ReSharper disable once UnusedMember.Local
+        // private Vector4d TransformPlaneToIndices(Vector4d plane)
+        // {
+        //     var newPlane = new Vector4d
+        //     {
+        //         x = plane.x * ElementSize,
+        //         y = plane.y * ElementSize,
+        //         z = plane.z * ElementSize,
+        //         w = plane.w +
+        //             plane.x * LocalLowerRightCorner.x +
+        //             plane.y * LocalLowerRightCorner.y +
+        //             plane.z * LocalLowerRightCorner.z
+        //     };
 
-            return newPlane;
-        }
+        //     return newPlane;
+        // }
 
         private void SolidifyVoxel(object uncastData)
         {
