@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using FerramAerospaceResearch.Resources;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -194,6 +195,8 @@ public class RenderResources : IDisposable
         GC.SuppressFinalize(this);
     }
 
+    // coverage: finalizer: runs only at GC time when Dispose was missed
+    [ExcludeFromCodeCoverage]
     ~RenderResources()
     {
         Dispose(false);

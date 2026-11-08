@@ -14,6 +14,7 @@ Combined (Mach × altitude) heatmaps: level-flight performance envelope and stab
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation;
 using KSP.IO;
@@ -2336,6 +2337,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         /// </summary>
         // Records a worker-thread sweep exception lock-free: bumps the count and keeps the first one, for
         // LogParallelErrors to report on the main thread once the sweep joins. Safe to call from any worker.
+        // coverage: only reached from the sweep workers' catch blocks (a fault the tests cannot inject)
+        [ExcludeFromCodeCoverage]
         private void CaptureParallelError(string context, Exception e)
         {
             System.Threading.Interlocked.Increment(ref _parallelErrorCount);

@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
@@ -69,6 +70,8 @@ namespace FerramAerospaceResearch
             FARLogger.TraceFormat(TraceMessage());
         }
 
+        // coverage: only evaluated as a FARLogger.TraceFormat argument, [Conditional("LOG_TRACE")]
+        [ExcludeFromCodeCoverage]
         private string TraceMessage()
         {
             var sb = new StringBuilder("FARAddonLoader found addons: \n");

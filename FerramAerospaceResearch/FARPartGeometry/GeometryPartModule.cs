@@ -45,6 +45,7 @@ Copyright 2022, Michael Ferrara, aka Ferram4
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -1090,6 +1091,8 @@ namespace FerramAerospaceResearch.FARPartGeometry
                 noRenderer = new List<string>();
             }
 
+            // coverage: only called at Debug log level (developer diagnostics)
+            [ExcludeFromCodeCoverage]
             public void Clear()
             {
                 meshes.Clear();
@@ -1097,6 +1100,8 @@ namespace FerramAerospaceResearch.FARPartGeometry
                 noRenderer.Clear();
             }
 
+            // coverage: only called at Debug log level (developer diagnostics)
+            [ExcludeFromCodeCoverage]
             public void Print(Part p)
             {
                 StringBuilder sb = StringBuilderCache.Acquire();

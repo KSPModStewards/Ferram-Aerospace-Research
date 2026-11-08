@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using FerramAerospaceResearch.Resources;
 using JetBrains.Annotations;
@@ -193,6 +194,8 @@ public class Debugger : IDisposable
         GC.SuppressFinalize(this);
     }
 
+    // coverage: finalizer: runs only at GC time when Dispose was missed
+    [ExcludeFromCodeCoverage]
     ~Debugger()
     {
         Dispose(false);

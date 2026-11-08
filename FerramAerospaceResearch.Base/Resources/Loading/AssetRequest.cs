@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace FerramAerospaceResearch.Resources.Loading
 {
     public class AssetRequest<T> : IAssetRequest<T>
@@ -25,10 +27,14 @@ namespace FerramAerospaceResearch.Resources.Loading
             AssetError();
         }
 
+        // coverage: empty base method; every subclass overrides it
+        [ExcludeFromCodeCoverage]
         protected virtual void AssetLoaded()
         {
         }
 
+        // coverage: empty base method; every subclass overrides it
+        [ExcludeFromCodeCoverage]
         protected virtual void AssetError()
         {
         }

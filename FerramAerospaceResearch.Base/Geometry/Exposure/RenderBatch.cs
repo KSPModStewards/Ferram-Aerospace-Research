@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using FerramAerospaceResearch.Resources;
 using Unity.Collections;
@@ -46,6 +47,8 @@ public class RenderBatch : IDisposable
             GC.SuppressFinalize(this);
         }
 
+        // coverage: finalizer: runs only at GC time when Dispose was missed
+        [ExcludeFromCodeCoverage]
         ~JobData()
         {
             Dispose(false);
@@ -183,6 +186,8 @@ public class RenderBatch : IDisposable
         GC.SuppressFinalize(this);
     }
 
+    // coverage: finalizer: runs only at GC time when Dispose was missed
+    [ExcludeFromCodeCoverage]
     ~RenderBatch()
     {
         Dispose(false);
