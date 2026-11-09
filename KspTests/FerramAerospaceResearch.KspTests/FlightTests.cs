@@ -66,19 +66,43 @@ namespace FerramAerospaceResearch.KspTests
 
         /// <summary>
         /// FAR's vessel snapshot (FARAPI.CaptureVesselSnapshot, CalculateSnapshotAeroForcesAt: a prediction at a place and
-        /// time, from a copy of the vessel's aero model) at the state the vessel flies in: the same answer on a worker
-        /// thread as on the main thread, and full pitch input changes the pitching moment.
+        /// time, from a copy of the vessel's aero model) at the state the vessel flies in is the force FAR applies there,
+        /// and full pitch input changes the pitching moment. Before predictions took the game atmosphere, ram drag and
+        /// settled wings, the Aeris 4A at Mach 0.5, 3 km, 4 deg was predicted with 8.6 kN of drag against 14.2 kN applied
+        /// and 138.0 kN of total force against 128.1 (measured). Off the main thread: Flight_SnapshotIsExactOnManyThreads.
         /// </summary>
         [UITest(Kind = "Check", StartsAt = StartState.Flight, Craft = Far.Plane, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 900)]
-        public static IEnumerator Flight_SnapshotIsThreadSafeAndTakesControls(TestContext ctx) => Snapshot(ctx, againstApplied: false);
+        public static IEnumerator Flight_SnapshotPredictsTheAppliedForce(TestContext ctx)
+        {
+            yield return Wait.Seconds(5);
+            FarFlightProbe.Condition c = Cruise(4);
+            yield return Airborne(c);
+            var samples = new List<FarFlightProbe.Sample>();
+            yield return FarFlightProbe.Hold(c, 25, 30, samples, predict: false);
+            double drag = samples.Average(s => s.Flight[0]), lift = samples.Average(s => s.Flight[1]);
 
-        /// <summary>
-        /// The snapshot's prediction at the state the vessel flies in is the force FAR applies there. Before predictions
-        /// took the game atmosphere, ram drag and settled wings, the Aeris 4A at Mach 0.5, 3 km, 4 deg was predicted with
-        /// 8.6 kN of drag against 14.2 kN applied and 138.0 kN of total force against 128.1 (measured).
-        /// </summary>
-        [UITest(Kind = "Check", StartsAt = StartState.Flight, Craft = Far.Plane, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 900)]
-        public static IEnumerator Flight_SnapshotPredictsTheAppliedForce(TestContext ctx) => Snapshot(ctx, againstApplied: true);
+            Vessel v = FlightGlobals.ActiveVessel;
+            FARVesselSnapshot snap = FARAPI.CaptureVesselSnapshot(v);
+            Assert.NotNull(snap, "a snapshot of the flying vessel");
+            Vector3 vel = v.srf_velocity;
+            var where = new Vector3d(v.latitude, v.longitude, v.altitude);
+            double ut = Planetarium.GetUniversalTime();
+            Assert.True(FARAPI.CalculateSnapshotAeroForcesAt(snap, out Vector3 f, out Vector3 tq, vel, where, ut), "the snapshot prediction ran");
+            double predDrag = -Vector3.Dot(f, vel.normalized);
+            double predTotal = f.magnitude, total = Math.Sqrt(drag * drag + lift * lift);
+            ctx.Record("drag", $"applied {drag:F2} kN, snapshot {predDrag:F2}");
+            ctx.Record("force", $"applied |F| {total:F2} kN, snapshot {predTotal:F2}");
+            Assert.Near(drag, predDrag, 0.03 * drag + 0.05, "the snapshot's drag against the drag FAR applies");
+            Assert.Near(total, predTotal, 0.03 * total + 0.05, "the snapshot's total force against the one FAR applies");
+
+            // full nose-up and nose-down input: the control surfaces move, and so does the pitching moment
+            Vector3 pitchAxis = Flight.PitchUpAxis(v);
+            Assert.True(FARAPI.CalculateSnapshotAeroForcesWithControlsAt(snap, out _, out Vector3 tUp, vel, where, ut, 1, 0, 0), "prediction with pitch +1");
+            Assert.True(FARAPI.CalculateSnapshotAeroForcesWithControlsAt(snap, out _, out Vector3 tDown, vel, where, ut, -1, 0, 0), "prediction with pitch -1");
+            double mUp = Vector3.Dot(tUp, pitchAxis), mDown = Vector3.Dot(tDown, pitchAxis), m0 = Vector3.Dot(tq, pitchAxis);
+            ctx.Record("pitchMoment", $"input -1 {mDown:F2}, 0 {m0:F2}, +1 {mUp:F2} kN m");
+            Assert.True(mUp > m0 && m0 > mDown, $"pitching moment rises with pitch input ({mDown:F2} < {m0:F2} < {mUp:F2} kN m)");
+        }
 
         /// <summary>
         /// FAR's prediction API (FARAPI.CalculateVesselAeroForcesAt) at the state the vessel flies in gives the force FAR
@@ -100,53 +124,6 @@ namespace FerramAerospaceResearch.KspTests
             ctx.Record("lift", $"applied {lift:F2} kN, predicted {predLift:F2}");
             Assert.Near(drag, predDrag, 0.03 * drag + 0.05, "FAR's prediction of the drag it applies");
             Assert.Near(lift, predLift, 0.03 * lift + 0.05, "FAR's prediction of the lift it applies");
-        }
-
-        private static IEnumerator Snapshot(TestContext ctx, bool againstApplied)
-        {
-            yield return Wait.Seconds(5);
-            FarFlightProbe.Condition c = Cruise(4);
-            yield return Airborne(c);
-            var samples = new List<FarFlightProbe.Sample>();
-            yield return FarFlightProbe.Hold(c, 25, 30, samples, predict: false);
-            double drag = samples.Average(s => s.Flight[0]), lift = samples.Average(s => s.Flight[1]);
-
-            Vessel v = FlightGlobals.ActiveVessel;
-            FARVesselSnapshot snap = FARAPI.CaptureVesselSnapshot(v);
-            Assert.NotNull(snap, "a snapshot of the flying vessel");
-            Vector3 vel = v.srf_velocity;
-            var where = new Vector3d(v.latitude, v.longitude, v.altitude);
-            double ut = Planetarium.GetUniversalTime();
-            Assert.True(FARAPI.CalculateSnapshotAeroForcesAt(snap, out Vector3 f, out Vector3 tq, vel, where, ut), "the snapshot prediction ran");
-            double predDrag = -Vector3.Dot(f, vel.normalized);
-            double predTotal = f.magnitude, total = Math.Sqrt(drag * drag + lift * lift);
-            ctx.Record("drag", $"applied {drag:F2} kN, snapshot {predDrag:F2}");
-            ctx.Record("force", $"applied |F| {total:F2} kN, snapshot {predTotal:F2}");
-            if (againstApplied)
-            {
-                Assert.Near(drag, predDrag, 0.03 * drag + 0.05, "the snapshot's drag against the drag FAR applies");
-                Assert.Near(total, predTotal, 0.03 * total + 0.05, "the snapshot's total force against the one FAR applies");
-            }
-
-            // the snapshot reads no live game state: a worker thread gets the same answer
-            var worker = System.Threading.Tasks.Task.Run(() =>
-            {
-                bool ok = FARAPI.CalculateSnapshotAeroForcesAt(snap, out Vector3 wf, out Vector3 wt, vel, where, ut);
-                return (ok, wf, wt);
-            });
-            (bool wok, Vector3 wf2, Vector3 wt2) = worker.Result;
-            ctx.Record("worker", $"{wf2} against {f}");
-            Assert.True(wok, "the snapshot prediction ran on a worker thread");
-            Assert.Near(0, (wf2 - f).magnitude, 1e-4 * f.magnitude + 1e-6, "the worker thread's force against the main thread's");
-            Assert.Near(0, (wt2 - tq).magnitude, 1e-4 * tq.magnitude + 1e-6, "the worker thread's torque against the main thread's");
-
-            // full nose-up and nose-down input: the control surfaces move, and so does the pitching moment
-            Vector3 pitchAxis = Flight.PitchUpAxis(v);
-            Assert.True(FARAPI.CalculateSnapshotAeroForcesWithControlsAt(snap, out _, out Vector3 tUp, vel, where, ut, 1, 0, 0), "prediction with pitch +1");
-            Assert.True(FARAPI.CalculateSnapshotAeroForcesWithControlsAt(snap, out _, out Vector3 tDown, vel, where, ut, -1, 0, 0), "prediction with pitch -1");
-            double mUp = Vector3.Dot(tUp, pitchAxis), mDown = Vector3.Dot(tDown, pitchAxis), m0 = Vector3.Dot(tq, pitchAxis);
-            ctx.Record("pitchMoment", $"input -1 {mDown:F2}, 0 {m0:F2}, +1 {mUp:F2} kN m");
-            Assert.True(mUp > m0 && m0 > mDown, $"pitching moment rises with pitch input ({mDown:F2} < {m0:F2} < {mUp:F2} kN m)");
         }
 
         // Exact equality of two force/torque pairs (Unity's == is equality within about 1e-5).
