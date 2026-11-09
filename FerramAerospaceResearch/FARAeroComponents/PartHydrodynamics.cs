@@ -28,7 +28,10 @@ namespace FerramAerospaceResearch.FARAeroComponents
         public static double CrossflowDragOut = 0.5;
         public static double ImpactPressureCoefficient = 1.0;
         public static double StripLength = 0.25;
-        public static double PlaningBuoyancy = 0.5;   // share of stock's buoyancy kept once planing (1: all of it)
+        public static double PlaningBuoyancy = 0.5;   // share of the hydrostatic force kept once planing (1: all of it)
+        // a mesh whose area-weighted normals sum to more than this share of its area is not closed: its hydrostatic
+        // pressure would not add up to a buoyancy, and stock's stays
+        public const double ClosureTolerance = 0.02;
         public const int MinStrips = 4, MaxStrips = 40;
         private const double KinematicViscosity = 1.19e-6;
 
@@ -61,8 +64,14 @@ namespace FerramAerospaceResearch.FARAeroComponents
             public double V, Width;
         }
 
-        // what the last step did, for tests and display (kN, m2, m)
-        public Vector3 LastForce, LastMomentumForce, LastFrictionForce, LastImpactForce, LastCrossflowForce, LastBuoyancyCorrection;
+        // the mesh is closed: its hydrostatic pressure is the part's buoyancy, which replaces stock's (part.buoyancy 0)
+        public bool OwnsBuoyancy { get; private set; }
+        public double MeshVolume { get; private set; }
+        private float stockBuoyancy = -1;
+
+        // what the last step did, for tests and display (kN, m2, m). LastHydrostaticForce: the part's buoyancy when the
+        // mesh is closed, else the planing cut to stock's
+        public Vector3 LastForce, LastMomentumForce, LastFrictionForce, LastImpactForce, LastCrossflowForce, LastHydrostaticForce;
         public double LastWettedArea, LastPlanform, LastWettedLength, LastLimiter = 1;
         public int LastStrips;
 
@@ -111,7 +120,28 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 }
             }
 
-            FARLogger.Info($"Hydrodynamics of {part.partInfo?.name}: {t.Count / 3} triangles from meshes{log}");
+            // closed and outward: the area vectors cancel and the enclosed volume is positive
+            Vector3 areaSum = Vector3.zero;
+            double area = 0, volume = 0;
+            for (int i = 0; i + 2 < t.Count; i += 3)
+            {
+                Vector3 a = verts[t[i]], b = verts[t[i + 1]], c = verts[t[i + 2]];
+                Vector3 n2 = Vector3.Cross(b - a, c - a);   // twice the area, outward
+                areaSum += n2 * 0.5f;
+                area += n2.magnitude * 0.5;
+                volume += Vector3.Dot(a, Vector3.Cross(b, c)) / 6.0;
+            }
+            MeshVolume = volume;
+            var bounds = new Bounds(verts.Count > 0 ? verts[0] : Vector3.zero, Vector3.zero);
+            foreach (Vector3 w in verts)
+                bounds.Encapsulate(w);
+            log.Append($"; part-space bounds {bounds.min:F3} to {bounds.max:F3}");
+            OwnsBuoyancy = area > 0 && volume > 0 && areaSum.magnitude < ClosureTolerance * area;
+            if (!OwnsBuoyancy)
+                RestoreStockBuoyancy();
+            FARLogger.Info($"Hydrodynamics of {part.partInfo?.name}: {t.Count / 3} triangles from meshes{log}; " +
+                           $"volume {volume:F3} m3, open {(area > 0 ? areaSum.magnitude / area : 1):F4} of its area: " +
+                           (OwnsBuoyancy ? "buoyancy from its pressure" : "stock buoyancy"));
             localVerts = verts.ToArray();
             tris = t.ToArray();
             worldVerts = new Vector3[localVerts.Length];
@@ -120,9 +150,17 @@ namespace FerramAerospaceResearch.FARAeroComponents
             return tris.Length > 0;
         }
 
+        /// <summary>Gives the part its stock buoyancy back (the model off, or the mesh not closed).</summary>
+        public void RestoreStockBuoyancy()
+        {
+            if (stockBuoyancy >= 0)
+                part.buoyancy = stockBuoyancy;
+            stockBuoyancy = -1;
+        }
+
         private void Clear()
         {
-            LastForce = LastMomentumForce = LastFrictionForce = LastImpactForce = LastCrossflowForce = LastBuoyancyCorrection = Vector3.zero;
+            LastForce = LastMomentumForce = LastFrictionForce = LastImpactForce = LastCrossflowForce = LastHydrostaticForce = Vector3.zero;
             LastWettedArea = LastPlanform = LastWettedLength = 0;
             LastStrips = 0;
             LastLimiter = 1;
@@ -167,6 +205,14 @@ namespace FerramAerospaceResearch.FARAeroComponents
             if (xHat.sqrMagnitude < 0.5f)
                 xHat = Vector3.ProjectOnPlane(tf.forward, up).normalized;
 
+            if (OwnsBuoyancy && stockBuoyancy < 0)
+            {
+                stockBuoyancy = part.buoyancy;
+                part.buoyancy = 0;
+            }
+            double g = FlightGlobals.getGeeForceAtPosition((Vector3d)p0).magnitude;
+            Vector3 com = rb.worldCenterOfMass, hsForce = Vector3.zero, hsTorque = Vector3.zero;
+
             // clip every triangle to the part of it under the water
             polyVerts.Clear();
             polyCounts.Clear();
@@ -186,6 +232,32 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 ClipUnderwater(worldVerts[a], depths[a], worldVerts[b], depths[b], worldVerts[c], depths[c], scratchA);
                 if (scratchA.Count < 3)
                     continue;
+                if (OwnsBuoyancy)
+                {
+                    // hydrostatic pressure rho g depth on the wet piece, integrated exactly: linear over each fan
+                    // triangle, so its force is A mean(p) and its first moment A/12 (sum p_i r_i + sum p_i sum r_i)
+                    // (the centroid would put a long, sloping piece's force too far up it); on a closed surface it
+                    // sums to the displaced water's weight at the center of buoyancy
+                    Vector3 o = scratchA[0];
+                    float po = (float)Math.Max(0, depth0 - Vector3.Dot(o - p0, up));
+                    for (int j = 1; j + 1 < scratchA.Count; j++)
+                    {
+                        Vector3 q1 = scratchA[j], q2 = scratchA[j + 1];
+                        float ta = 0.5f * Vector3.Dot(Vector3.Cross(q1 - o, q2 - o), n);
+                        if (ta <= 0)
+                            continue;
+                        float p1 = (float)Math.Max(0, depth0 - Vector3.Dot(q1 - p0, up));
+                        float p2 = (float)Math.Max(0, depth0 - Vector3.Dot(q2 - p0, up));
+                        float ps = po + p1 + p2;
+                        if (ps <= 0)
+                            continue;
+                        Vector3 ro = o - com, r1 = q1 - com, r2 = q2 - com;
+                        Vector3 moment = (po * ro + p1 * r1 + p2 * r2 + ps * (ro + r1 + r2)) * (ta / 12f);  // integral of depth * r
+                        float scale = (float)(rho * g);
+                        hsForce += -n * (scale * ta * ps / 3f);
+                        hsTorque += Vector3.Cross(moment * scale, -n);
+                    }
+                }
                 foreach (Vector3 v in scratchA)
                 {
                     float x = Vector3.Dot(v - p0, xHat);
@@ -365,23 +437,32 @@ namespace FerramAerospaceResearch.FARAeroComponents
             }
 
             // hydrostatics at speed: once the flow leaves the transom dry, the bottom near it carries no hydrostatic
-            // pressure (Savitsky's buoyancy term is about half the displacement's; Zarnick scales it by 0.5). Stock's
-            // buoyancy stays; this takes back its share, fading in from C_V 1 to 3 on the mean wetted beam.
-            Vector3 hydrostatic = Vector3.zero;
-            PartBuoyancy pb = part.partBuoyancy;
-            if (PlaningBuoyancy < 1 && pb != null && planformTotal > 0 && wettedLength > 0)
+            // pressure (Savitsky's buoyancy term is about half the displacement's; Zarnick scales it by 0.5): the
+            // share kept fades from all of it to PlaningBuoyancy from C_V 1 to 3 on the mean wetted beam
+            double take = 0;
+            if (PlaningBuoyancy < 1 && planformTotal > 0 && wettedLength > 0)
             {
                 double beam = planformTotal / wettedLength;
-                double cv = U / Math.Sqrt(9.81 * Math.Max(0.05, beam));
+                double cv = U / Math.Sqrt(g * Math.Max(0.05, beam));
                 double x = Math.Max(0, Math.Min(1, (cv - 1) / 2));
-                double take = (1 - PlaningBuoyancy) * x * x * (3 - 2 * x);
-                if (take > 0)
-                {
-                    hydrostatic = -pb.lastBuoyantForce * (float)take;
-                    part.AddForceAtPosition((Vector3d)hydrostatic, (Vector3d)pb.lastForcePosition);
-                }
+                take = (1 - PlaningBuoyancy) * x * x * (3 - 2 * x);
             }
-            LastBuoyancyCorrection = hydrostatic;
+            Vector3 hydrostatic = Vector3.zero;
+            PartBuoyancy pb = part.partBuoyancy;
+            if (OwnsBuoyancy)
+            {
+                // the part's own buoyancy: its pressure, times its cfg buoyancy (stock's buoyancyScalar left out)
+                float keep = (float)((1 - take) * (stockBuoyancy >= 0 ? stockBuoyancy : 1));
+                hydrostatic = hsForce * (keep * 0.001f);
+                part.AddForce((Vector3d)hydrostatic);
+                part.AddTorque((Vector3d)(hsTorque * (keep * 0.001f)));
+            }
+            else if (take > 0 && pb != null)
+            {
+                hydrostatic = -pb.lastBuoyantForce * (float)take;
+                part.AddForceAtPosition((Vector3d)hydrostatic, (Vector3d)pb.lastForcePosition);
+            }
+            LastHydrostaticForce = hydrostatic;
 
             LastMomentumForce = (momentum - crossflow * (float)limiter) * 0.001f;
             LastCrossflowForce = crossflow * (float)(limiter * 0.001);

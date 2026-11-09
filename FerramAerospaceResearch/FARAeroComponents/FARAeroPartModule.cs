@@ -605,6 +605,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
             }
             else
             {
+                hydrodynamics?.RestoreStockBuoyancy();
                 Vector3 worldSpaceDragForce = Vector3.Dot(worldSpaceVelNorm, worldSpaceAeroForce) * worldSpaceVelNorm;
                 Vector3 worldSpaceLiftForce = worldSpaceAeroForce - worldSpaceDragForce;
 
