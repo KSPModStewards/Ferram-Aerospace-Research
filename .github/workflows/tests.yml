@@ -140,24 +140,27 @@ jobs:
           ckan-filters: ""
       # CKAN's downloads kept between runs (.github/scripts/ckan_cache.sh): the newest entry here and in the in-game
       # jobs, a new one saved here when a download added to it and by the ckan-cache job from the in-game jobs' new
-      # downloads. Workspace paths and cross-OS archives, as the durations below
-      - uses: actions/cache/restore@v6
+      # downloads. Workspace paths and cross-OS archives, as the durations below. A failed download leaves the rest
+      # saved; the cache failing leaves CKAN downloading everything, as before
+      - &ckan-restore
+        uses: actions/cache/restore@v6
         with:
           path: ckan-downloads
           key: ckan-downloads-${{ github.run_id }}
           restore-keys: ckan-downloads-
           enableCrossOsArchive: true
       - run: bash .github/scripts/ckan_cache.sh use ckan
+        continue-on-error: true
       - uses: KSPModdingLibs/KSPBuildTools/.github/actions/install-dependencies@1.1.1
         with:
           dependency-identifiers: ModularFlightIntegrator KSPCommunityFixes KSPBurst ModuleManager
       # not from a fork's pull request: what later runs install stays this repository's
       - name: CKAN download cache entry
         id: ckan-cache
-        if: github.event_name != 'pull_request_target'
+        if: ${{ !cancelled() && github.event_name != 'pull_request_target' }}
         run: bash .github/scripts/ckan_cache.sh key
       - uses: actions/cache/save@v6
-        if: steps.ckan-cache.outputs.key != ''
+        if: ${{ !cancelled() && steps.ckan-cache.outputs.key != '' }}
         with:
           path: ckan-downloads
           key: ${{ steps.ckan-cache.outputs.key }}
@@ -331,13 +334,9 @@ jobs:
           curl -fsSL --retry 5 --retry-all-errors -o "$KSPTEST_CKAN" "https://github.com/KSP-CKAN/CKAN/releases/download/$CKAN/ckan.exe"
           echo "$CKAN_SHA256  $KSPTEST_CKAN" | sha256sum -c -
       # the CKAN download cache the build job left (see there): the instances KspTest makes install from it
-      - uses: actions/cache/restore@v6
-        with:
-          path: ckan-downloads
-          key: ckan-downloads-${{ github.run_id }}
-          restore-keys: ckan-downloads-
-          enableCrossOsArchive: true
+      - *ckan-restore
       - name: CKAN download cache
+        continue-on-error: true
         run: |
           if [ "${{ matrix.platform }}" = linux ]; then bash .github/scripts/ckan_cache.sh use mono "$KSPTEST_CKAN"
           else bash .github/scripts/ckan_cache.sh use "$KSPTEST_CKAN"; fi
@@ -476,12 +475,12 @@ jobs:
             ${{ runner.temp }}/crash
             !${{ runner.temp }}/results/*/collected
           if-no-files-found: warn
-      # the mods this job's CKAN downloaded, for the ckan-cache job to add to the cache
+      # the mods this job's CKAN downloaded, for the ckan-cache job to add to the cache (none from a fork's pull request)
       - name: New CKAN downloads
-        if: always()
+        if: always() && github.event_name != 'pull_request_target'
         run: bash .github/scripts/ckan_cache.sh new "$RUNNER_TEMP/ckan-new"
       - uses: actions/upload-artifact@v6
-        if: always()
+        if: always() && github.event_name != 'pull_request_target'
         with:
           name: ckan-new-${{ matrix.name }}
           path: ${{ runner.temp }}/ckan-new
@@ -647,12 +646,7 @@ jobs:
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
-      - uses: actions/cache/restore@v6
-        with:
-          path: ckan-downloads
-          key: ckan-downloads-${{ github.run_id }}
-          restore-keys: ckan-downloads-
-          enableCrossOsArchive: true
+      - *ckan-restore
       - run: bash .github/scripts/ckan_cache.sh snapshot
       - uses: actions/download-artifact@v8
         continue-on-error: true

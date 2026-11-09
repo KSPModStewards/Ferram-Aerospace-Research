@@ -5,17 +5,28 @@
 #   ckan_cache.sh use CKAN...   points CKAN (the command, e.g. "ckan" or "mono ckan.exe") at the folder and notes what
 #                               it holds, for key and new
 #   ckan_cache.sh snapshot      only notes what the folder holds
-#   ckan_cache.sh key           when the folder gained files since, trims it to $LIMIT_MB (oldest files first) and sets
-#                               the step output key to a new entry's key, named by its files; else sets none
-#   ckan_cache.sh new DIR       copies the files the folder gained since into DIR (none: DIR left empty)
+#   ckan_cache.sh key           when the folder gained or changed files since, trims it to $LIMIT_MB and sets the step
+#                               output key to a new entry's key, named by its files; else sets none
+#   ckan_cache.sh new DIR       copies the files the folder gained or changed since into DIR (none: DIR left empty)
 set -eo pipefail
 DIR=ckan-downloads
 LIST="$RUNNER_TEMP/ckan-downloads.txt"
 LIMIT_MB=${LIMIT_MB:-1536}
 
-files() { find "$DIR" -maxdepth 1 -type f -printf '%f\n' 2>/dev/null | sort; }
+# a line a file: name<TAB>size
+files() { find "$DIR" -maxdepth 1 -type f -printf '%f\t%s\n' 2>/dev/null | sort; }
 snapshot() { mkdir -p "$DIR"; files > "$LIST"; echo "CKAN download cache: $(wc -l < "$LIST") files, $(du -sh "$DIR" | cut -f1)"; }
-added() { [ -f "$LIST" ] || return 0; files | comm -13 "$LIST" -; }
+added() { [ -f "$LIST" ] || return 0; files | comm -13 "$LIST" - | cut -f1; }
+
+# the files in the order the trim drops them: first those of a mod a newer file is here of (an older version), then
+# the rest, oldest first each. CKAN names them <url hash>-<identifier>-<version>.zip; a name read wrong only puts its
+# file with the rest
+trim_order() {
+  find "$DIR" -maxdepth 1 -type f -printf '%T@\t%f\n' | sort -rn | awk -F'\t' '
+    { mod = $2; sub(/^[^-]*-/, "", mod); sub(/-v?[0-9].*$/, "", mod)
+      if (mod in newest) old[++n] = $2; else { newest[mod] = 1; rest[++m] = $2 } }
+    END { for (i = n; i >= 1; i--) print old[i]; for (i = m; i >= 1; i--) print rest[i] }'
+}
 
 case "$1" in
   use)
@@ -30,9 +41,12 @@ case "$1" in
     ;;
   key)
     [ -n "$(added)" ] || { echo "no new downloads: the entry stays"; exit 0; }
-    find "$DIR" -maxdepth 1 -type f -printf '%T@ %p\n' | sort -n | cut -d' ' -f2- | while read -r f; do
+    # only the downloads themselves (not CKAN's folder of unfinished ones)
+    find "$DIR" -mindepth 1 -maxdepth 1 ! -type f -exec rm -rf {} +
+    mapfile -t order < <(trim_order)
+    for f in "${order[@]}"; do
       [ "$(du -sm "$DIR" | cut -f1)" -le "$LIMIT_MB" ] && break
-      echo "over ${LIMIT_MB} MB, dropping $(basename "$f")"; rm -f "$f"
+      echo "over ${LIMIT_MB} MB, dropping $f"; rm -f "$DIR/$f"
     done
     key="ckan-downloads-$(files | sha256sum | cut -c1-16)"
     echo "new entry $key: $(files | wc -l) files, $(du -sh "$DIR" | cut -f1)"
@@ -40,7 +54,8 @@ case "$1" in
     ;;
   new)
     mkdir -p "$2"
-    added | while read -r f; do cp "$DIR/$f" "$2/"; done
+    mapfile -t new < <(added)
+    for f in "${new[@]}"; do cp "$DIR/$f" "$2/"; done
     echo "$(find "$2" -type f | wc -l) new CKAN downloads"
     ;;
   *)
