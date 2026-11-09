@@ -10,11 +10,39 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       KSP_ROOT: /tmp/ksp
+    outputs:
+      title: ${{ steps.release-tag.outputs.title }}
+      archive: ${{ steps.package-mod.outputs.archive }}
 
     steps:
       - uses: actions/checkout@v6
         with:
           submodules: true
+
+      # A release tag (see the release job) must be config.json's version, and the sources the DLLs are built from must
+      # have it too: CI only regenerates FAR.version, `python -m buildtools replace` writes the rest
+      - name: Check the release tag
+        id: release-tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          number=$(jq -r '.variables | "\(.VersionMajor).\(.VersionMinor).\(.VersionBuild).\(.VersionRevision)"' config.json)
+          name=$(jq -r '.variables.VersionName' config.json)
+          if [ "$GITHUB_REF_NAME" != "v${number}_${name}" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match config.json's version, v${number}_${name}"
+            exit 1
+          fi
+          stale=""
+          for f in FerramAerospaceResearch/Properties/AssemblyInfo.cs FerramAerospaceResearch.Base/Properties/AssemblyInfo.cs; do
+            grep -q "AssemblyVersion(\"$number\")" "$f" || stale="$stale $f"
+          done
+          f=FerramAerospaceResearch.Base/Version.cs
+          code=$(sed -n 's/.*const byte \(Major\|Minor\|Build\|Revision\) = \([0-9]*\);.*/\2/p' "$f" | paste -sd.)
+          { [ "$code" = "$number" ] && grep -q "Name = \"$name\";" "$f"; } || stale="$stale $f"
+          if [ -n "$stale" ]; then
+            echo "::error::not at version $number \"$name\":$stale. Run python -m buildtools replace and commit"
+            exit 1
+          fi
+          echo "title=Ferram Aerospace Research v$number \"$name\"" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-python@v6
         with:
@@ -34,10 +62,13 @@ jobs:
         with:
           dependency-identifiers: ModularFlightIntegrator KSPCommunityFixes KSPBurst ModuleManager
 
+      # CI's buildtools settings: the dependencies from KSP_ROOT, the package as a folder (the artifact zips it)
+      - run: cp .github/package.config.json config.json.user
+
+      # not on a release, whose log should not read as a CI build's
       - name: Stamp commit SHA
-        run: |
-          cp .github/package.config.json config.json.user
-          python -m buildtools replace
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: python -m buildtools replace
 
       # Downloads stripped KSP assemblies, no secrets needed
       - uses: KSPModdingLibs/KSPBuildTools/.github/actions/compile@1.1.1
@@ -55,30 +86,32 @@ jobs:
           name: FerramAerospaceResearch
           path: ${{ steps.package-mod.outputs.archive }}
 
-  # Pushing a tag v<version>_<Name>, as config.json has them (v0.17.0.0_Maxwell), publishes this build as a GitHub
-  # release, with notes listing the pull requests merged since the last one. CKAN picks the release up from there.
+  # Pushing a tag v<version>_<Name>, as config.json has them (v0.17.0.0_Maxwell), on a master commit whose tests passed
+  # publishes this build as a GitHub release, with notes listing the pull requests merged since the last one. CKAN
+  # picks the release up from there. Running it again replaces the release's zip.
   release:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v6
-        with:
-          sparse-checkout: config.json
-          sparse-checkout-cone-mode: false
-
-      - name: Check the tag against config.json
-        id: version
+      - name: Check the commit is on master and passed its tests
         run: |
-          number=$(jq -r '.variables | "\(.VersionMajor).\(.VersionMinor).\(.VersionBuild).\(.VersionRevision)"' config.json)
-          name=$(jq -r '.variables.VersionName' config.json)
-          if [ "$GITHUB_REF_NAME" != "v${number}_${name}" ]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match config.json's version, v${number}_${name}"
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/master...$GITHUB_SHA" -q .status)
+          if [ "$status" != identical ] && [ "$status" != behind ]; then
+            echo "::error::$GITHUB_SHA is not on master"
             exit 1
           fi
-          echo "title=Ferram Aerospace Research v$number \"$name\"" >> "$GITHUB_OUTPUT"
+          run=$(gh run list -R "$GITHUB_REPOSITORY" -w tests.yml -e push -c "$GITHUB_SHA" -L 1 --json conclusion,url \
+            -q '.[] | "\(.conclusion) \(.url)"')
+          if [ "${run%% *}" != success ]; then
+            echo "::error::$GITHUB_SHA has no passed Tests run (${run:-none}). Once it passes, re-run this job"
+            exit 1
+          fi
 
       - uses: actions/download-artifact@v8
         with:
@@ -87,6 +120,13 @@ jobs:
 
       - name: Publish the release
         env:
-          GH_TOKEN: ${{ github.token }}
-          TITLE: ${{ steps.version.outputs.title }}
-        run: gh release create "$GITHUB_REF_NAME" dist/*.zip -R "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$TITLE"
+          TITLE: ${{ needs.build.outputs.title }}
+          ARCHIVE: ${{ needs.build.outputs.archive }}
+        run: |
+          zip="$PWD/$(basename "$ARCHIVE").zip"
+          (cd dist && zip -qr "$zip" .)
+          if gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$zip" -R "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$zip" -R "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$TITLE"
+          fi
