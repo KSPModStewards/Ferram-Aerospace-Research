@@ -1,4 +1,4 @@
-# Ferram Aerospace Research Continued v0.16.2.0 "Maskell"
+# Ferram Aerospace Research Continued v0.17.0.0 "Maxwell"
 
 [![Build](https://github.com/KSPModStewards/Ferram-Aerospace-Research/actions/workflows/package.yml/badge.svg?branch=master)](https://github.com/KSPModStewards/Ferram-Aerospace-Research/actions/workflows/package.yml)  
 Download latest build [here](https://nightly.link/KSPModStewards/Ferram-Aerospace-Research/workflows/package/master/FerramAerospaceResearch.zip)  
@@ -69,6 +69,22 @@ For control surfaces, use above but replace `FARWingAerodynamicModel` with `FARC
 Set all the other winglet/control surface values to zero
 
 ## CHANGELOG
+
+0.17.0.0V "Maxwell"------------------------------------  
+
+Wing aspect ratio is computed from the whole wing a panel belongs to, so a wing split into several panels flies like the same wing as one panel. Turn off "whole-wing aspect ratio" in the Model Options window (right-click FAR's toolbar button) for the old behavior [#174](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/174)  
+The voxel grid is sized and centered without the wheels, so deploying gear no longer changes the voxel size and the areas of unrelated parts, and the editor and flight voxelize a craft the same way [#172](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/172)  
+New editor Components tab: color the craft by part, aspect ratio, shielding, Cl, Cd or Cm, with a per-part table [#173](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/173)  
+New editor Heatmaps tab: level-flight performance envelope and stability derivatives over Mach and altitude [#170](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/170)  
+The prediction API (`FARAPI.CalculateVesselAeroForces`) no longer changes the flight's wing state and can run off the main thread, which makes predictions repeatable [#175](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/175)  
+Fixed the voxelization breaking until restart after leaving the editor mid-voxelization, and voxel chunks leaking from vessels leaving flight [#182](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/182)  
+Fixed a native crash when a CPU exposure job was cancelled [#182](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/182)  
+An aero stress failure decouples every child part, not every second one [#182](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/182)  
+Wings find their neighbours again after a craft load, undo or redo [#182](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/182)  
+FAR's current body follows the active vessel instead of staying on Kerbin or the editor's last analysed body [#182](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/182)  
+Spawned asteroids are voxelized, and female EVA kerbals no longer throw while voxelizing [#182](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/182)  
+Editor text fields keep their value unless edited, and brake rudders deflect with yaw input in the editor as in flight [#182](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/182)  
+Test suite and CI: unit tests and in-game tests run on every pull request [#181](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/181)  
 
 0.16.2.0V "Maskell"------------------------------------  
 
