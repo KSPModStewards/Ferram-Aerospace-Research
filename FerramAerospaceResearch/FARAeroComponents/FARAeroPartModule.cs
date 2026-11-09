@@ -184,6 +184,11 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         public float hackWaterDragVal;
 
+        // the water forces of the last physics step (FARSettings.Hydrodynamics), kN
+        public Vector3 worldSpaceHydroForce;
+        private PartHydrodynamics hydrodynamics;
+        internal PartHydrodynamics Hydrodynamics => hydrodynamics;
+
         private ProjectedArea projectedArea;
         private double partStressMaxY = double.MaxValue;
         private double partStressMaxXZ = double.MaxValue;
@@ -584,9 +589,19 @@ namespace FerramAerospaceResearch.FARAeroComponents
             worldSpaceTorque = partTransform.TransformDirection(partLocalTorque);
             UpdateAeroDisplay();
 
+            worldSpaceHydroForce = Vector3.zero;
             if (part.submergedPortion <= 0)
             {
                 part.AddForce(worldSpaceAeroForce);
+            }
+            else if (FARSettings.Hydrodynamics)
+            {
+                // the aero force is the dry share's already (part.dragScalar); the water's is the part's geometry's
+                if (!float.IsNaN(worldSpaceAeroForce.x))
+                    part.AddForce(worldSpaceAeroForce);
+                hydrodynamics ??= new PartHydrodynamics(part);
+                hydrodynamics.Apply();
+                worldSpaceHydroForce = hydrodynamics.LastForce;
             }
             else
             {

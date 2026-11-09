@@ -981,7 +981,12 @@ namespace ferram4
 
                     // water's contribution to rho
                     double waterRho = 0;
-                    if (partVessel.mainBody.ocean)
+                    if (partVessel.mainBody.ocean && FARSettings.Hydrodynamics)
+                    {
+                        // the dry share; PartHydrodynamics models the water on the part
+                        rho = part.atmDensity * (1 - part.submergedPortion);
+                    }
+                    else if (partVessel.mainBody.ocean)
                     {
                         waterRho = partVessel.mainBody.oceanDensity * 1000 * part.submergedPortion;
                         rho = waterRho + part.atmDensity * (1 - part.submergedPortion);
@@ -1000,7 +1005,7 @@ namespace ferram4
 
                         worldSpaceForce = force;
 
-                        if (part.submergedPortion > 0)
+                        if (part.submergedPortion > 0 && !FARSettings.Hydrodynamics)
                         {
                             Vector3 velNorm = velocity / v_scalar;
                             Vector3 worldSpaceDragForce = Vector3.Dot(velNorm, force) * velNorm;
