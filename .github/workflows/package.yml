@@ -54,3 +54,39 @@ jobs:
         with:
           name: FerramAerospaceResearch
           path: ${{ steps.package-mod.outputs.archive }}
+
+  # Pushing a tag v<version>_<Name>, as config.json has them (v0.17.0.0_Maxwell), publishes this build as a GitHub
+  # release, with notes listing the pull requests merged since the last one. CKAN picks the release up from there.
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: config.json
+          sparse-checkout-cone-mode: false
+
+      - name: Check the tag against config.json
+        id: version
+        run: |
+          number=$(jq -r '.variables | "\(.VersionMajor).\(.VersionMinor).\(.VersionBuild).\(.VersionRevision)"' config.json)
+          name=$(jq -r '.variables.VersionName' config.json)
+          if [ "$GITHUB_REF_NAME" != "v${number}_${name}" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match config.json's version, v${number}_${name}"
+            exit 1
+          fi
+          echo "title=Ferram Aerospace Research v$number \"$name\"" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: FerramAerospaceResearch
+          path: dist
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: ${{ steps.version.outputs.title }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.zip -R "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$TITLE"

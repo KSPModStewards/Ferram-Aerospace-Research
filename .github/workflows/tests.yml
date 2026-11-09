@@ -26,7 +26,9 @@ name: Tests
 # KspTests/README.md.
 
 on:
+  # branches only: a release tag's commit was tested on its way to master
   push:
+    branches: ["**"]
   # a fork's pull request, behind the gate job (see above): labeled for the run-ingame label
   pull_request_target:
     types: [opened, synchronize, reopened, labeled]
