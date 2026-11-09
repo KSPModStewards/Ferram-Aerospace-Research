@@ -57,6 +57,16 @@ jobs:
           # Install dependencies whole, they are bundled in the zip
           ckan-filters: ""
 
+      # the CKAN download cache tests.yml keeps (.github/scripts/ckan_cache.sh), only read here
+      - uses: actions/cache/restore@v6
+        with:
+          path: ckan-downloads
+          key: ckan-downloads-${{ github.run_id }}
+          restore-keys: ckan-downloads-
+          enableCrossOsArchive: true
+
+      - run: bash .github/scripts/ckan_cache.sh use ckan
+
       # Build references and the dependencies bundled in the zip
       - uses: KSPModdingLibs/KSPBuildTools/.github/actions/install-dependencies@1.1.1
         with:
