@@ -113,7 +113,7 @@ namespace FerramAerospaceResearch.KspTests
                 }
 
                 var steps = new StringBuilder("V,t,tow_kN,air_kN,trim_deg,transomDepth_m,bowDepth_m,buoyUp_kN,farUp_kN,farAlong_kN,rbDrag,submerged,comOffsetY," +
-                                              "hydroUp_kN,hydroDrag_kN,momUp_kN,momDrag_kN,crossUp_kN,friction_kN,impact_kN,wetLength_m,planform_m2,limiter,buoyCorrUp_kN\n");
+                                              "hydroUp_kN,hydroDrag_kN,momUp_kN,momDrag_kN,crossUp_kN,friction_kN,impact_kN,wetLength_m,planform_m2,limiter,hydrostaticUp_kN\n");
                 var rows = new StringBuilder("V_ms,C_V,R_kN,R_sd,air_kN,water_kN,water_over_Delta,trim_deg,trim_sd,transomDepth_m,bowDepth_m,lambda_est,buoyUp_kN,farUp_kN,rbDrag,submerged," +
                                              "hydroUp_kN,hydroDrag_kN,wetLength_m,limiter\n");
                 var fixedWait = new WaitForFixedUpdate();
@@ -148,7 +148,7 @@ namespace FerramAerospaceResearch.KspTests
                         double trimDeg = Math.Asin(Mathf.Clamp(Vector3.Dot(fwd, up), -1, 1)) * 180 / Math.PI;
                         double depthT = -FlightGlobals.getAltitudeAtPos(hull.transform.TransformPoint(stern), body);
                         double depthB = -FlightGlobals.getAltitudeAtPos(hull.transform.TransformPoint(bow), body);
-                        double buoyUp = Vector3.Dot(hull.partBuoyancy != null ? hull.partBuoyancy.effectiveForce : Vector3.zero, up);
+                        double buoyUp = Vector3.Dot((hull.partBuoyancy != null ? hull.partBuoyancy.effectiveForce : Vector3.zero) + (hull.Modules.GetModule<FARAeroComponents.FARAeroPartModule>()?.Hydrodynamics?.LastHydrostaticForce ?? Vector3.zero), up);
                         var aero = hull.Modules.GetModule<FARAeroComponents.FARAeroPartModule>();
                         double farUpKN = aero != null ? Vector3.Dot(aero.worldSpaceAeroForce, up) : double.NaN;
                         double farAlongKN = aero != null ? -Vector3.Dot(aero.worldSpaceAeroForce, h) : double.NaN;
@@ -167,7 +167,7 @@ namespace FerramAerospaceResearch.KspTests
                                                      F(hd != null ? Vector3.Dot(hd.LastMomentumForce, up) : 0), F(hd != null ? -Vector3.Dot(hd.LastMomentumForce, h) : 0),
                                                      F(hd != null ? Vector3.Dot(hd.LastCrossflowForce, up) : 0), F(hd != null ? -Vector3.Dot(hd.LastFrictionForce, h) : 0),
                                                      F(hd != null ? -Vector3.Dot(hd.LastImpactForce, h) : 0), F(hd?.LastWettedLength ?? 0), F(hd?.LastPlanform ?? 0),
-                                                     F(hd?.LastLimiter ?? 1), F(hd != null ? Vector3.Dot(hd.LastBuoyancyCorrection, up) : 0)));
+                                                     F(hd?.LastLimiter ?? 1), F(hd != null ? Vector3.Dot(hd.LastHydrostaticForce, up) : 0)));
                         if (t >= 8)
                         {
                             tow.Add(towKN); trim.Add(trimDeg); dT.Add(depthT); dB.Add(depthB); buoy.Add(buoyUp); farUp.Add(farUpKN); drag.Add(rb.drag); sub.Add(hull.submergedPortion);
