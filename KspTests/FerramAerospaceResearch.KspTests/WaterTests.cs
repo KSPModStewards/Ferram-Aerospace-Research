@@ -133,7 +133,11 @@ namespace FerramAerospaceResearch.KspTests
                 ctx.Record("waterDragSlow", $"{dragSlowMin:G4} to {dragSlowMax:G4} over {wetFrames} wet frames (stock {waterDragWas:G4})");
 
                 Assert.True(dipped > 0, "a wing partly in the water at some frame");
-                Assert.True(worstRatio < 0.05, $"a part-submerged wing keeps only a sliver of its lift ({worstWing})");
+                if (Settings.FARSettings.Hydrodynamics)
+                    // the wing's aero force is its dry share's (PartHydrodynamics has the water): no lift collapse on top
+                    Assert.True(worstRatio < 1.05, $"a part-submerged wing's air lift is at most its dry share's ({worstWing})");
+                else
+                    Assert.True(worstRatio < 0.05, $"a part-submerged wing keeps only a sliver of its lift ({worstWing})");
                 Assert.True(waterDecel > 5 * airDecel, $"the water slows the plane far faster than the air ({waterDecel:F2} against {airDecel:F3} m/s2)");
                 Assert.True(wetFrames > 0 && dragSlowMin >= 0 && !double.IsInfinity(dragSlowMax) && dragSlowMax > 0,
                             $"FAR's water drag setting real while in the water ({dragSlowMin:G4} to {dragSlowMax:G4})");
