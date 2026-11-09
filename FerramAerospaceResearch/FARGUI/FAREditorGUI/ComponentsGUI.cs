@@ -1,5 +1,5 @@
 /*
-Ferram Aerospace Research v0.16.1.2 "Marangoni"
+Ferram Aerospace Research v0.17.0.0 "Maxwell"
 =========================
 Aerodynamics model for Kerbal Space Program
 

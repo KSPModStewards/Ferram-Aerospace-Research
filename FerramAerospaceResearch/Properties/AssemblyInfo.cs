@@ -12,7 +12,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyCopyright("Copyright © Michael Ferrara et al. 2022")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
-[assembly: KSPAssembly("FerramAerospaceResearch", 0, 16)]
+[assembly: KSPAssembly("FerramAerospaceResearch", 0, 17)]
 //[assembly: KSPAssemblyDependency("KerbalGraph", 1, 3)]
 
 // Setting ComVisible to false makes the types in this assembly not visible
@@ -34,8 +34,8 @@ using System.Runtime.InteropServices;
 // by using the '*' as shown below:
 // [assembly: AssemblyVersion("1.0.*")]
 
-[assembly: AssemblyVersion("0.16.2.0")]
-[assembly: AssemblyFileVersion("0.16.2.0")]
+[assembly: AssemblyVersion("0.17.0.0")]
+[assembly: AssemblyFileVersion("0.17.0.0")]
 [assembly: KSPAssemblyDependency("ModularFlightIntegrator", 1, 0)]
 [assembly: KSPAssemblyDependency("KSPCommunityFixes", 1, 36)]
 
