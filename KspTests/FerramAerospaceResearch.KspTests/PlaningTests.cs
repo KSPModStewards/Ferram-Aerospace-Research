@@ -29,16 +29,39 @@ namespace FerramAerospaceResearch.KspTests
         /// Parameters: mass (t), lcg (m from the transom), cgHeight (m above the bottom), speeds (m/s, + separated).
         /// </summary>
         [UITest(Kind = "Measure", StartsAt = StartState.Flight, Craft = Box, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 1500)]
-        public static IEnumerator Tow_PlaningBox(TestContext ctx)
+        public static IEnumerator Tow_PlaningBox(TestContext ctx) => Tow(ctx, 2, 8, 2);
+
+        private const string Hull = "Planing Hull";
+
+        /// <summary>
+        /// The Planing Hull (crafts/planing_hull.py: one CustomProceduralParts Spine, Rectangle sections, beam 2 m, 8 m
+        /// long, 2 m deep to 5.6 m from the transom, 0.5 m deep at the bow: a flat bottom rising about 17 deg at the bow)
+        /// towed as Tow_PlaningBox is. Explicit: CustomProceduralParts comes from its checkout beside this repository's.
+        /// </summary>
+        [UITest(Kind = "Measure", Explicit = true, Mods = @"..\..\..\CustomProceduralParts\GameData\CustomProceduralParts",
+                StartsAt = StartState.Flight, Craft = Hull, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 1500)]
+        public static IEnumerator Tow_PlaningHull(TestContext ctx) => Tow(ctx, 2, 8, 0.5);
+
+        // beam, length and the hull's depth at the bow (m); the transom is a full beam-deep square
+        private static IEnumerator Tow(TestContext ctx, double beam, double length, double bowDepthOfHull)
         {
             double massT = ctx.ParamDouble("mass", 4.0), lcg = ctx.ParamDouble("lcg", 3.0), cgHeight = ctx.ParamDouble("cgHeight", 0.5);
             double[] speeds = ctx.ParamList("speeds", "2+3+4+5+6+8+10+12+14+16+18+20").Select(s => double.Parse(s, CultureInfo.InvariantCulture)).ToArray();
-            const double beam = 2, length = 8;
+            bool hydroWas = Settings.FARSettings.Hydrodynamics;
+            string hydro = ctx.Param("hydro");
+            if (!string.IsNullOrEmpty(hydro))
+                Settings.FARSettings.Hydrodynamics = bool.Parse(hydro);
+            double kaWas = FARAeroComponents.PartHydrodynamics.AddedMassCoefficient, pbWas = FARAeroComponents.PartHydrodynamics.PlaningBuoyancy;
+            FARAeroComponents.PartHydrodynamics.AddedMassCoefficient = ctx.ParamDouble("ka", kaWas);
+            FARAeroComponents.PartHydrodynamics.PlaningBuoyancy = ctx.ParamDouble("planingBuoyancy", pbWas);
+            ctx.Record("model", Settings.FARSettings.Hydrodynamics
+                                    ? $"PartHydrodynamics (added mass x{FARAeroComponents.PartHydrodynamics.AddedMassCoefficient}, planing buoyancy x{FARAeroComponents.PartHydrodynamics.PlaningBuoyancy})"
+                                    : "legacy water share of the aero force");
 
             yield return Wait.Seconds(5);
             Vessel v = FlightGlobals.ActiveVessel;
             Part hull = v.rootPart;
-            Assert.True(v.parts.Count == 1, $"the box is one part ({v.parts.Count})");
+            Assert.True(v.parts.Count == 1, $"the hull is one part ({v.parts.Count})");
 
             // mass: tank emptied, then filled with liquid fuel to the mass asked for
             foreach (PartResource r in hull.Resources)
@@ -46,7 +69,7 @@ namespace FerramAerospaceResearch.KspTests
             yield return Wait.Frames(2);
             double dry = hull.mass;
             PartResource lf = hull.Resources.Get("LiquidFuel");
-            Assert.True(lf != null, "the box tank holds liquid fuel");
+            Assert.True(lf != null, "the hull tank holds liquid fuel");
             double add = (massT - dry) / lf.info.density;
             Assert.True(add >= 0 && add <= lf.maxAmount, $"{massT} t reachable: dry {dry:F3} t, {lf.maxAmount:F0} units of {lf.info.density} t");
             lf.amount = add;
@@ -89,13 +112,15 @@ namespace FerramAerospaceResearch.KspTests
                     p.rb.angularVelocity = Vector3.zero;
                 }
 
-                var steps = new StringBuilder("V,t,tow_kN,air_kN,trim_deg,transomDepth_m,bowDepth_m,buoyUp_kN,farUp_kN,farAlong_kN,rbDrag,submerged,comOffsetY\n");
-                var rows = new StringBuilder("V_ms,C_V,R_kN,R_sd,air_kN,water_kN,water_over_Delta,trim_deg,trim_sd,transomDepth_m,bowDepth_m,lambda_est,buoyUp_kN,farUp_kN,rbDrag,submerged\n");
+                var steps = new StringBuilder("V,t,tow_kN,air_kN,trim_deg,transomDepth_m,bowDepth_m,buoyUp_kN,farUp_kN,farAlong_kN,rbDrag,submerged,comOffsetY," +
+                                              "hydroUp_kN,hydroDrag_kN,momUp_kN,momDrag_kN,crossUp_kN,friction_kN,impact_kN,wetLength_m,planform_m2,limiter,buoyCorrUp_kN\n");
+                var rows = new StringBuilder("V_ms,C_V,R_kN,R_sd,air_kN,water_kN,water_over_Delta,trim_deg,trim_sd,transomDepth_m,bowDepth_m,lambda_est,buoyUp_kN,farUp_kN,rbDrag,submerged," +
+                                             "hydroUp_kN,hydroDrag_kN,wetLength_m,limiter\n");
                 var fixedWait = new WaitForFixedUpdate();
                 double g = body.GeeASL * 9.80665, weightKN = v.GetTotalMass() * g;
                 double setAlong = speeds[0];
                 Vector3 stern = new Vector3(0, (float)(-length / 2), 0) + localDown * (float)(beam / 2);
-                Vector3 bow = new Vector3(0, (float)(length / 2), 0) + localDown * (float)(beam / 2);
+                Vector3 bow = new Vector3(0, (float)(length / 2), 0) + localDown * (float)(bowDepthOfHull / 2);
 
                 foreach (double V in speeds)
                 {
@@ -103,6 +128,7 @@ namespace FerramAerospaceResearch.KspTests
                     double t0 = Planetarium.GetUniversalTime();
                     var tow = new List<double>(); var air = new List<double>(); var trim = new List<double>(); var dT = new List<double>(); var dB = new List<double>();
                     var buoy = new List<double>(); var farUp = new List<double>(); var drag = new List<double>(); var sub = new List<double>();
+                    var hUp = new List<double>(); var hDrag = new List<double>(); var wetL = new List<double>(); var lim = new List<double>();
                     int n = 0;
                     while (Planetarium.GetUniversalTime() - t0 < 14)
                     {
@@ -133,11 +159,19 @@ namespace FerramAerospaceResearch.KspTests
                             airKN = -Vector3.Dot(f, h);
                         }
 
+                        FARAeroComponents.PartHydrodynamics hd = aero?.Hydrodynamics;
+                        double hydroUp = hd != null ? Vector3.Dot(hd.LastForce, up) : 0, hydroDrag = hd != null ? -Vector3.Dot(hd.LastForce, h) : 0;
                         steps.AppendLine(string.Join(",", F(V), F(t), F(towKN), F(airKN), F(trimDeg), F(depthT), F(depthB), F(buoyUp), F(farUpKN), F(farAlongKN),
-                                                     F(rb.drag), F(hull.submergedPortion), F(hull.CoMOffset.y)));
+                                                     F(rb.drag), F(hull.submergedPortion), F(hull.CoMOffset.y),
+                                                     F(hydroUp), F(hydroDrag),
+                                                     F(hd != null ? Vector3.Dot(hd.LastMomentumForce, up) : 0), F(hd != null ? -Vector3.Dot(hd.LastMomentumForce, h) : 0),
+                                                     F(hd != null ? Vector3.Dot(hd.LastCrossflowForce, up) : 0), F(hd != null ? -Vector3.Dot(hd.LastFrictionForce, h) : 0),
+                                                     F(hd != null ? -Vector3.Dot(hd.LastImpactForce, h) : 0), F(hd?.LastWettedLength ?? 0), F(hd?.LastPlanform ?? 0),
+                                                     F(hd?.LastLimiter ?? 1), F(hd != null ? Vector3.Dot(hd.LastBuoyancyCorrection, up) : 0)));
                         if (t >= 8)
                         {
                             tow.Add(towKN); trim.Add(trimDeg); dT.Add(depthT); dB.Add(depthB); buoy.Add(buoyUp); farUp.Add(farUpKN); drag.Add(rb.drag); sub.Add(hull.submergedPortion);
+                            hUp.Add(hydroUp); hDrag.Add(hydroDrag); wetL.Add(hd?.LastWettedLength ?? 0); lim.Add(hd?.LastLimiter ?? 1);
                             if (!double.IsNaN(airKN)) air.Add(airKN);
                         }
                         n++;
@@ -147,9 +181,11 @@ namespace FerramAerospaceResearch.KspTests
                     double R = tow.Average(), airMean = air.Count > 0 ? air.Average() : double.NaN, water = R - airMean, tr = trim.Average();
                     double lambda = tr > 0.5 ? Math.Max(0, dT.Average()) / Math.Sin(tr * Math.PI / 180) / beam : double.NaN;
                     rows.AppendLine(string.Join(",", F(V), F(V / Math.Sqrt(g * beam)), F(R), F(Sd(tow)), F(airMean), F(water), F(water / weightKN), F(tr), F(Sd(trim)),
-                                                F(dT.Average()), F(dB.Average()), F(lambda), F(buoy.Average()), F(farUp.Average()), F(drag.Average()), F(sub.Average())));
+                                                F(dT.Average()), F(dB.Average()), F(lambda), F(buoy.Average()), F(farUp.Average()), F(drag.Average()), F(sub.Average()),
+                                                F(hUp.Average()), F(hDrag.Average()), F(wetL.Average()), F(lim.Min())));
                     ctx.Record($"V{V}", $"R {R:F2} kN (sd {Sd(tow):F2}), air {airMean:F2}, water/Delta {water / weightKN:F4}, trim {tr:F2} deg (sd {Sd(trim):F2}), " +
-                                        $"transom {dT.Average():F2} m deep, bow {dB.Average():F2}, buoyancy up {buoy.Average():F1} kN, FAR up {farUp.Average():F1} kN of {weightKN:F1}");
+                                        $"transom {dT.Average():F2} m deep, bow {dB.Average():F2}, buoyancy up {buoy.Average():F1} kN, FAR up {farUp.Average():F1} kN, " +
+                                        $"hydro up {hUp.Average():F1} kN drag {hDrag.Average():F2} kN, wetted {wetL.Average():F2} m, of {weightKN:F1}");
                 }
                 File.WriteAllText(Path.Combine(ctx.ResultsDir, "planing.csv"), rows.ToString());
                 File.WriteAllText(Path.Combine(ctx.ResultsDir, "planing-steps.csv"), steps.ToString());
@@ -157,6 +193,9 @@ namespace FerramAerospaceResearch.KspTests
             finally
             {
                 CheatOptions.NoCrashDamage = crashWas;
+                Settings.FARSettings.Hydrodynamics = hydroWas;
+                FARAeroComponents.PartHydrodynamics.AddedMassCoefficient = kaWas;
+                FARAeroComponents.PartHydrodynamics.PlaningBuoyancy = pbWas;
             }
         }
 
