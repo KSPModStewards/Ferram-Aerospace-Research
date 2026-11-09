@@ -37,6 +37,12 @@ Install by merging the GameData folder in the zip with the GameData folder in yo
 
 ModuleManager, ModularFlightIntegrator and KSPCommunityFixes (1.36.0 or newer) are REQUIRED for FAR to work properly.  Failing to copy this over will result in strange errors.
 
+## Building
+
+The plugin DLLs are not in the repository: building `FerramAerospaceResearch.sln` (with the `buildtools` submodule
+checked out) copies them into `GameData/FerramAerospaceResearch/Plugins`. The Unity project needs
+`FerramAerospaceResearch.Base` built in the `Editor` configuration first, which copies it into its `Assets/Plugins`.
+
 ## Legacy wing configs
 
 Sample Part.cfg:

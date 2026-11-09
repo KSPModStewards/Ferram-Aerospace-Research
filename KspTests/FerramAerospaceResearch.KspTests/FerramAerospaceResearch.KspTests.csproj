@@ -28,5 +28,9 @@
         <!-- VoxelPoolTests, ThermalAreaTests and FarThermalModeTests patch FAR; the harness has the game load GameData/000_Harmony -->
         <PackageReference Include="Lib.Harmony" Version="2.2.1" ExcludeAssets="runtime" PrivateAssets="all" />
     </ItemGroup>
+    <Target Name="FarKspTestsCheckInputs" BeforeTargets="ResolveAssemblyReferences">
+        <Error Condition="!Exists('$(FarPlugins)/FerramAerospaceResearch.dll')"
+               Text="No FAR build at $(FarPlugins): build FerramAerospaceResearch.sln first, or set FarGameData." />
+    </Target>
     <Import Project="$(KspTestRoot)/build/KspTest.FromSource.targets" />
 </Project>

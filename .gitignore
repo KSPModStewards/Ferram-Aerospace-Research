@@ -6,6 +6,10 @@ obj
 /GameData/FerramAerospaceResearch/Custom*.cfg
 /GameData/FerramAerospaceResearch/FARForceDataUpdate.cfg
 GameData/FerramAerospaceResearch/Plugins/FARLogger_*
+# build output, the postbuild copies it in (Scale_Redist.dll is a reference, not output)
+GameData/FerramAerospaceResearch/Plugins/*.dll
+!GameData/FerramAerospaceResearch/Plugins/Scale_Redist.dll
+Unity/FerramAerospaceResearch/Assets/Plugins/FerramAerospaceResearch.Base.dll
 *.suo
 *.DotSettings
 *.user
