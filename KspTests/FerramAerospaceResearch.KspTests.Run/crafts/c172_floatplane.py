@@ -5,7 +5,7 @@ the 172M on EDO 89-2000 floats:
 - its wheels off; its wing and tail weighed as the 172's (FAR's massMultiplier); its flaps and ailerons part of
   their wing strips (one FAR surface with ctrlSurfFrac); its horizontal tail cut to stand in for the downwash
   FAR leaves out (TAIL_SPAN_SCALE, with the stabilizer's incidence in the spec); its elevator part of the stabilizer
-  strips;
+  strips; the panels between them FAR control surfaces too (plain_controls);
 - the engine on the nose: FARTest_O320E2D (mods/FARTestFloatplane: Lycoming O-320-E2D, 150 hp, on the McCauley
   1A175/ATM8042 80 x 42 seaplane propeller, as AJE models them), on Firespitter's nose engine kept inside the cowling;
 - two floats (edo_float.py: NACA 57-B-5 lines at NACA's own size for a 2220 lb twin-float airplane, 16.05 ft x 24.6 in)
@@ -54,6 +54,14 @@ WING_MASS_SCALE = 115.0 / 1014.0
 # the flow down 0.41 x 2.3 = 0.94 deg at the tail; on the cut tail that is a stabilizer incidence of -0.94 / 0.59 =
 # -1.6 deg (leading edge down; the 172's own taken as the drawing's 0), set in the spec ("incidence": {"tail"}) so
 # build.py turns the stabilizer and elevator together
+# FAR's lift and control power against JSBSim's c172p (scratchpad planing/c172_calib.py on the Trim test's table):
+# FAR deflects a control surface as an angle of attack of deflection x ctrlSurfFrac, so ctrlSurfFrac is the surface's
+# effectiveness, not its chord share: the flaps' 0.57 gives c172p's CL increment at 10 deg (0.20; at 0.30, 0.106), the
+# elevator's 0.99 its power at constant lift (0.98 / rad; at 0.31, 0.31) (both in mods/FARTestFloatplane). FAR's wing
+# lifts 0.071 / deg against c172p's 0.096: the wing's incidence 2.3 -> 7.4 deg (the spec) puts c172p's lift in ground
+# effect at the floats' height (h/b 0.29, x1.05) on FAR's over the lift-off attitudes, 7-11 deg (within 0.01 at
+# 8-10), at the price of cruise attitude: CL 0.42 at -1.1 deg against c172p's 1.8. Cm at neutral elevator, flaps 10,
+# already c172p's within 0.02 (0.033 - 0.028 / deg against 0.051 - 0.028): the tail's incidence kept
 TAIL_SPAN_SCALE = 1.98 / 2.70
 
 
@@ -282,6 +290,40 @@ def merge_tail_elevator(parts):
     return out
 
 
+def plain_controls(parts):
+    """The wing's and horizontal tail's other panels (no control on them) made FAR control surfaces with no axes,
+    FARTest_B9_Plain: FAR's whole-wing aspect ratio groups touching panels of one kind (wing panels, or control
+    surfaces), so with the flap, aileron and elevator strips control surfaces and the panels between them wing panels
+    each wing came apart into short pieces (the flap strips AR 3.6, the ailerons 5.2, the wing 7.4; the tail 2.5) and
+    FAR's induced drag doubled. The fin is left as it is."""
+    template = next(b for b in parts if cio.part_id(b).startswith("FARTest.B9.WingAileron"))
+    i, j = cio.module_span(template, "FARControllableSurface")
+    module = template[i:j]
+    for k, v in (("pitchaxis", "0"), ("yawaxis", "0"), ("rollaxis", "0"), ("pitchaxisDueToAoA", "0"), ("brakeRudder", "0"),
+                 ("maxdeflect", "0"), ("isFlap", "False"), ("maxdeflectFlap", "0")):
+        module = re.sub(r"(?m)^\t\t%s = .*$" % k, "\t\t%s = %s" % (k, v), module)
+    renames = {}
+    for n, b in enumerate(parts):
+        pid = cio.part_id(b)
+        if not pid.startswith("B9.Aero.Wing.Procedural.TypeA") or "\t\tname = FARWingAerodynamicModel\n" not in b:
+            continue
+        pos = [float(v) for v in re.search(r"(?m)^\tpos = (.*)$", b).group(1).split(",")]
+        if not (pos[1] >= 7.0 or (pos[2] < -2 and re.search(r"(?m)^\tsym = ", b))):     # the wing, or the tail (not the fin)
+            continue
+        m, k = cio.module_span(b, "FARWingAerodynamicModel")
+        mass = re.search(r"(?m)^\t\tmassMultiplier = (.*)$", b[m:k]).group(1)
+        own = re.sub(r"(?m)^\t\tmassMultiplier = .*$", "\t\tmassMultiplier = %s" % mass, module)
+        parts[n] = b[:m] + own + b[k:]
+        renames[pid] = pid.replace("B9.Aero.Wing.Procedural.TypeA_", "FARTest.B9.Plain_")
+    print(f"  {len(renames)} plain wing and tail panels as FAR control surfaces with no axes")
+    out = []
+    for b in parts:
+        for old, new in renames.items():
+            b = re.sub(r"\b%s\b" % re.escape(old), new, b)
+        out.append(b)
+    return out
+
+
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
     text = open(sys.argv[1], encoding="utf-8").read().replace("\r\n", "\n")
@@ -303,6 +345,7 @@ def main():
     parts = [wing_mass(b) if cio.part_id(b).startswith("B9.Aero") else b for b in parts]
     parts = merge_wing_controls(parts)
     parts = merge_tail_elevator(parts)
+    parts = plain_controls(parts)
     parts = shrink_tail(parts, TAIL_SPAN_SCALE)
 
     fus = parts[0]

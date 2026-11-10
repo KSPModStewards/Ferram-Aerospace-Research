@@ -229,7 +229,7 @@ namespace FerramAerospaceResearch.KspTests
                         Vector3 ac = (Vector3)w.GetAerodynamicCenter();
                         Vector3 lp = p.Root.transform.InverseTransformPoint(q.transform.position);
                         bool upright = Mathf.Abs(p.Root.transform.InverseTransformDirection(q.transform.right).z) > 0.7f;
-                        string kind = upright ? "fin" : lp.y < -2 ? "tail" : w is ferram4.FARControllableSurface c ? (c.isFlap ? "flaps" : "ailerons") : "wing";
+                        string kind = upright ? "fin" : lp.y < -2 ? "tail" : w is ferram4.FARControllableSurface c && (c.isFlap || c.rollaxis != 0) ? (c.isFlap ? "flaps" : "ailerons") : "wing";
                         double l = Vector3.Dot((Vector3)wf, liftDir), m = -Vector3.Dot(Vector3.Cross(ac - com, (Vector3)wf), right);
                         if (!byKind.TryGetValue(kind, out double[] acc))
                             byKind[kind] = acc = new double[4];
@@ -289,6 +289,55 @@ namespace FerramAerospaceResearch.KspTests
                                $"({eTrim * 28:F1} deg up)");
                 }
                 ctx.Record($"flaps {flap * 10}", string.Join("; ", trimAt));
+            }
+
+            // the drag at lift-off (60 mph, flaps 10) by kind: CD and CL on the 172's 174 sq ft (scratchpad c172_calib.py
+            // holds it against JSBSim c172p's tables)
+            {
+                double V0 = ctx.ParamDouble("dragMph", 60) * 0.44704, qS = 0.5 * 1.225 * V0 * V0 * 174 * 0.092903;
+                var drag = new StringBuilder();
+                foreach (float e in new[] { 0f, 0.6f })
+                {
+                    Ctrl.Pitch = e;
+                    yield return Wait.GameSeconds(2);
+                    foreach (double a in new[] { 0.0, 4.0, 8.0, 10.0 })
+                    {
+                        double ar = a * Math.PI / 180;
+                        Vector3 air = (fwd * (float)Math.Cos(ar) - bodyUp * (float)Math.Sin(ar)) * (float)V0;
+                        FARAPI.CalculateVesselAeroForces(v, out Vector3 f, out Vector3 tq, air, 0);
+                        Vector3 liftDir = Vector3.Cross(air.normalized, right).normalized;
+                        if (Vector3.Dot(liftDir, bodyUp) < 0) liftDir = -liftDir;
+                        double total = -Vector3.Dot(f, air.normalized), lift = Vector3.Dot(f, liftDir);
+                        var kinds = new Dictionary<string, double>();
+                        var dummy = new ferram4.FARCenterQuery();
+                        double wings = 0;
+                        foreach (Part q in v.parts)
+                            foreach (var w in q.Modules.OfType<ferram4.FARWingAerodynamicModel>())
+                            {
+                                Vector3d wf = w.PrecomputeCenterOfLift(air, V0 / 340.0, 1.225, dummy);
+                                Vector3 lp = p.Root.transform.InverseTransformPoint(q.transform.position);
+                                bool upright = Mathf.Abs(p.Root.transform.InverseTransformDirection(q.transform.right).z) > 0.7f;
+                                string kind = upright ? "fin" : lp.y < -2 ? "tail" : w is ferram4.FARControllableSurface c && (c.isFlap || c.rollaxis != 0) ? (c.isFlap ? "flaps" : "ailerons") : "wing";
+                                double d = -Vector3.Dot((Vector3)wf, air.normalized);
+                                kinds[kind] = (kinds.TryGetValue(kind, out double acc) ? acc : 0) + d;
+                                wings += d;
+                            }
+                        kinds["bodies"] = total - wings;
+                        double cl = lift * 1000 / qS;
+                        drag.Append($"elevator {e:F1} alpha {a:F0}: CL {cl:F3} CD {total * 1000 / qS:F4} = " +
+                                    string.Join(" + ", kinds.Select(k => $"{k.Key} {k.Value * 1000 / qS:F4}")) + "; ");
+                    }
+                }
+                ctx.Record("drag", drag.ToString());
+                // each lifting panel's effective aspect ratio (FAR's whole-wing grouping) at the last of those
+                var ars = new StringBuilder();
+                foreach (Part q in v.parts)
+                    foreach (var w in q.Modules.OfType<ferram4.FARWingAerodynamicModel>())
+                    {
+                        Vector3 lp = p.Root.transform.InverseTransformPoint(q.transform.position);
+                        ars.Append($"{q.partInfo.name} x {lp.x:F2} y {lp.y:F2}: S {w.S:F2} AR {w.EffectiveAR:F2}; ");
+                    }
+                ctx.Record("effective AR", ars.ToString());
             }
             Ctrl.Pitch = 0;
             Hyper(ctx, false);
@@ -422,7 +471,8 @@ namespace FerramAerospaceResearch.KspTests
         /// 50 ft speed) at a weight (weightLb: 2220, 1950, 1700), and its water run, time and distance to 50 ft against the
         /// supplement's sea-level, standard-day, no-wind figures. The ailerons hold the wings level and the rudder the
         /// heading. Parameters: weightLb, stepPitch (deg, the planing attitude held), rotateMph (IAS to raise the nose
-        /// off the water), climbMph. Writes takeoff.csv.
+        /// off the water), liftoffPitch (deg, the attitude then held until it flies), climbMph, hyperWarp, standardDay.
+        /// Writes takeoff.csv.
         /// </summary>
         [UITest(Kind = "Measure", Explicit = true, Mods = Mods, StartsAt = StartState.Flight, Craft = Craft, CraftDir = "SPH",
                 LaunchSite = "Runway", TimeoutSec = 1200)]
@@ -438,6 +488,9 @@ namespace FerramAerospaceResearch.KspTests
             // find their own planing attitude, as a pilot lets them)
             double stepElevator = ctx.ParamDouble("stepElevator", 0), stepSince = double.NaN;
             double climbMs = ctx.ParamDouble("climbMph", book.ias50) * 0.44704;
+            // the attitude held from rotateMph until it flies: under FAR's stall (flaps 10: ~12 deg) and the floats'
+            // heels (~10 deg); full aft stick there pulls it to 11-12 deg, onto the heels, and it plows
+            double liftoffPitch = ctx.ParamDouble("liftoffPitch", 9);
             const double Mph = 0.44704, Ft = 0.3048;
 
             Hyper(ctx, false);
@@ -461,9 +514,9 @@ namespace FerramAerospaceResearch.KspTests
 
             Vector3 up = v.upAxis;
             Vector3 h0 = Vector3.ProjectOnPlane(p.Root.transform.up, up).normalized;
-            var csv = new StringBuilder("t,x_m,V_ms,IAS_mph,pitch_deg,roll_deg,heading_deg,keel_alt_m,wet,phase,elevator,rpm,thrust_lbf,float_rbDrag,aero_moment_kNm,pitch_rate\n");
+            var csv = new StringBuilder("t,x_m,V_ms,IAS_mph,pitch_deg,roll_deg,heading_deg,keel_alt_m,wet,phase,elevator,rpm,thrust_lbf,float_rbDrag,aero_moment_kNm,pitch_rate,aero_lift_kN,aero_drag_kN,water_up_kN,water_drag_kN\n");
             string phase = "hump", lastPhase = "hump";
-            double aeroMoment = double.NaN;
+            double aeroMoment = double.NaN, aeroLift = double.NaN, aeroDrag = double.NaN;
             double t0 = Planetarium.GetUniversalTime(), peak = -90, lastPitch = 0, lastRoll = 0, lastHdg = 0, x = 0, integral = 0;
             int steps = 0;
             double runX = double.NaN, runT = double.NaN, obstacleX = double.NaN, obstacleT = double.NaN, airborneSince = double.NaN;
@@ -500,7 +553,7 @@ namespace FerramAerospaceResearch.KspTests
                             phase = "rotate";
                         break;
                     case "rotate":
-                        target = 90;                                       // the yoke back until it flies
+                        target = liftoffPitch;                             // raised to the lift-off attitude, held until it flies
                         break;
                     default:                                               // climbing at the 50 ft speed
                         target = Mathf.Clamp((float)(stepPitch + 3 + 1.0 * (ias - climbMs)), 0, 15);
@@ -548,9 +601,21 @@ namespace FerramAerospaceResearch.KspTests
                 {
                     FARAPI.CalculateVesselAeroForces(v, out Vector3 af, out Vector3 at, (Vector3)v.srf_velocity, Math.Max(0, v.altitude));
                     aeroMoment = -Vector3.Dot(at, right);
+                    aeroDrag = -Vector3.Dot(af, ((Vector3)v.srf_velocity).normalized);
+                    aeroLift = Vector3.Dot(af, up);
                 }
+                // the water's force on the floats: up, and its drag along the run
+                Vector3 water = Vector3.zero;
+                foreach (Part f in p.Floats)
+                {
+                    var hd = f.Modules.GetModule<FARAeroComponents.FARAeroPartModule>()?.Hydrodynamics;
+                    if (hd != null)
+                        water += hd.LastForce + hd.LastHydrostaticForce;
+                }
+                Vector3 runDir = Vector3.ProjectOnPlane(v.srf_velocity, up).normalized;
                 csv.AppendLine(string.Join(",", F(t), F(x), F(V), F(ias / Mph), F(pitch), F(roll), F(hdg), F(keelAlt), wet ? "1" : "0", phase, F(elevator),
-                                           F(p.Get("propRPM")), F(p.Get("propThrust") / 4.448e-3), F(p.Floats.Max(f => f.rb.drag)), F(aeroMoment), F(q)));
+                                           F(p.Get("propRPM")), F(p.Get("propThrust") / 4.448e-3), F(p.Floats.Max(f => f.rb.drag)), F(aeroMoment), F(q),
+                                           F(aeroLift), F(aeroDrag), F(Vector3.Dot(water, up)), F(-Vector3.Dot(water, runDir))));
                 yield return fixedWait;
             }
             Hyper(ctx, false);

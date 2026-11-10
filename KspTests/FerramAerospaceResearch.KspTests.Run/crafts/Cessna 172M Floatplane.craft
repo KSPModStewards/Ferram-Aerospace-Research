@@ -4,7 +4,7 @@ description = The Cessna 172M on EDO 89-2000 floats for FAR's water tests (craft
 type = SPH
 size = 33.0132599,9.15447617,31.6725025
 steamPublishedFileId = 0
-persistentId = 2338858067
+persistentId = 3544547087
 rot = 0,0,0,1
 missionFlag = Squad/Flags/default
 vesselType = Plane
@@ -17,7 +17,7 @@ PART
 {
 	part = proceduralTankLiquid_4000000001
 	partName = Part
-	persistentId = 3715152949
+	persistentId = 1096787353
 	pos = 0,6,0
 	attPos = 0,0,0
 	attPos0 = 0,6,0
@@ -41,11 +41,11 @@ PART
 	modSize = 0,0,0
 	link = FARTest.B9.WingFlap_4000000002
 	link = FARTest.B9.WingFlap_4000000003
-	link = B9.Aero.Wing.Procedural.TypeA_4000000014
-	link = B9.Aero.Wing.Procedural.TypeA_4000000015
+	link = FARTest.B9.Plain_4000000014
+	link = FARTest.B9.Plain_4000000015
 	link = B9.Aero.Wing.Procedural.TypeA_4000000024
 	link = B9.Aero.Wing.Procedural.TypeA_4000000025
-	link = B9.Aero.Wing.Procedural.TypeA_4000000026
+	link = FARTest.B9.Plain_4000000026
 	link = probeCoreOcto_4000000031
 	link = proceduralTankLiquid_4000000032
 	link = FARTest.O320E2D_4100000001
@@ -863,13 +863,13 @@ PART
 {
 	part = FARTest.B9.WingFlap_4000000002
 	partName = Part
-	persistentId = 1993045141
-	pos = 0,7.14184,1.28568
+	persistentId = 1166997642
+	pos = 0,7.13307,1.28621
 	attPos = 0,0,0
-	attPos0 = 0,1.28568,-1.14184
-	rot = -0.692713,-0.00945032,-0.00907837,-0.721094
+	attPos0 = 0,1.28621,-1.13307
+	rot = -0.678742,-0.00962286,-0.00889528,-0.734259
 	attRot = 0,0,0,1
-	attRot0 = 0.0200682,-0.0131018,0.000263005,-0.999713
+	attRot0 = 0.0392564,-0.0130943,0.000514476,-0.999143
 	mir = 1,1,1
 	symMethod = Mirror
 	autostrutMode = Heaviest
@@ -887,7 +887,7 @@ PART
 	modSize = 0,0,0
 	srfN = srfAttach,proceduralTankLiquid_4000000001,,0|0|0,-1|0|0,0|0|0
 	sym = FARTest.B9.WingFlap_4000000003
-	link = B9.Aero.Wing.Procedural.TypeA_4000000004
+	link = FARTest.B9.Plain_4000000004
 	EVENTS
 	{
 	}
@@ -1122,13 +1122,13 @@ PART
 {
 	part = FARTest.B9.WingFlap_4000000003
 	partName = Part
-	persistentId = 1196282541
-	pos = 0,7.14184,1.28568
+	persistentId = 2140932117
+	pos = 0,7.13307,1.28621
 	attPos = 0,0,0
-	attPos0 = 0,1.28568,-1.14184
-	rot = -0.00907837,-0.721094,-0.692713,-0.00945032
+	attPos0 = 0,1.28621,-1.13307
+	rot = -0.00889528,-0.734259,-0.678742,-0.00962286
 	attRot = 0,0,0,1
-	attRot0 = 0.000263005,-0.999713,0.0200682,-0.0131018
+	attRot0 = 0.000514476,-0.999143,0.0392564,-0.0130943
 	mir = 1,1,1
 	symMethod = Mirror
 	autostrutMode = Heaviest
@@ -1146,7 +1146,7 @@ PART
 	modSize = 0,0,0
 	srfN = srfAttach,proceduralTankLiquid_4000000001,,0|0|0,-1|0|0,0|0|0
 	sym = FARTest.B9.WingFlap_4000000002
-	link = B9.Aero.Wing.Procedural.TypeA_4000000005
+	link = FARTest.B9.Plain_4000000005
 	EVENTS
 	{
 	}
@@ -1379,15 +1379,15 @@ PART
 }
 PART
 {
-	part = B9.Aero.Wing.Procedural.TypeA_4000000004
+	part = FARTest.B9.Plain_4000000004
 	partName = Part
-	persistentId = 987439240
-	pos = 2.8496,7.21663,1.28607
+	persistentId = 3021540316
+	pos = 2.8496,7.20782,1.28372
 	attPos = 0,0,0
 	attPos0 = 2.85058,0.00339,-6.15123e-06
-	rot = -0.692713,-0.00945032,-0.00907837,-0.721094
+	rot = -0.678742,-0.00962286,-0.00889528,-0.734259
 	attRot = 0,0,0,1
-	attRot0 = 0,-8.67362e-19,0,1
+	attRot0 = 0,0,0,1
 	mir = 1,1,1
 	symMethod = Mirror
 	autostrutMode = Heaviest
@@ -1404,7 +1404,7 @@ PART
 	modMass = 2.92389822
 	modSize = 0,0,0
 	srfN = srfAttach,FARTest.B9.WingFlap_4000000002,,0|0|0,-1|0|0,0|0|0
-	sym = B9.Aero.Wing.Procedural.TypeA_4000000005
+	sym = FARTest.B9.Plain_4000000005
 	link = FARTest.B9.WingAileron_4000000006
 	EVENTS
 	{
@@ -1536,8 +1536,23 @@ PART
 	}
 	MODULE
 	{
-		name = FARWingAerodynamicModel
+		name = FARControllableSurface
+		ctrlSurfFrac = 0.2493
 		isEnabled = True
+		pitchaxis = 0
+		yawaxis = 0
+		rollaxis = 0
+		pitchaxisDueToAoA = 0
+		brakeRudder = 0
+		maxdeflect = 0
+		isFlap = False
+		isSpoiler = False
+		flapDeflectionLevel = 0
+		maxdeflectFlap = 0
+		isDynamicDeflection = False
+		dynamicControlStartSpeed = 200
+		exponent = 2
+		minControl = 0.100000001
 		massMultiplier = 0.1134
 		massOverride = -3.40282347E+38
 		stagingEnabled = True
@@ -1546,6 +1561,18 @@ PART
 		}
 		ACTIONS
 		{
+			ActivateSpoiler
+			{
+				actionGroup = Brakes
+			}
+			IncreaseDeflect
+			{
+				actionGroup = None
+			}
+			DecreaseDeflect
+			{
+				actionGroup = None
+			}
 		}
 		UPGRADESAPPLIED
 		{
@@ -1611,15 +1638,15 @@ PART
 }
 PART
 {
-	part = B9.Aero.Wing.Procedural.TypeA_4000000005
+	part = FARTest.B9.Plain_4000000005
 	partName = Part
-	persistentId = 1541131075
-	pos = -2.8496,7.21663,1.28607
+	persistentId = 918792460
+	pos = -2.8496,7.20782,1.28372
 	attPos = 0,0,0
 	attPos0 = 2.85058,0.00339,6.15123e-06
-	rot = -0.00907837,-0.721094,-0.692713,-0.00945032
+	rot = -0.00889528,-0.734259,-0.678742,-0.00962286
 	attRot = 0,0,0,1
-	attRot0 = 0,-8.67362e-19,0,1
+	attRot0 = 0,0,0,1
 	mir = 1,1,1
 	symMethod = Mirror
 	autostrutMode = Heaviest
@@ -1636,7 +1663,7 @@ PART
 	modMass = 2.92389822
 	modSize = 0,0,0
 	srfN = srfAttach,FARTest.B9.WingFlap_4000000003,,0|0|0,-1|0|0,0|0|0
-	sym = B9.Aero.Wing.Procedural.TypeA_4000000004
+	sym = FARTest.B9.Plain_4000000004
 	link = FARTest.B9.WingAileron_4000000007
 	EVENTS
 	{
@@ -1768,8 +1795,23 @@ PART
 	}
 	MODULE
 	{
-		name = FARWingAerodynamicModel
+		name = FARControllableSurface
+		ctrlSurfFrac = 0.2493
 		isEnabled = True
+		pitchaxis = 0
+		yawaxis = 0
+		rollaxis = 0
+		pitchaxisDueToAoA = 0
+		brakeRudder = 0
+		maxdeflect = 0
+		isFlap = False
+		isSpoiler = False
+		flapDeflectionLevel = 0
+		maxdeflectFlap = 0
+		isDynamicDeflection = False
+		dynamicControlStartSpeed = 200
+		exponent = 2
+		minControl = 0.100000001
 		massMultiplier = 0.1134
 		massOverride = -3.40282347E+38
 		stagingEnabled = True
@@ -1778,6 +1820,18 @@ PART
 		}
 		ACTIONS
 		{
+			ActivateSpoiler
+			{
+				actionGroup = Brakes
+			}
+			IncreaseDeflect
+			{
+				actionGroup = None
+			}
+			DecreaseDeflect
+			{
+				actionGroup = None
+			}
 		}
 		UPGRADESAPPLIED
 		{
@@ -1845,13 +1899,13 @@ PART
 {
 	part = FARTest.B9.WingAileron_4000000006
 	partName = Part
-	persistentId = 160675421
-	pos = 3.014,7.21945,1.24902
+	persistentId = 1969590245
+	pos = 3.014,7.20922,1.24659
 	attPos = 0,0,0
 	attPos0 = 0.164456,-0.03691,-1.62637e-07
-	rot = -0.692713,-0.00945032,-0.00907837,-0.721094
+	rot = -0.678742,-0.00962286,-0.00889528,-0.734259
 	attRot = 0,0,0,1
-	attRot0 = 0,-8.67362e-19,0,1
+	attRot0 = 0,0,0,1
 	mir = 1,1,1
 	symMethod = Mirror
 	autostrutMode = Heaviest
@@ -1867,9 +1921,9 @@ PART
 	modCost = 8951.18359
 	modMass = 2.92389822
 	modSize = 0,0,0
-	srfN = srfAttach,B9.Aero.Wing.Procedural.TypeA_4000000004,,0|0|0,-1|0|0,0|0|0
+	srfN = srfAttach,FARTest.B9.Plain_4000000004,,0|0|0,-1|0|0,0|0|0
 	sym = FARTest.B9.WingAileron_4000000007
-	link = B9.Aero.Wing.Procedural.TypeA_4000000008
+	link = FARTest.B9.Plain_4000000008
 	EVENTS
 	{
 	}
@@ -2104,13 +2158,13 @@ PART
 {
 	part = FARTest.B9.WingAileron_4000000007
 	partName = Part
-	persistentId = 3812876820
-	pos = -3.014,7.21945,1.24902
+	persistentId = 2194091788
+	pos = -3.014,7.20922,1.24659
 	attPos = 0,0,0
 	attPos0 = 0.164456,-0.03691,1.62637e-07
-	rot = -0.00907837,-0.721094,-0.692713,-0.00945032
+	rot = -0.00889528,-0.734259,-0.678742,-0.00962286
 	attRot = 0,0,0,1
-	attRot0 = 0,-8.67362e-19,0,1
+	attRot0 = 0,0,0,1
 	mir = 1,1,1
 	symMethod = Mirror
 	autostrutMode = Heaviest
@@ -2126,9 +2180,9 @@ PART
 	modCost = 8951.18359
 	modMass = 2.92389822
 	modSize = 0,0,0
-	srfN = srfAttach,B9.Aero.Wing.Procedural.TypeA_4000000005,,0|0|0,-1|0|0,0|0|0
+	srfN = srfAttach,FARTest.B9.Plain_4000000005,,0|0|0,-1|0|0,0|0|0
 	sym = FARTest.B9.WingAileron_4000000006
-	link = B9.Aero.Wing.Procedural.TypeA_4000000009
+	link = FARTest.B9.Plain_4000000009
 	EVENTS
 	{
 	}
@@ -2361,15 +2415,15 @@ PART
 }
 PART
 {
-	part = B9.Aero.Wing.Procedural.TypeA_4000000008
+	part = FARTest.B9.Plain_4000000008
 	partName = Part
-	persistentId = 16673347
-	pos = 5.206,7.27887,1.29663
+	persistentId = 1991182616
+	pos = 5.206,7.27042,1.29189
 	attPos = 0,0,0
 	attPos0 = 2.19275,0.04996,4.49588e-06
-	rot = -0.692713,-0.00945032,-0.00907837,-0.721094
+	rot = -0.678742,-0.00962286,-0.00889528,-0.734259
 	attRot = 0,0,0,1
-	attRot0 = 0,-8.67362e-19,0,1
+	attRot0 = 0,0,0,1
 	mir = 1,1,1
 	symMethod = Mirror
 	autostrutMode = Heaviest
@@ -2386,7 +2440,7 @@ PART
 	modMass = 2.92389822
 	modSize = 0,0,0
 	srfN = srfAttach,FARTest.B9.WingAileron_4000000006,,0|0|0,-1|0|0,0|0|0
-	sym = B9.Aero.Wing.Procedural.TypeA_4000000009
+	sym = FARTest.B9.Plain_4000000009
 	EVENTS
 	{
 	}
@@ -2517,8 +2571,23 @@ PART
 	}
 	MODULE
 	{
-		name = FARWingAerodynamicModel
+		name = FARControllableSurface
+		ctrlSurfFrac = 0.2493
 		isEnabled = True
+		pitchaxis = 0
+		yawaxis = 0
+		rollaxis = 0
+		pitchaxisDueToAoA = 0
+		brakeRudder = 0
+		maxdeflect = 0
+		isFlap = False
+		isSpoiler = False
+		flapDeflectionLevel = 0
+		maxdeflectFlap = 0
+		isDynamicDeflection = False
+		dynamicControlStartSpeed = 200
+		exponent = 2
+		minControl = 0.100000001
 		massMultiplier = 0.1134
 		massOverride = -3.40282347E+38
 		stagingEnabled = True
@@ -2527,6 +2596,18 @@ PART
 		}
 		ACTIONS
 		{
+			ActivateSpoiler
+			{
+				actionGroup = Brakes
+			}
+			IncreaseDeflect
+			{
+				actionGroup = None
+			}
+			DecreaseDeflect
+			{
+				actionGroup = None
+			}
 		}
 		UPGRADESAPPLIED
 		{
@@ -2592,15 +2673,15 @@ PART
 }
 PART
 {
-	part = B9.Aero.Wing.Procedural.TypeA_4000000009
+	part = FARTest.B9.Plain_4000000009
 	partName = Part
-	persistentId = 537579108
-	pos = -5.206,7.27887,1.29663
+	persistentId = 588273128
+	pos = -5.206,7.27042,1.29189
 	attPos = 0,0,0
 	attPos0 = 2.19275,0.04996,-4.49588e-06
-	rot = -0.00907837,-0.721094,-0.692713,-0.00945032
+	rot = -0.00889528,-0.734259,-0.678742,-0.00962286
 	attRot = 0,0,0,1
-	attRot0 = 0,-8.67362e-19,0,1
+	attRot0 = 0,0,0,1
 	mir = 1,1,1
 	symMethod = Mirror
 	autostrutMode = Heaviest
@@ -2617,7 +2698,7 @@ PART
 	modMass = 2.92389822
 	modSize = 0,0,0
 	srfN = srfAttach,FARTest.B9.WingAileron_4000000007,,0|0|0,-1|0|0,0|0|0
-	sym = B9.Aero.Wing.Procedural.TypeA_4000000008
+	sym = FARTest.B9.Plain_4000000008
 	EVENTS
 	{
 	}
@@ -2748,8 +2829,23 @@ PART
 	}
 	MODULE
 	{
-		name = FARWingAerodynamicModel
+		name = FARControllableSurface
+		ctrlSurfFrac = 0.2493
 		isEnabled = True
+		pitchaxis = 0
+		yawaxis = 0
+		rollaxis = 0
+		pitchaxisDueToAoA = 0
+		brakeRudder = 0
+		maxdeflect = 0
+		isFlap = False
+		isSpoiler = False
+		flapDeflectionLevel = 0
+		maxdeflectFlap = 0
+		isDynamicDeflection = False
+		dynamicControlStartSpeed = 200
+		exponent = 2
+		minControl = 0.100000001
 		massMultiplier = 0.1134
 		massOverride = -3.40282347E+38
 		stagingEnabled = True
@@ -2758,6 +2854,18 @@ PART
 		}
 		ACTIONS
 		{
+			ActivateSpoiler
+			{
+				actionGroup = Brakes
+			}
+			IncreaseDeflect
+			{
+				actionGroup = None
+			}
+			DecreaseDeflect
+			{
+				actionGroup = None
+			}
 		}
 		UPGRADESAPPLIED
 		{
@@ -2823,9 +2931,9 @@ PART
 }
 PART
 {
-	part = B9.Aero.Wing.Procedural.TypeA_4000000014
+	part = FARTest.B9.Plain_4000000014
 	partName = Part
-	persistentId = 2734532862
+	persistentId = 2864899369
 	pos = 0,6.72236,-3.32161
 	attPos = 0,0,0
 	attPos0 = 0,-3.32161,-0.722357
@@ -2848,7 +2956,7 @@ PART
 	modMass = 2.92389822
 	modSize = 0,0,0
 	srfN = srfAttach,proceduralTankLiquid_4000000001,,0|0|0,-1|0|0,0|0|0
-	sym = B9.Aero.Wing.Procedural.TypeA_4000000015
+	sym = FARTest.B9.Plain_4000000015
 	link = FARTest.B9.TailElevator_4000000016
 	EVENTS
 	{
@@ -2980,8 +3088,23 @@ PART
 	}
 	MODULE
 	{
-		name = FARWingAerodynamicModel
+		name = FARControllableSurface
+		ctrlSurfFrac = 0.2493
 		isEnabled = True
+		pitchaxis = 0
+		yawaxis = 0
+		rollaxis = 0
+		pitchaxisDueToAoA = 0
+		brakeRudder = 0
+		maxdeflect = 0
+		isFlap = False
+		isSpoiler = False
+		flapDeflectionLevel = 0
+		maxdeflectFlap = 0
+		isDynamicDeflection = False
+		dynamicControlStartSpeed = 200
+		exponent = 2
+		minControl = 0.100000001
 		massMultiplier = 0.1134
 		massOverride = -3.40282347E+38
 		stagingEnabled = True
@@ -2990,6 +3113,18 @@ PART
 		}
 		ACTIONS
 		{
+			ActivateSpoiler
+			{
+				actionGroup = Brakes
+			}
+			IncreaseDeflect
+			{
+				actionGroup = None
+			}
+			DecreaseDeflect
+			{
+				actionGroup = None
+			}
 		}
 		UPGRADESAPPLIED
 		{
@@ -3055,9 +3190,9 @@ PART
 }
 PART
 {
-	part = B9.Aero.Wing.Procedural.TypeA_4000000015
+	part = FARTest.B9.Plain_4000000015
 	partName = Part
-	persistentId = 3178477114
+	persistentId = 2177679588
 	pos = 0,6.72236,-3.32161
 	attPos = 0,0,0
 	attPos0 = 0,-3.32161,-0.722357
@@ -3080,7 +3215,7 @@ PART
 	modMass = 2.92389822
 	modSize = 0,0,0
 	srfN = srfAttach,proceduralTankLiquid_4000000001,,0|0|0,-1|0|0,0|0|0
-	sym = B9.Aero.Wing.Procedural.TypeA_4000000014
+	sym = FARTest.B9.Plain_4000000014
 	link = FARTest.B9.TailElevator_4000000017
 	EVENTS
 	{
@@ -3212,8 +3347,23 @@ PART
 	}
 	MODULE
 	{
-		name = FARWingAerodynamicModel
+		name = FARControllableSurface
+		ctrlSurfFrac = 0.2493
 		isEnabled = True
+		pitchaxis = 0
+		yawaxis = 0
+		rollaxis = 0
+		pitchaxisDueToAoA = 0
+		brakeRudder = 0
+		maxdeflect = 0
+		isFlap = False
+		isSpoiler = False
+		flapDeflectionLevel = 0
+		maxdeflectFlap = 0
+		isDynamicDeflection = False
+		dynamicControlStartSpeed = 200
+		exponent = 2
+		minControl = 0.100000001
 		massMultiplier = 0.1134
 		massOverride = -3.40282347E+38
 		stagingEnabled = True
@@ -3222,6 +3372,18 @@ PART
 		}
 		ACTIONS
 		{
+			ActivateSpoiler
+			{
+				actionGroup = Brakes
+			}
+			IncreaseDeflect
+			{
+				actionGroup = None
+			}
+			DecreaseDeflect
+			{
+				actionGroup = None
+			}
 		}
 		UPGRADESAPPLIED
 		{
@@ -3289,7 +3451,7 @@ PART
 {
 	part = FARTest.B9.TailElevator_4000000016
 	partName = Part
-	persistentId = 4204446214
+	persistentId = 1153446890
 	pos = 0.0605,6.71962,-3.32168
 	attPos = 0,0,0
 	attPos0 = 0.0605333,-3.17671e-17,1.61039e-06
@@ -3311,7 +3473,7 @@ PART
 	modCost = 8951.18359
 	modMass = 2.92389822
 	modSize = 0,0,0
-	srfN = srfAttach,B9.Aero.Wing.Procedural.TypeA_4000000014,,0|0|0,-1|0|0,0|0|0
+	srfN = srfAttach,FARTest.B9.Plain_4000000014,,0|0|0,-1|0|0,0|0|0
 	sym = FARTest.B9.TailElevator_4000000017
 	link = FARTest.B9.TailElevator_4000000018
 	EVENTS
@@ -3547,7 +3709,7 @@ PART
 {
 	part = FARTest.B9.TailElevator_4000000017
 	partName = Part
-	persistentId = 3760184027
+	persistentId = 1135386742
 	pos = -0.0605,6.71962,-3.32168
 	attPos = 0,0,0
 	attPos0 = 0.0605333,-3.17671e-17,-1.61039e-06
@@ -3569,7 +3731,7 @@ PART
 	modCost = 8951.18359
 	modMass = 2.92389822
 	modSize = 0,0,0
-	srfN = srfAttach,B9.Aero.Wing.Procedural.TypeA_4000000015,,0|0|0,-1|0|0,0|0|0
+	srfN = srfAttach,FARTest.B9.Plain_4000000015,,0|0|0,-1|0|0,0|0|0
 	sym = FARTest.B9.TailElevator_4000000016
 	link = FARTest.B9.TailElevator_4000000019
 	EVENTS
@@ -3805,7 +3967,7 @@ PART
 {
 	part = FARTest.B9.TailElevator_4000000018
 	partName = Part
-	persistentId = 4263775672
+	persistentId = 1159035682
 	pos = 0.608667,6.68689,-3.03839
 	attPos = 0,0,0
 	attPos0 = 0.548468,0.2841,-1.46063e-06
@@ -3829,7 +3991,7 @@ PART
 	modSize = 0,0,0
 	srfN = srfAttach,FARTest.B9.TailElevator_4000000016,,0|0|0,-1|0|0,0|0|0
 	sym = FARTest.B9.TailElevator_4000000019
-	link = B9.Aero.Wing.Procedural.TypeA_4000000020
+	link = FARTest.B9.Plain_4000000020
 	EVENTS
 	{
 	}
@@ -4063,7 +4225,7 @@ PART
 {
 	part = FARTest.B9.TailElevator_4000000019
 	partName = Part
-	persistentId = 443823901
+	persistentId = 1417089900
 	pos = -0.608667,6.68689,-3.03839
 	attPos = 0,0,0
 	attPos0 = 0.548468,0.2841,1.46063e-06
@@ -4087,7 +4249,7 @@ PART
 	modSize = 0,0,0
 	srfN = srfAttach,FARTest.B9.TailElevator_4000000017,,0|0|0,-1|0|0,0|0|0
 	sym = FARTest.B9.TailElevator_4000000018
-	link = B9.Aero.Wing.Procedural.TypeA_4000000021
+	link = FARTest.B9.Plain_4000000021
 	EVENTS
 	{
 	}
@@ -4319,9 +4481,9 @@ PART
 }
 PART
 {
-	part = B9.Aero.Wing.Procedural.TypeA_4000000020
+	part = FARTest.B9.Plain_4000000020
 	partName = Part
-	persistentId = 3313936127
+	persistentId = 251854317
 	pos = 1.1737,6.66238,-3.07685
 	attPos = 0,0,0
 	attPos0 = 0.565344,-0.0377599,-4.88832e-06
@@ -4344,7 +4506,7 @@ PART
 	modMass = 2.92389822
 	modSize = 0,0,0
 	srfN = srfAttach,FARTest.B9.TailElevator_4000000018,,0|0|0,-1|0|0,0|0|0
-	sym = B9.Aero.Wing.Procedural.TypeA_4000000021
+	sym = FARTest.B9.Plain_4000000021
 	EVENTS
 	{
 	}
@@ -4475,8 +4637,23 @@ PART
 	}
 	MODULE
 	{
-		name = FARWingAerodynamicModel
+		name = FARControllableSurface
+		ctrlSurfFrac = 0.2493
 		isEnabled = True
+		pitchaxis = 0
+		yawaxis = 0
+		rollaxis = 0
+		pitchaxisDueToAoA = 0
+		brakeRudder = 0
+		maxdeflect = 0
+		isFlap = False
+		isSpoiler = False
+		flapDeflectionLevel = 0
+		maxdeflectFlap = 0
+		isDynamicDeflection = False
+		dynamicControlStartSpeed = 200
+		exponent = 2
+		minControl = 0.100000001
 		massMultiplier = 0.1134
 		massOverride = -3.40282347E+38
 		stagingEnabled = True
@@ -4485,6 +4662,18 @@ PART
 		}
 		ACTIONS
 		{
+			ActivateSpoiler
+			{
+				actionGroup = Brakes
+			}
+			IncreaseDeflect
+			{
+				actionGroup = None
+			}
+			DecreaseDeflect
+			{
+				actionGroup = None
+			}
 		}
 		UPGRADESAPPLIED
 		{
@@ -4550,9 +4739,9 @@ PART
 }
 PART
 {
-	part = B9.Aero.Wing.Procedural.TypeA_4000000021
+	part = FARTest.B9.Plain_4000000021
 	partName = Part
-	persistentId = 2511839867
+	persistentId = 3080484058
 	pos = -1.1737,6.66238,-3.07685
 	attPos = 0,0,0
 	attPos0 = 0.565344,-0.0377599,4.88832e-06
@@ -4575,7 +4764,7 @@ PART
 	modMass = 2.92389822
 	modSize = 0,0,0
 	srfN = srfAttach,FARTest.B9.TailElevator_4000000019,,0|0|0,-1|0|0,0|0|0
-	sym = B9.Aero.Wing.Procedural.TypeA_4000000020
+	sym = FARTest.B9.Plain_4000000020
 	EVENTS
 	{
 	}
@@ -4706,8 +4895,23 @@ PART
 	}
 	MODULE
 	{
-		name = FARWingAerodynamicModel
+		name = FARControllableSurface
+		ctrlSurfFrac = 0.2493
 		isEnabled = True
+		pitchaxis = 0
+		yawaxis = 0
+		rollaxis = 0
+		pitchaxisDueToAoA = 0
+		brakeRudder = 0
+		maxdeflect = 0
+		isFlap = False
+		isSpoiler = False
+		flapDeflectionLevel = 0
+		maxdeflectFlap = 0
+		isDynamicDeflection = False
+		dynamicControlStartSpeed = 200
+		exponent = 2
+		minControl = 0.100000001
 		massMultiplier = 0.1134
 		massOverride = -3.40282347E+38
 		stagingEnabled = True
@@ -4716,6 +4920,18 @@ PART
 		}
 		ACTIONS
 		{
+			ActivateSpoiler
+			{
+				actionGroup = Brakes
+			}
+			IncreaseDeflect
+			{
+				actionGroup = None
+			}
+			DecreaseDeflect
+			{
+				actionGroup = None
+			}
 		}
 		UPGRADESAPPLIED
 		{
@@ -4783,7 +4999,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000024
 	partName = Part
-	persistentId = 3769247093
+	persistentId = 3720612368
 	pos = 0,6.24032,-2.78526
 	attPos = 0,0,0
 	attPos0 = 0,-2.78526,-0.240323
@@ -5013,7 +5229,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000025
 	partName = Part
-	persistentId = 3123982075
+	persistentId = 3224217084
 	pos = 0,6.32621,-2.79938
 	attPos = 0,0,0
 	attPos0 = 0,-2.79938,-0.326209
@@ -5242,9 +5458,9 @@ PART
 }
 PART
 {
-	part = B9.Aero.Wing.Procedural.TypeA_4000000026
+	part = FARTest.B9.Plain_4000000026
 	partName = Part
-	persistentId = 3254820572
+	persistentId = 3924408501
 	pos = 0,7.87216,-3.02339
 	attPos = 0,0,0
 	attPos0 = 0,-3.02339,-1.87215
@@ -5397,8 +5613,23 @@ PART
 	}
 	MODULE
 	{
-		name = FARWingAerodynamicModel
+		name = FARControllableSurface
+		ctrlSurfFrac = 0.2493
 		isEnabled = True
+		pitchaxis = 0
+		yawaxis = 0
+		rollaxis = 0
+		pitchaxisDueToAoA = 0
+		brakeRudder = 0
+		maxdeflect = 0
+		isFlap = False
+		isSpoiler = False
+		flapDeflectionLevel = 0
+		maxdeflectFlap = 0
+		isDynamicDeflection = False
+		dynamicControlStartSpeed = 200
+		exponent = 2
+		minControl = 0.100000001
 		massMultiplier = 0.1134
 		massOverride = -3.40282347E+38
 		stagingEnabled = True
@@ -5407,6 +5638,18 @@ PART
 		}
 		ACTIONS
 		{
+			ActivateSpoiler
+			{
+				actionGroup = Brakes
+			}
+			IncreaseDeflect
+			{
+				actionGroup = None
+			}
+			DecreaseDeflect
+			{
+				actionGroup = None
+			}
 		}
 		UPGRADESAPPLIED
 		{
@@ -5474,7 +5717,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeB_4000000027
 	partName = Part
-	persistentId = 64339470
+	persistentId = 2877841501
 	pos = 0,7.09918,-3.17886
 	attPos = 0,0,0
 	attPos0 = 0.772973,-0.379486,0
@@ -5721,7 +5964,7 @@ PART
 {
 	part = probeCoreOcto_4000000031
 	partName = Part
-	persistentId = 1795519492
+	persistentId = 542611752
 	pos = 0,5.91333,2.55924
 	attPos = 0,0,0
 	attPos0 = 0,2.55924,0.0866738
@@ -5912,7 +6155,7 @@ PART
 {
 	part = proceduralTankLiquid_4000000032
 	partName = Part
-	persistentId = 792331367
+	persistentId = 2930391513
 	pos = 0,6.04649,1.51423
 	attPos = 0,0,0
 	attPos0 = 0,1.51423,-0.0464861
@@ -6448,12 +6691,12 @@ PART
 	part = proceduralStructural_4100000002
 	partName = Part
 	persistentId = 4100000002
-	pos = 0.5588,5.15922,2.97645
+	pos = 0.5588,5.15922,2.97698
 	attPos = 0,0,0
-	attPos0 = 0.5588,2.97645,0.840784
-	rot = 0,0,0.890625,-0.454738
+	attPos0 = 0.5588,2.97698,0.840779
+	rot = 0,0,0.890646,-0.454698
 	attRot = 0,0,0,1
-	attRot0 = 0.321548,0.629767,0.629767,-0.321548
+	attRot0 = 0.32152,0.629782,0.629782,-0.32152
 	mir = 1,1,1
 	symMethod = Mirror
 	autostrutMode = Root
@@ -6851,7 +7094,7 @@ PART
 	{
 		name = ProceduralShapeSpine
 		isEnabled = True
-		length = 1.42975
+		length = 1.42984
 		hScale = 1
 		vScale = 1
 		shellMode = False
@@ -6903,9 +7146,9 @@ PART
 	part = proceduralStructural_4100000003
 	partName = Part
 	persistentId = 4100000003
-	pos = 0.5588,5.16401,1.21519
+	pos = 0.5588,5.16394,1.21572
 	attPos = 0,0,0
-	attPos0 = 0.5588,1.21519,0.835992
+	attPos0 = 0.5588,1.21572,0.836063
 	rot = 0,0,0.891896,-0.452241
 	attRot = 0,0,0,1
 	attRot0 = 0.319782,0.630666,0.630666,-0.319782
@@ -7357,12 +7600,12 @@ PART
 	part = proceduralStructural_4100000004
 	partName = Part
 	persistentId = 4100000004
-	pos = 1.1176,4.75465,1.52526
+	pos = 1.1176,4.75458,1.52579
 	attPos = 0,0,0
-	attPos0 = -2.77556e-16,0.689875,-1.45119
+	attPos0 = -5.55112e-17,0.689919,-1.45119
 	rot = 0,0.707107,0.707107,0
 	attRot = 0,0,0,1
-	attRot0 = 0.629767,-0.321548,-0.321548,0.629767
+	attRot0 = 0.629782,-0.32152,-0.32152,0.629782
 	mir = 1,1,1
 	symMethod = Mirror
 	autostrutMode = Root
@@ -8377,12 +8620,12 @@ PART
 	part = proceduralStructural_4100000005
 	partName = Part
 	persistentId = 4100000005
-	pos = -0.5588,5.15922,2.97645
+	pos = -0.5588,5.15922,2.97698
 	attPos = 0,0,0
-	attPos0 = -0.5588,2.97645,0.840784
-	rot = 0,0,0.890625,0.454738
+	attPos0 = -0.5588,2.97698,0.840779
+	rot = 0,0,0.890646,0.454698
 	attRot = 0,0,0,1
-	attRot0 = -0.321548,0.629767,0.629767,0.321548
+	attRot0 = -0.32152,0.629782,0.629782,0.32152
 	mir = 1,1,1
 	symMethod = Mirror
 	autostrutMode = Root
@@ -8780,7 +9023,7 @@ PART
 	{
 		name = ProceduralShapeSpine
 		isEnabled = True
-		length = 1.42975
+		length = 1.42984
 		hScale = 1
 		vScale = 1
 		shellMode = False
@@ -8832,9 +9075,9 @@ PART
 	part = proceduralStructural_4100000006
 	partName = Part
 	persistentId = 4100000006
-	pos = -0.5588,5.16401,1.21519
+	pos = -0.5588,5.16394,1.21572
 	attPos = 0,0,0
-	attPos0 = -0.5588,1.21519,0.835992
+	attPos0 = -0.5588,1.21572,0.836063
 	rot = 0,0,0.891896,0.452241
 	attRot = 0,0,0,1
 	attRot0 = -0.319782,0.630666,0.630666,0.319782
@@ -9286,12 +9529,12 @@ PART
 	part = proceduralStructural_4100000007
 	partName = Part
 	persistentId = 4100000007
-	pos = -1.1176,4.75465,1.52526
+	pos = -1.1176,4.75458,1.52579
 	attPos = 0,0,0
-	attPos0 = 2.77556e-16,0.689875,-1.45119
+	attPos0 = 5.55112e-17,0.689919,-1.45119
 	rot = 0,0.707107,0.707107,0
 	attRot = 0,0,0,1
-	attRot0 = 0.629767,0.321548,0.321548,0.629767
+	attRot0 = 0.629782,0.32152,0.32152,0.629782
 	mir = 1,1,1
 	symMethod = Mirror
 	autostrutMode = Root
