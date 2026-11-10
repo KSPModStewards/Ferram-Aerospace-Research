@@ -18,7 +18,7 @@ namespace FerramAerospaceResearch.KspTests
     public static class FloatplaneTests
     {
         private const string Craft = "Cessna 172M Floatplane";
-        private const string Mods = @"AdvancedJetEngine;Firespitter;..\..\..\CustomProceduralParts\GameData\CustomProceduralParts;" +
+        private const string Mods = @"AdvancedJetEngine;Firespitter;TimeControl;..\..\..\CustomProceduralParts\GameData\CustomProceduralParts;" +
                                     @"..\FerramAerospaceResearch.KspTests.Run\mods\FARTestFloatplane";
 
         private const double Lb = 0.45359237e-3;          // t
@@ -51,10 +51,13 @@ namespace FerramAerospaceResearch.KspTests
                 LaunchSite = "Runway", TimeoutSec = 900)]
         public static IEnumerator Setup_C172Floatplane(TestContext ctx)
         {
+            Hyper(ctx, false);
+            StandardDay(ctx, null);
             yield return Wait.Seconds(5);
             Plane p = null;
             foreach (object o in Prepare(ctx, r => p = r))
                 yield return o;
+            Hyper(ctx, true);
             Vessel v = p.V;
             CelestialBody body = v.mainBody;
             Rigidbody rb = p.Root.rb;
@@ -102,6 +105,8 @@ namespace FerramAerospaceResearch.KspTests
             double r = rpm.Average();
             ctx.Record("static", $"{r:F0} rpm (TCDS {StaticRpmMin}-{StaticRpmMax}), thrust {thrust.Average() / 4.448e-3:F0} lbf at the tow line " +
                                  $"(AJE's propeller {aje.Average() / 4.448e-3:F0} lbf), {hp.Average():F0} hp, {map.Average():F2} inHg; {Ambient(v)}");
+            Hyper(ctx, false);
+            StandardDay(ctx, null);
             Assert.True(r >= StaticRpmMin && r <= StaticRpmMax, $"static rpm {r:F0} within the TCDS band {StaticRpmMin}-{StaticRpmMax}");
         }
 
@@ -112,6 +117,63 @@ namespace FerramAerospaceResearch.KspTests
             double tF = (v.atmosphericTemperature - 273.15) * 9 / 5 + 32;
             return $"air {v.atmosphericTemperature - 273.15:F1} C ({tF:F0} F, {tF - 59:+0;-0} F from standard), {v.staticPressurekPa:F2} kPa, " +
                    $"{v.atmDensity:F4} kg/m3 (sigma {v.atmDensity / 1.225:F3})";
+        }
+
+        // TimeControl's hyper-warp (parameter hyperWarp, default 4; 1 for real time) at the 1x physics step: the same
+        // simulation, more physics frames per rendered frame. Off at each test's start (a failed test leaves it on) and end.
+        private static void Hyper(TestContext ctx, bool on)
+        {
+            double rate = ctx.ParamDouble("hyperWarp", 4);
+            if (!on || rate <= 1)
+            {
+                Flight.HyperWarpOff();
+                return;
+            }
+            ctx.Record("hyperWarp", Flight.HyperWarp(rate, 1.0) ? $"{rate:F0}x attempted, time scale {Time.timeScale:F1}" : "refused (real time)");
+        }
+
+        // a standard day at sea level for the supplement's tables (parameter standardDay, default on): the body's
+        // temperature offsets (latitude, sun, axial tilt, eccentricity: KSC's afternoon is ~41 C) set to none, so the
+        // air is its base curve (Kerbin: 15 C, 101.325 kPa, 1.225 kg/m3); null puts the body's own back
+        private static FloatCurve[] savedTemperatureCurves;
+        private static CelestialBody savedTemperatureBody;
+
+        private static void StandardDay(TestContext ctx, CelestialBody body)
+        {
+            if (body == null)
+            {
+                if (savedTemperatureBody != null)
+                {
+                    CelestialBody b = savedTemperatureBody;
+                    b.latitudeTemperatureBiasCurve = savedTemperatureCurves[0];
+                    b.latitudeTemperatureSunMultCurve = savedTemperatureCurves[1];
+                    b.axialTemperatureSunBiasCurve = savedTemperatureCurves[2];
+                    b.axialTemperatureSunMultCurve = savedTemperatureCurves[3];
+                    b.eccentricityTemperatureBiasCurve = savedTemperatureCurves[4];
+                    savedTemperatureBody = null;
+                }
+                return;
+            }
+            if (!(ctx.Param("standardDay", "on") ?? "on").Equals("on", StringComparison.OrdinalIgnoreCase) || savedTemperatureBody != null)
+                return;
+            savedTemperatureBody = body;
+            savedTemperatureCurves = new[]
+            {
+                body.latitudeTemperatureBiasCurve, body.latitudeTemperatureSunMultCurve, body.axialTemperatureSunBiasCurve,
+                body.axialTemperatureSunMultCurve, body.eccentricityTemperatureBiasCurve
+            };
+            FloatCurve Zero()
+            {
+                var c = new FloatCurve();
+                c.Add(-1000, 0, 0, 0);
+                c.Add(1000, 0, 0, 0);
+                return c;
+            }
+            body.latitudeTemperatureBiasCurve = Zero();
+            body.latitudeTemperatureSunMultCurve = Zero();
+            body.axialTemperatureSunBiasCurve = Zero();
+            body.axialTemperatureSunMultCurve = Zero();
+            body.eccentricityTemperatureBiasCurve = Zero();
         }
 
         /// <summary>
@@ -127,10 +189,13 @@ namespace FerramAerospaceResearch.KspTests
         {
             double[] mphs = ctx.ParamList("mphs", "60+80+110").Select(s => double.Parse(s, CultureInfo.InvariantCulture)).ToArray();
             double weightLb = ctx.ParamDouble("weightLb", 2220);
+            Hyper(ctx, false);
+            StandardDay(ctx, null);
             yield return Wait.Seconds(5);
             Plane p = null;
             foreach (object o in Prepare(ctx, r => p = r, weightLb * Lb, afloat: false))
                 yield return o;
+            Hyper(ctx, true);
             Vessel v = p.V;
             double weight = v.GetTotalMass() * 9.80665 * 1000;     // N
             var flaps = v.parts.SelectMany(q => q.Modules.OfType<ferram4.FARControllableSurface>()).Where(c => c.isFlap).ToList();
@@ -196,7 +261,7 @@ namespace FerramAerospaceResearch.KspTests
                     foreach (float e in new[] { -0.5f, 0f, 0.5f, 1f })
                     {
                         Ctrl.Pitch = e;
-                        yield return Wait.Seconds(2);           // the surfaces move at their own rate
+                        yield return Wait.GameSeconds(2);       // the surfaces move at their own rate
                         // the angle of attack carrying the weight (lift square to the airflow, in the symmetry plane)
                         double lo = -6, hi = 16, m = double.NaN, cl = double.NaN;
                         for (int it = 0; it < 30; it++)
@@ -226,6 +291,8 @@ namespace FerramAerospaceResearch.KspTests
                 ctx.Record($"flaps {flap * 10}", string.Join("; ", trimAt));
             }
             Ctrl.Pitch = 0;
+            Hyper(ctx, false);
+            StandardDay(ctx, null);
             File.WriteAllText(Path.Combine(ctx.ResultsDir, "trim.csv"), csv.ToString());
         }
 
@@ -244,14 +311,17 @@ namespace FerramAerospaceResearch.KspTests
         {
             double V = ctx.ParamDouble("mph", 60) * 0.44704, weightLb = ctx.ParamDouble("weightLb", 2220);
             double[] pitches = ctx.ParamList("pitches", "4+6+8+10+12").Select(s => double.Parse(s, CultureInfo.InvariantCulture)).ToArray();
+            Hyper(ctx, false);
+            StandardDay(ctx, null);
             yield return Wait.Seconds(5);
             Plane p = null;
             foreach (object o in Prepare(ctx, r => p = r, weightLb * Lb))
                 yield return o;
+            Hyper(ctx, true);
             Vessel v = p.V;
             CelestialBody body = v.mainBody;
             var fixedWait = new WaitForFixedUpdate();
-            yield return Wait.Seconds(5);
+            yield return Wait.GameSeconds(5);
             foreach (ferram4.FARControllableSurface c in v.parts.SelectMany(q => q.Modules.OfType<ferram4.FARControllableSurface>()).Where(c => c.isFlap))
                 c.SetDeflection(1);
             ModuleEngines engine = p.Engine.Modules.GetModule<ModuleEngines>();
@@ -332,6 +402,8 @@ namespace FerramAerospaceResearch.KspTests
                     ctx.Record($"pitch {pitchTarget} elevator {elev}", $"hold {hold.Average():F2} kN m (sd {Sd(hold):F2}), aero {aero.Average():F2}, thrust {thrustM.Average():F2}, " +
                                                                     $"water {water0:F2}; water up {wUp.Average():F2} kN drag {wDrag.Average():F2}, wing lift {lift.Average():F2} of {weight:F2}, step keel {keel.Average():F3} m deep");
                 }
+            Hyper(ctx, false);
+            StandardDay(ctx, null);
             File.WriteAllText(Path.Combine(ctx.ResultsDir, "captive.csv"), csv.ToString());
             Ctrl.SetThrottle(0f);
             Ctrl.Neutral();
@@ -368,14 +440,17 @@ namespace FerramAerospaceResearch.KspTests
             double climbMs = ctx.ParamDouble("climbMph", book.ias50) * 0.44704;
             const double Mph = 0.44704, Ft = 0.3048;
 
+            Hyper(ctx, false);
+            StandardDay(ctx, null);
             yield return Wait.Seconds(5);
             Plane p = null;
             foreach (object o in Prepare(ctx, r => p = r, weightLb * Lb))
                 yield return o;
+            Hyper(ctx, true);
             Vessel v = p.V;
             CelestialBody body = v.mainBody;
             var fixedWait = new WaitForFixedUpdate();
-            yield return Wait.Seconds(10);         // settle afloat
+            yield return Wait.GameSeconds(10);     // settle afloat
 
             foreach (ferram4.FARControllableSurface c in v.parts.SelectMany(q => q.Modules.OfType<ferram4.FARControllableSurface>()).Where(c => c.isFlap))
                 c.SetDeflection(1);                // 10 deg: FAR's three settings of the 30 deg travel
@@ -478,6 +553,8 @@ namespace FerramAerospaceResearch.KspTests
                                            F(p.Get("propRPM")), F(p.Get("propThrust") / 4.448e-3), F(p.Floats.Max(f => f.rb.drag)), F(aeroMoment), F(q)));
                 yield return fixedWait;
             }
+            Hyper(ctx, false);
+            StandardDay(ctx, null);
             File.WriteAllText(Path.Combine(ctx.ResultsDir, "takeoff.csv"), csv.ToString());
             Ctrl.SetThrottle(0f);
             Ctrl.Neutral();
@@ -506,6 +583,7 @@ namespace FerramAerospaceResearch.KspTests
         private static IEnumerable Prepare(TestContext ctx, Action<Plane> done, double grossT = GrossT, bool afloat = true)
         {
             Vessel v = FlightGlobals.ActiveVessel;
+            StandardDay(ctx, v.mainBody);
             var p = new Plane { V = v, Root = v.rootPart };
             p.Engine = v.parts.FirstOrDefault(q => q.Modules.Contains("ModuleEnginesAJEPropeller"));
             Assert.True(p.Engine != null, "the O-320 (AJE propeller engine) is on the craft");

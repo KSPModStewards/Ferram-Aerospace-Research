@@ -2,7 +2,10 @@
 fuselage measured off the 172 three-view, B9 wing and tail with flaps, ailerons, elevator and rudder; no engine) made
 the 172M on EDO 89-2000 floats:
 
-- its wheels off; its wing and tail weighed as the 172's (FAR's massMultiplier);
+- its wheels off; its wing and tail weighed as the 172's (FAR's massMultiplier); its flaps and ailerons part of
+  their wing strips (one FAR surface with ctrlSurfFrac); its horizontal tail cut to stand in for the downwash
+  FAR leaves out (TAIL_SPAN_SCALE, with the stabilizer's incidence in the spec); its elevator part of the stabilizer
+  strips;
 - the engine on the nose: FARTest_O320E2D (mods/FARTestFloatplane: Lycoming O-320-E2D, 150 hp, on the McCauley
   1A175/ATM8042 80 x 42 seaplane propeller, as AJE models them), on Firespitter's nose engine kept inside the cowling;
 - two floats (edo_float.py: NACA 57-B-5 lines at NACA's own size for a 2220 lb twin-float airplane, 16.05 ft x 24.6 in)
@@ -43,6 +46,15 @@ STRUT = (0.10, 0.04)                          # m: a strut's chord and thickness
 # FAR weighs a wing by its area (FARWingAerodynamicModel): 1014 kg for these panels as built, where the 172's wing and
 # tail are about 115 kg (250 lb): every panel's massMultiplier scaled to that
 WING_MASS_SCALE = 115.0 / 1014.0
+# FAR puts no wing downwash on a tail (its wing interaction looks one MAC ahead of a surface), so the horizontal tail is
+# sized to (1 - d eps / d alpha) of the 172's: the wing's AR 7.44, CL_alpha 2 pi AR / (2 + sqrt(AR^2 + 4)) = 4.81 / rad,
+# d eps / d alpha = 2 CL_alpha / (pi AR) = 0.41, the 172's 3.35 m2 (Jane's: 21.56 + 14.53 sq ft) times 0.59 = 1.98 m2
+# against the drawing's 2.70 (FAR's area): its span x0.73, its chords kept (the elevator's power drops with it)
+# The downwash at zero lift slope's other half: at a fuselage alpha of 0 the wing (zero lift at -2.3 deg) still turns
+# the flow down 0.41 x 2.3 = 0.94 deg at the tail; on the cut tail that is a stabilizer incidence of -0.94 / 0.59 =
+# -1.6 deg (leading edge down; the 172's own taken as the drawing's 0), set in the spec ("incidence": {"tail"}) so
+# build.py turns the stabilizer and elevator together
+TAIL_SPAN_SCALE = 1.98 / 2.70
 
 
 def spine_nodes(block):
@@ -147,12 +159,39 @@ ENGINE_BLOCK = """PART
 """
 
 
+def shrink_tail(parts, k):
+    """The horizontal tail's span (and so its area) times k, its chords kept: the B9 panels aft of the wing with a mirror
+    partner (the fin has none), their spans, their distances out from the center line and their offsets along their
+    parents' spans scaled."""
+    tail = set()
+    for b in parts:
+        pid = cio.part_id(b)
+        pos = [float(v) for v in re.search(r"(?m)^\tpos = (.*)$", b).group(1).split(",")]
+        if pid.startswith(("B9.Aero", "FARTest.B9")) and pos[2] < -2 and re.search(r"(?m)^\tsym = ", b):
+            tail.add(pid)
+    out = []
+    for b in parts:
+        pid = cio.part_id(b)
+        if pid in tail:
+            g = lambda k_: float(re.search(r"(?m)^\t\t%s = (.*)$" % k_, b).group(1))
+            b = cio.set_mod(b, "WingProcedural", "sharedBaseLength", "%.6g" % (g("sharedBaseLength") * k))
+            pos = [float(v) for v in re.search(r"(?m)^\tpos = (.*)$", b).group(1).split(",")]
+            b = cio.setf(b, "pos", cio.fmt([pos[0] * k, pos[1], pos[2]]))
+            parent = re.search(r"(?m)^\tsrfN = srfAttach,([^,\n]+)", b).group(1)
+            if parent in tail:
+                ap = [float(v) for v in re.search(r"(?m)^\tattPos0 = (.*)$", b).group(1).split(",")]
+                b = cio.setf(b, "attPos0", cio.fmt([ap[0] * k, ap[1], ap[2]]))
+        out.append(b)
+    print(f"  horizontal tail: {len(tail)} panels, span x{k:.3f}")
+    return out
+
+
 def merge_wing_controls(parts):
     """Each wing flap and aileron (a B9 TypeB behind the hinge on a TypeA strip) made part of its strip: the strip
     FARTest_B9_WingFlap or _WingAileron (mods/FARTestFloatplane: a TypeA with FAR's FARControllableSurface, its ctrlSurfFrac in the part), its trailing edge strip the
     control's chord behind the hinge, the control's FAR settings, ctrlSurfFrac that chord's share. FAR then models one
     wing with a plain flap rather than a wing and a separate small one whose lift acts half a meter behind (the airframe's
-    neutral point 49% MAC aft of the C.G. as built). The tail's elevator spans two strips and stays as it is."""
+    neutral point 49% MAC aft of the C.G. as built). The tail's elevator: merge_tail_elevator."""
     by_id = {cio.part_id(b): i for i, b in enumerate(parts)}
     renames, drop = {}, set()
     for b in parts:
@@ -194,6 +233,55 @@ def merge_wing_controls(parts):
     return out
 
 
+def merge_tail_elevator(parts):
+    """Each elevator (a B9 TypeB with FAR's pitch axis, centered on its span, over the two stabilizer strips it is
+    attached across: its parent and the parent's inboard strip) made part of those strips, as the wing's flaps are: each
+    strip FARTest_B9_TailElevator (ctrlSurfFrac in mods/FARTestFloatplane), its trailing edge the elevator's chord over
+    its stretch of the span, the elevator's FAR settings. As two panels FAR gave the elevator a third of a plain flap's
+    power and less going up than down."""
+    by_id = {cio.part_id(b): i for i, b in enumerate(parts)}
+    renames, drop = {}, set()
+    g = lambda blk, k: float(re.search(r"(?m)^\t\t%s = (.*)$" % k, blk).group(1))
+    parent_of = lambda blk: re.search(r"(?m)^\tsrfN = srfAttach,([^,\n]+)", blk).group(1)
+    for b in parts:
+        pid = cio.part_id(b)
+        if not pid.startswith("B9.Aero.Wing.Procedural.TypeB") or "\t\tpitchaxis = 100\n" not in b:
+            continue
+        outer = parent_of(b)
+        inner = parent_of(parts[by_id[outer]])
+        assert outer.startswith("B9.Aero.Wing.Procedural.TypeA") and inner.startswith("B9.Aero.Wing.Procedural.TypeA")
+        a_in, a_out = parts[by_id[inner]], parts[by_id[outer]]
+        l_in, l_out, l_el = g(a_in, "sharedBaseLength"), g(a_out, "sharedBaseLength"), g(b, "sharedBaseLength")
+        assert abs(l_in + l_out - l_el) < 0.05 * l_el, (l_in, l_out, l_el)
+        c_r, c_t = g(b, "sharedEdgeWidthTrailingRoot"), g(b, "sharedEdgeWidthTrailingTip")
+        c_mid = c_r + (c_t - c_r) * l_in / (l_in + l_out)
+        i, j = cio.module_span(b, "FARControllableSurface")
+        ctrl = b[i:j]
+        area = el_area = 0.0
+        for sid, cr, ct in ((inner, c_r, c_mid), (outer, c_mid, c_t)):
+            a = parts[by_id[sid]]
+            a = cio.set_mod(a, "WingProcedural", "sharedEdgeWidthTrailingRoot", "%.6g" % cr)
+            a = cio.set_mod(a, "WingProcedural", "sharedEdgeWidthTrailingTip", "%.6g" % ct)
+            chord_r = g(a, "sharedEdgeWidthLeadingRoot") + g(a, "sharedBaseWidthRoot") + cr
+            chord_t = g(a, "sharedEdgeWidthLeadingTip") + g(a, "sharedBaseWidthTip") + ct
+            area += (chord_r + chord_t) / 2 * g(a, "sharedBaseLength")
+            el_area += (cr + ct) / 2 * g(a, "sharedBaseLength")
+            m, n = cio.module_span(a, "FARWingAerodynamicModel")
+            a = a[:m] + ctrl + a[n:]
+            a = re.sub(r"(?m)^\tlink = %s\n" % re.escape(pid), "", a)
+            parts[by_id[sid]] = a
+            renames[sid] = sid.replace("B9.Aero.Wing.Procedural.TypeA_", "FARTest.B9.TailElevator_")
+        drop.add(pid)
+        print(f"  {inner} + {outer} + {pid}: elevator {el_area / area:.0%} of the strips' area")
+    parts = [b for b in parts if cio.part_id(b) not in drop]
+    out = []
+    for b in parts:
+        for old, new in renames.items():
+            b = re.sub(r"\b%s\b" % re.escape(old), new, b)
+        out.append(b)
+    return out
+
+
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
     text = open(sys.argv[1], encoding="utf-8").read().replace("\r\n", "\n")
@@ -214,6 +302,8 @@ def main():
         return cio.set_mod(b, far, "massMultiplier", "%.4f" % WING_MASS_SCALE)
     parts = [wing_mass(b) if cio.part_id(b).startswith("B9.Aero") else b for b in parts]
     parts = merge_wing_controls(parts)
+    parts = merge_tail_elevator(parts)
+    parts = shrink_tail(parts, TAIL_SPAN_SCALE)
 
     fus = parts[0]
     fus_name = cio.part_id(fus)
