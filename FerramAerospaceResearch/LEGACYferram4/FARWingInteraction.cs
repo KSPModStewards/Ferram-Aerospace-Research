@@ -803,6 +803,10 @@ namespace ferram4
         /// <param name="ACweight">Weighting value for applying ACshift</param>
         /// <param name="ACshift">Value used to shift the wing AC due to interactive effects</param>
         /// <param name="ClIncrementFromRear">Increase in Cl due to this</param>
+        /// <param name="ACshiftAoA">
+        ///     With linear flap lift, the forward shift of the lift this surface makes at its own angle of attack (as
+        ///     opposed to its deflection): the AC of a section a flap is part of is a quarter of the whole chord back
+        /// </param>
         /// <returns></returns>
         public void CalculateEffectsOfUpstreamWing(
             double thisWingAoA,
@@ -810,7 +814,8 @@ namespace ferram4
             Vector3d parallelInPlaneLocal,
             ref double ACweight,
             ref double ACshift,
-            ref double ClIncrementFromRear
+            ref double ClIncrementFromRear,
+            ref double ACshiftAoA
         )
         {
             double thisWingMAC = parentWingModule.GetMAC();
@@ -905,6 +910,14 @@ namespace ferram4
 
             //Change in Cm with change in Cl
             ACshift = (dCm_dCl + 0.75 * (1 - flapRatio)) * (thisWingMAC + EffectiveUpstreamMAC);
+
+            // a flap of chord c_f behind a wing of chord c_w is one section of chord c = c_w + c_f, its lift at angle of
+            // attack at c / 4 from the leading edge. FAR gives each its share of that lift (c_w / c, c_f / c), the wing's
+            // at its own quarter chord, c_w / 4; for the whole to act at c / 4 the flap's must act at (c + c_w) / 4: half
+            // c_w ahead of the flap's own quarter chord, c_w + c_f / 4. Over the share of the flap that lies behind a
+            // wing (EffectiveUpstreamMAC is the wings' chords times that share)
+            if (FARDebugValues.linearFlapLift)
+                ACshiftAoA = 0.5 * EffectiveUpstreamMAC;
 
             ClIncrementFromRear = ClIncrement * MachCoeff;
         }

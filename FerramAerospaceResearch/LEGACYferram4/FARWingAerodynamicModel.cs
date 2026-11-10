@@ -1392,11 +1392,13 @@ namespace ferram4
             double MachNumber,
             double AoA,
             out double ACshift,
-            out double ACweight
+            out double ACweight,
+            out double ACshiftAoA
         )
         {
             ACshift = 0;
             ACweight = 0;
+            ACshiftAoA = 0;
             _scratch.ClIncrementFromRear = 0;
 
             _scratch.rawAoAmax = CalculateAoAmax(MachNumber);
@@ -1408,7 +1410,8 @@ namespace ferram4
                                                            _scratch.ParallelInPlaneLocal,
                                                            ref ACweight,
                                                            ref ACshift,
-                                                           ref _scratch.ClIncrementFromRear);
+                                                           ref _scratch.ClIncrementFromRear,
+                                                           ref ACshiftAoA);
             double effectiveUpstreamInfluence = wingInteraction.EffectiveUpstreamInfluence;
 
             if (effectiveUpstreamInfluence > 0)
@@ -1430,6 +1433,18 @@ namespace ferram4
             }
 
             _scratch.AoAmax += _scratch.rawAoAmax;
+        }
+
+        /// <summary>
+        ///     The AC shift that puts the lift this surface makes at its own angle of attack (ClAoA, of its Cl) shiftAoA
+        ///     forward: as a shift of the point the whole Cl acts at, no more than twice shiftAoA (a Cl near zero, the
+        ///     deflection's lift cancelling the angle of attack's, would throw the point far out)
+        /// </summary>
+        private double AoALiftShift(double shiftAoA, double ClAoA)
+        {
+            if (shiftAoA == 0 || _scratch.Cl == 0)
+                return 0;
+            return shiftAoA * (ClAoA / _scratch.Cl).Clamp(-2, 2);
         }
 
         //Calculates current stall fraction based on previous stall fraction and current data.
@@ -1474,7 +1489,7 @@ namespace ferram4
             _scratch.rawLiftSlope = CalculateSubsonicLiftSlope(MachNumber); // / AoA;     //Prandtl lifting Line
 
 
-            CalculateWingCamberInteractions(MachNumber, AoA, out double ACshift, out double ACweight);
+            CalculateWingCamberInteractions(MachNumber, AoA, out double ACshift, out double ACweight, out double ACshiftAoA);
             DetermineStall(AoA);
 
             double beta = Math.Sqrt(MachNumber * MachNumber - 1);
@@ -1501,11 +1516,13 @@ namespace ferram4
                 double sinAoA = Math.Sqrt((1 - CosAoA * CosAoA).Clamp(0, 1));
                 _scratch.Cl = Cn * CosAoA * Math.Sign(AoA);
 
+                double ClAoA = 0;
                 if (FARDebugValues.linearFlapLift)
                 {
                     // the increment from a surface hinged behind this one is a normal-force increment already (lift
                     // slope times the deflection): its lift is that times cos AoA, not times sin AoA again
                     _scratch.Cl *= sinAoA;
+                    ClAoA = _scratch.Cl;
                     _scratch.Cl += _scratch.ClIncrementFromRear * CosAoA;
                 }
                 else
@@ -1516,6 +1533,7 @@ namespace ferram4
 
                 if (Math.Abs(_scratch.Cl) > Math.Abs(ACweight))
                     ACshift *= Math.Abs(ACweight / _scratch.Cl).Clamp(0, 1);
+                ACshift += AoALiftShift(ACshiftAoA, ClAoA);
                 _scratch.Cd = _scratch.Cl * _scratch.Cl / _scratch.piARe; //Drag due to 3D effects on wing and base constant
                 _scratch.CdInduced = _scratch.Cd;
                 _scratch.Cd += Cd0;
@@ -1560,9 +1578,11 @@ namespace ferram4
 
                 if (MachNumber <= 1)
                 {
+                    double ClAoA = _scratch.Cl;
                     _scratch.Cl += _scratch.ClIncrementFromRear * (FARDebugValues.linearFlapLift ? CosAoA : sinAoA);
                     if (Math.Abs(_scratch.Cl) > Math.Abs(ACweight))
                         ACshift *= Math.Abs(ACweight / _scratch.Cl).Clamp(0, 1);
+                    ACshift += AoALiftShift(ACshiftAoA, ClAoA);
                 }
 
                 _scratch.FinalLiftSlope = Cn * (1 - supScale);
