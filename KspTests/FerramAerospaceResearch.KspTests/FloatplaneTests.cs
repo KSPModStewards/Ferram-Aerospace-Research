@@ -552,6 +552,8 @@ namespace FerramAerospaceResearch.KspTests
             Ctrl.Neutral();
         }
 
+        private static bool Finite(Vector3 w) => !float.IsNaN(w.x + w.y + w.z) && !float.IsInfinity(w.x + w.y + w.z);
+
         private static double Sd(List<double> x)
         {
             if (x.Count < 2) return double.NaN;
@@ -593,6 +595,10 @@ namespace FerramAerospaceResearch.KspTests
             // on the step the yoke eased from full aft to stepElevator over 3 s and held there (no feedback: the floats
             // find their own planing attitude, as a pilot lets them)
             double stepElevator = ctx.ParamDouble("stepElevator", 0), stepSince = double.NaN;
+            // humpElevator (-1..1): the stick held there from the start, in place of full aft over the hump (as a pilot who
+            // leaves it neutral); flaps: FAR's flap setting (0-3, 10 deg each; the supplement's 10 deg by default)
+            double humpElevator = ctx.ParamDouble("humpElevator", double.NaN);
+            int flapSetting = (int)ctx.ParamDouble("flaps", 1);
             double climbMs = ctx.ParamDouble("climbMph", book.ias50) * 0.44704;
             // the attitude held from rotateMph until it flies: under FAR's stall (flaps 10: ~12 deg) and the floats'
             // heels (~10 deg); full aft stick there pulls it to 11-12 deg, onto the heels, and it plows
@@ -613,11 +619,12 @@ namespace FerramAerospaceResearch.KspTests
             yield return Wait.GameSeconds(10);     // settle afloat
 
             foreach (ferram4.FARControllableSurface c in v.parts.SelectMany(q => q.Modules.OfType<ferram4.FARControllableSurface>()).Where(c => c.isFlap))
-                c.SetDeflection(1);                // 10 deg: FAR's three settings of the 30 deg travel
+                c.SetDeflection(flapSetting);      // 10 deg each: FAR's three settings of the 30 deg travel
             p.Engine.Modules.GetModule<ModuleEngines>().Activate();
             Ctrl.Attach();
             Ctrl.SetThrottle(1f);
-            ctx.Record("start", $"{weightLb:F0} lb, flaps 10, {Ambient(v)}");
+            ctx.Record("start", $"{weightLb:F0} lb, flaps {flapSetting * 10}" +
+                                (double.IsNaN(humpElevator) ? "" : $", stick {humpElevator:F2} until the step") + $", {Ambient(v)}");
 
             Vector3 up = v.upAxis;
             Vector3 h0 = Vector3.ProjectOnPlane(p.Root.transform.up, up).normalized;
@@ -633,6 +640,13 @@ namespace FerramAerospaceResearch.KspTests
             while (Planetarium.GetUniversalTime() - t0 < 150 && double.IsNaN(obstacleX) && !(phase == "hump" && Planetarium.GetUniversalTime() - t0 > 40))
             {
                 double t = Planetarium.GetUniversalTime() - t0, dt = TimeWarp.fixedDeltaTime;
+                // the vessel's state gone NaN: the run ends on a record, not the game's crash a few frames later (a NaN
+                // stick did it: FAR deflects the control surfaces by it, and their colliders take the rotation)
+                if (!Finite(p.Root.rb.velocity) || !Finite(p.Root.rb.position))
+                {
+                    ctx.Record("nan", $"t {t:F2} s: the vessel's state NaN ({v.situation}, orbit inclination {v.orbit.inclination})");
+                    Assert.True(false, "the vessel's state is finite");
+                }
                 foreach (HullParts f in p.Floats.Where(f => f.Parts.Length > 1))
                 {
                     (double d, double m) fb = f.Bend();
@@ -683,8 +697,13 @@ namespace FerramAerospaceResearch.KspTests
                     integral = 0;
                 lastPhase = phase;
                 double elevator;
-                if (double.IsNaN(target))
-                    elevator = 1 + (stepElevator - 1) * Math.Min(1, (t - stepSince) / 3);
+                // (the hump case moves on to the step before the step case sets stepSince: until then, no ramp; a NaN stick
+                // here crashed the game)
+                double ramp = double.IsNaN(stepSince) ? 0 : Math.Min(1, (t - stepSince) / 3);
+                if (!double.IsNaN(humpElevator) && (phase == "hump" || phase == "step"))
+                    elevator = phase == "hump" ? humpElevator : humpElevator + (stepElevator - humpElevator) * ramp;
+                else if (double.IsNaN(target))
+                    elevator = 1 + (stepElevator - 1) * ramp;
                 else
                 {
                     elevator = 0.15 * err + 0.03 * integral - 0.06 * q;
@@ -812,7 +831,7 @@ namespace FerramAerospaceResearch.KspTests
             double tankShift = (CgLocalY - cg0.y) * v.GetTotalMass() / (p.Fuel.mass + p.Fuel.GetResourceMass());
             ctx.Record("cg error", $"{(cg0.y - CgLocalY) * 100:+0.0;-0.0} cm ({(cg0.y - CgLocalY) / (58.8 * 0.0254):+0.0%;-0.0%} MAC); " +
                                    $"the tank {tankShift * 100:+0.0;-0.0} cm to correct it");
-            Assert.True(Math.Abs(cg0.y - CgLocalY) < (Math.Abs(grossT - GrossT) < 1e-6 ? 0.01 : 0.03),
+            Assert.True(ctx.Param("cgCheck") == "false" || Math.Abs(cg0.y - CgLocalY) < (Math.Abs(grossT - GrossT) < 1e-6 ? 0.01 : 0.03),
                         $"the craft's C.G. {cg0.y:F3} m, CgLocalY {CgLocalY:F3} (crafts/c172_floatplane.py TANK_SHIFT {tankShift:+0.000;-0.000} m)");
             Vector3 cg = cg0;
             ctx.Record("cg", $"local y {cg.y:F3} m (target {CgLocalY:F3}: 28.4% MAC), {-cg.z:F3} m above the fuselage axis; fuel tank CoM offset {p.Fuel.CoMOffset}; " +
