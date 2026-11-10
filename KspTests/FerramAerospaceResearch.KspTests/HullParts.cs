@@ -335,6 +335,7 @@ namespace FerramAerospaceResearch.KspTests
     internal static class WaterParams
     {
         private static PartHydrodynamics.WaterDampingMode? dampingWas;
+        private static bool? linearFlapWas;
 
         public static void Apply(TestContext ctx)
         {
@@ -343,6 +344,16 @@ namespace FerramAerospaceResearch.KspTests
             if (!string.IsNullOrEmpty(p))
                 PartHydrodynamics.WaterDamping = (PartHydrodynamics.WaterDampingMode)Enum.Parse(typeof(PartHydrodynamics.WaterDampingMode), p, true);
             ctx.Record("waterDamping", PartHydrodynamics.WaterDamping.ToString());
+            // FAR's linear flap lift (FARDebugValues.linearFlapLift; parameter linearFlapLift=true/false)
+            linearFlapWas ??= FARDebugValues.linearFlapLift;
+            string lf = ctx.Param("linearFlapLift");
+            if (!string.IsNullOrEmpty(lf))
+                if (FARDebugValues.linearFlapLift != bool.Parse(lf))
+                {
+                    FARDebugValues.linearFlapLift = bool.Parse(lf);
+                    FARDebugValues.UpdateWingInteractions();
+                }
+            ctx.Record("linearFlapLift", FARDebugValues.linearFlapLift.ToString());
         }
 
         public static void Restore()
@@ -350,6 +361,13 @@ namespace FerramAerospaceResearch.KspTests
             if (dampingWas.HasValue)
                 PartHydrodynamics.WaterDamping = dampingWas.Value;
             dampingWas = null;
+            if (linearFlapWas.HasValue)
+                if (FARDebugValues.linearFlapLift != linearFlapWas.Value)
+                {
+                    FARDebugValues.linearFlapLift = linearFlapWas.Value;
+                    FARDebugValues.UpdateWingInteractions();
+                }
+            linearFlapWas = null;
         }
     }
 }

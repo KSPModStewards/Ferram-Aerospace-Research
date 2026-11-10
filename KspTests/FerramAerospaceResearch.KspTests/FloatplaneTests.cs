@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using KspTest;
 using UnityEngine;
+using static FerramAerospaceResearch.KspTests.Refl;
 
 namespace FerramAerospaceResearch.KspTests
 {
@@ -21,6 +22,8 @@ namespace FerramAerospaceResearch.KspTests
         // the same plane with each float three parts (crafts/c172_floatplane.py split): the *Split tests run it as the
         // one-part floats are run; FAR's water should not tell them apart
         private const string SplitCraft = "Cessna 172M Floatplane Split";
+        // the plane with B9's own hinged control surfaces (crafts/c172_floatplane.py hinged): no FARTest wing parts
+        private const string HingedCraft = "Cessna 172M Floatplane Hinged";
         private const string Mods = @"AdvancedJetEngine;Firespitter;TimeControl;..\..\..\CustomProceduralParts\GameData\CustomProceduralParts;" +
                                     @"..\FerramAerospaceResearch.KspTests.Run\mods\FARTestFloatplane";
 
@@ -197,7 +200,14 @@ namespace FerramAerospaceResearch.KspTests
         /// </summary>
         [UITest(Kind = "Measure", Explicit = true, Mods = Mods, StartsAt = StartState.Flight, Craft = Craft, CraftDir = "SPH",
                 LaunchSite = "Runway", TimeoutSec = 900)]
-        public static IEnumerator Trim_C172Floatplane(TestContext ctx)
+        public static IEnumerator Trim_C172Floatplane(TestContext ctx) => Trim(ctx);
+
+        /// <summary>Trim_C172Floatplane on the plane with B9's own hinged control surfaces.</summary>
+        [UITest(Kind = "Measure", Explicit = true, Mods = Mods, StartsAt = StartState.Flight, Craft = HingedCraft, CraftDir = "SPH",
+                LaunchSite = "Runway", TimeoutSec = 900)]
+        public static IEnumerator Trim_C172FloatplaneHinged(TestContext ctx) => Trim(ctx);
+
+        private static IEnumerator Trim(TestContext ctx)
         {
             double[] mphs = ctx.ParamList("mphs", "60+80+110").Select(s => double.Parse(s, CultureInfo.InvariantCulture)).ToArray();
             double weightLb = ctx.ParamDouble("weightLb", 2220);
@@ -262,6 +272,53 @@ namespace FerramAerospaceResearch.KspTests
             ctx.Record("reference", $"vessel.CoM {comGap:+0.000;-0.000} m ahead of the rigidbodies' CoM; at 110 mph clean, elevator neutral: lift {np[0].l:F2} / {np[1].l:F2} kN " +
                                     $"and moment {np[0].m:F2} / {np[1].m:F2} kN m at alpha 0 / 6 deg: neutral point {npAft:F3} m aft of the CoM " +
                                     $"({npAft / (58.8 * 0.0254):P0} MAC static margin), moment at zero lift {np[0].m + npAft * np[0].l:F2} kN m");
+            // each wing panel at 4 deg, 60 mph, controls neutral: its angle of attack, the panels FAR takes as ahead of
+            // it (chordwise, either way) and their influence, the angle it sees relative to them, its lift increment
+            // from them (ClIncrementFromRear) and its Cl
+            {
+                double ar = 4 * Math.PI / 180, V0 = 60 * 0.44704;
+                Vector3 air = (fwd * (float)Math.Cos(ar) - bodyUp * (float)Math.Sin(ar)) * (float)V0;
+                var dq = new ferram4.FARCenterQuery();
+                var diag = new StringBuilder();
+                string Name(ferram4.FARWingAerodynamicModel w)
+                {
+                    Vector3 lp = p.Root.transform.InverseTransformPoint(w.part.transform.position);
+                    return $"{w.part.partInfo.name.Replace("B9.Aero.Wing.Procedural.", "")}@{lp.x:F2},{lp.y:F2}";
+                }
+                foreach (Part q in v.parts)
+                    foreach (var w in q.Modules.OfType<ferram4.FARWingAerodynamicModel>())
+                    {
+                        w.PrecomputeCenterOfLift(air, V0 / 340.0, 1.225, dq);
+                        var wi = w.WingInteraction;
+                        string Lst(string field, string infl)
+                        {
+                            var l = Get(wi, field) as System.Collections.IList;
+                            var f = Get(wi, infl) as List<double>;
+                            if (l == null || l.Count == 0) return "-";
+                            return string.Join(" ", Enumerable.Range(0, l.Count).Select(i => $"{Name((ferram4.FARWingAerodynamicModel)l[i])}:{f[i]:F2}"));
+                        }
+                        diag.Append($"{Name(w)} AoA {w.CalculateAoA(air) * 180 / Math.PI:F2} upstreamAoA {wi.EffectiveUpstreamAoA * 180 / Math.PI:F2} infl {wi.EffectiveUpstreamInfluence:F2} " +
+                                    $"ClInc {w._scratch.ClIncrementFromRear:F3} Cl {w._scratch.Cl:F3} fwd[{Lst("nearbyWingModulesForwardList", "nearbyWingModulesForwardInfluence")}] " +
+                                    $"back[{Lst("nearbyWingModulesBackwardList", "nearbyWingModulesBackwardInfluence")}]; ");
+                    }
+                ctx.Record("panels at 4 deg", diag.ToString());
+                // each control surface's ray geometry (FARWingInteraction's chordwise search): its start, the part's axes,
+                // span, MAC, sweep and attach side, in the root frame
+                var rays = new StringBuilder();
+                Transform rt = p.Root.transform;
+                string V3(Vector3 x) => $"({x.x:F2},{x.y:F2},{x.z:F2})";
+                foreach (Part q in v.parts)
+                    foreach (var w in q.Modules.OfType<ferram4.FARControllableSurface>())
+                    {
+                        var wi = w.WingInteraction;
+                        Vector3 origin = (Vector3)Get(wi, "rootChordMidPt");
+                        rays.Append($"{Name(w)}: origin {V3(rt.InverseTransformPoint(origin))} up {V3(rt.InverseTransformDirection(q.transform.up))} " +
+                                    $"right {V3(rt.InverseTransformDirection(q.transform.right))} b_2 {w.b_2_actual:F3} MAC {w.MAC_actual:F3} sweep {w.MidChordSweep:F1} " +
+                                    $"flip {w.srfAttachNegative} rootMid {V3(w.rootMidChordOffsetFromOrig)} nonSide {w.nonSideAttach}; ");
+                    }
+                ctx.Record("control rays", rays.ToString());
+            }
+
             foreach (int flap in new[] { 0, 1 })
             {
                 foreach (var c in flaps)
@@ -501,6 +558,11 @@ namespace FerramAerospaceResearch.KspTests
         [UITest(Kind = "Measure", Explicit = true, Mods = Mods, StartsAt = StartState.Flight, Craft = SplitCraft, CraftDir = "SPH",
                 LaunchSite = "Runway", TimeoutSec = 1200)]
         public static IEnumerator Takeoff_C172FloatplaneSplit(TestContext ctx) => Takeoff(ctx);
+
+        /// <summary>Takeoff_C172Floatplane with B9's own hinged control surfaces.</summary>
+        [UITest(Kind = "Measure", Explicit = true, Mods = Mods, StartsAt = StartState.Flight, Craft = HingedCraft, CraftDir = "SPH",
+                LaunchSite = "Runway", TimeoutSec = 1200)]
+        public static IEnumerator Takeoff_C172FloatplaneHinged(TestContext ctx) => Takeoff(ctx);
 
         private static IEnumerator Takeoff(TestContext ctx)
         {
