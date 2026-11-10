@@ -100,6 +100,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         private VehicleAerodynamics _vehicleAero;
         private VesselIntakeRamDrag _vesselIntakeRamDrag;
+        private readonly VesselHydrodynamics _hydrodynamics = new VesselHydrodynamics();
         private CachedSimResults lastSimResults;
         // Predictions can come from more than one thread; the memo is read and written whole under this lock.
         private readonly object lastSimResultsLock = new object();
@@ -307,7 +308,12 @@ namespace FerramAerospaceResearch.FARAeroComponents
             _vesselIntakeRamDrag.ApplyIntakeRamDrag((float)MachNumber, vessel.srf_velocity.normalized);
 
             foreach (FARAeroPartModule m in _currentAeroModules)
-                m.ApplyForces();
+                m.ApplyForces(_hydrodynamics);
+            // the water: the wet parts' hulls, once all of them are in
+            _hydrodynamics.Solve(vessel);
+            foreach (FARAeroPartModule m in _currentAeroModules)
+                if (m.part.submergedPortion > 0 && m.Hydrodynamics != null)
+                    m.worldSpaceHydroForce = m.Hydrodynamics.LastForce;
         }
 
         private static bool loggedOffMainThread;

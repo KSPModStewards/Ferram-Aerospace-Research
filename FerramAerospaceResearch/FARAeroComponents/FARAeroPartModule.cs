@@ -559,7 +559,11 @@ namespace FerramAerospaceResearch.FARAeroComponents
             return new Color((float)satCd, 0.5f * (float)(satCl + satCd), (float)satCl, 0.5f);
         }
 
-        public void ApplyForces()
+        /// <summary>Applies the aero forces of this step; a wet part's water forces (FARSettings.Hydrodynamics) are
+        /// left to hydro, the vessel's, which solves its hulls once every wet part is in (with none, this part alone).</summary>
+        public void ApplyForces() => ApplyForces(null);
+
+        internal void ApplyForces(VesselHydrodynamics hydro)
         {
             if (!part)
                 return;
@@ -592,6 +596,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
             worldSpaceHydroForce = Vector3.zero;
             if (part.submergedPortion <= 0)
             {
+                hydrodynamics?.Clear();
                 part.AddForce(worldSpaceAeroForce);
             }
             else if (FARSettings.Hydrodynamics)
@@ -600,8 +605,15 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 if (!float.IsNaN(worldSpaceAeroForce.x))
                     part.AddForce(worldSpaceAeroForce);
                 hydrodynamics ??= new PartHydrodynamics(part);
-                hydrodynamics.Apply();
-                worldSpaceHydroForce = hydrodynamics.LastForce;
+                if (hydro != null)
+                    hydro.Add(hydrodynamics);
+                else
+                {
+                    var alone = new VesselHydrodynamics();
+                    alone.Add(hydrodynamics);
+                    alone.Solve(vessel);
+                    worldSpaceHydroForce = hydrodynamics.LastForce;
+                }
             }
             else
             {
@@ -650,6 +662,49 @@ namespace FerramAerospaceResearch.FARAeroComponents
         //PartBuoyancy sets rb.drag to BuoyancyWaterDragSlow plus extra drag on splashdown, replace only the base value
         //must run after PartBuoyancy.FixedUpdate
         public void ApplyWaterDrag()
+        {
+            bool hydro = FARSettings.Hydrodynamics && part.submergedPortion > 0;
+            if (hydro && PartHydrodynamics.WaterDamping == PartHydrodynamics.WaterDampingMode.None)
+            {
+                // FAR's water model damps the water's motions itself: the rigidbody keeps the air's angular drag only
+                if (part.rb != null)
+                {
+                    part.rb.drag = 0;
+                    part.rb.angularDrag = (float)(part.angularDrag * part.dynamicPressurekPa * (1 - part.submergedPortion) *
+                                                  PhysicsGlobals.AngularDragMultiplier);
+                }
+                return;
+            }
+            StockWaterDrag();
+            Rigidbody rb = part.rb;
+            if (!hydro || PartHydrodynamics.WaterDamping != PartHydrodynamics.WaterDampingMode.Explicit || rb == null)
+                return;
+            // stock's drag and angular drag as forces from the motion now: Unity damps a body's velocity after the
+            // step's forces and before the joints act, so on a vessel of several parts it damps each part's share of the
+            // forces the joints would pass on and puts a moment on the vessel at rest; and its angular drag scales with
+            // the part's own inertia, so a hull of several parts gets a fraction of a one-part hull's pitch damping.
+            // A part in a hull last step: the hull applies them as one body (VesselHydrodynamics), from these values
+            if (hydrodynamics?.Hull != null)
+            {
+                hydrodynamics.DampDrag = rb.drag;
+                hydrodynamics.DampAngular = rb.angularDrag;
+                rb.drag = 0;
+                rb.angularDrag = 0;
+                return;
+            }
+            // held under 0.5 / step (Unity's own is implicit: no limit)
+            float dt = TimeWarp.fixedDeltaTime, kMax = 0.5f / Math.Max(1e-4f, dt);
+            float drag = Math.Min(rb.drag, kMax), angularDrag = Math.Min(rb.angularDrag, kMax);
+            Quaternion pr = rb.rotation * rb.inertiaTensorRotation;
+            Vector3 w = Quaternion.Inverse(pr) * rb.angularVelocity;
+            part.AddForce((Vector3d)(-rb.velocity * (rb.mass * drag)));
+            part.AddTorque((Vector3d)(-(pr * Vector3.Scale(w, rb.inertiaTensor)) * angularDrag));
+            rb.drag = 0;
+            rb.angularDrag = 0;
+        }
+
+        // stock's water drag on the part's rigidbody (#178: FAR's water drag in place of stock's base value)
+        private void StockWaterDrag()
         {
             if (waterSlowDragNew <= 0 || !vessel || part.submergedPortion <= 0)
                 return;
