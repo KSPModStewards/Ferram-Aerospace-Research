@@ -51,19 +51,25 @@ ENGINE_S = 0.40                               # m aft of the nose: the engine pa
 STRUT = (0.10, 0.04)                          # m: a strut's chord and thickness
 WING_Z_MIN = -1.0                             # craft z: the wing's panels lie ahead of it, the tail's well aft
 # the wing's lift struts as the three-view draws them (planecraft specs/c172float.json): the wing end 2.29 m out (front
-# view) at station 1.98 m (side view, from the spinner), the body end on the fuselage's side (0.50 m out) at station 1.88,
-# 0.41 m below the body's axis (side view), where the drawing's strut meets the lower fuselage
-LIFT_STRUT = dict(wing_y=2.29, wing_s=1.98, body_y=0.50, body_s=1.88, body_z=-0.41)
+# view) at station 1.98 m (side view, from the spinner), the body end at station 1.88, 0.41 m below the body's axis (side
+# view), where the drawing's strut meets the lower fuselage: on the Spine's side there (fuselage_side), 1 cm inside it
+LIFT_STRUT = dict(wing_y=2.29, wing_s=1.98, body_s=1.88, body_z=-0.41)
 SPEC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "planecraft", "specs",
                     "c172float.json")
 WING_ROOT_CHORD = 1.634                       # m: the drawing's root chord (build.py's root strip)
+# the fuel tank filled to the 172 floatplane's gross weight, 2220 lb (TCDS 3A12), as the craft loads: the airframe empty
+# (FloatplaneTests' "mass": 550 kg, the procedural parts' own masses) and LiquidFuel at 5 kg a unit. The tank holds 636 kg;
+# full it made 1.19 t. FloatplaneTests sets the weight itself for each run
+GROSS_KG = 2220 * 0.45359237
+EMPTY_KG = 550.0
 # FAR weighs a wing by its area (FARWingAerodynamicModel): 1014 kg for these panels as built, where the 172's wing and
 # tail are about 115 kg (250 lb): every panel's massMultiplier scaled to that
 WING_MASS_SCALE = 115.0 / 1014.0
 # FAR puts no wing downwash on a tail (its wing interaction looks one MAC ahead of a surface), so the horizontal tail is
 # sized to (1 - d eps / d alpha) of the 172's: the wing's AR 7.44, CL_alpha 2 pi AR / (2 + sqrt(AR^2 + 4)) = 4.81 / rad,
 # d eps / d alpha = 2 CL_alpha / (pi AR) = 0.41, the 172's 3.35 m2 (Jane's: 21.56 + 14.53 sq ft) times 0.59 = 1.98 m2
-# against the drawing's 2.70 (FAR's area): its span x0.73, its chords kept (the elevator's power drops with it)
+# (TAIL_AREA) against the panels' as built (shrink_tail: 3.26 m2 as the drawing has it): its span cut, its chords kept
+# (the elevator's power drops with it)
 # The downwash at zero lift slope's other half: at a fuselage alpha of 0 the wing (zero lift at -2.3 deg) still turns
 # the flow down 0.41 x 2.3 = 0.94 deg at the tail; on the cut tail that is a stabilizer incidence of -0.94 / 0.59 =
 # -1.6 deg (leading edge down; the 172's own taken as the drawing's 0), set in the spec ("incidence": {"tail"}) so
@@ -76,7 +82,7 @@ WING_MASS_SCALE = 115.0 / 1014.0
 # effect at the floats' height (h/b 0.29, x1.05) on FAR's over the lift-off attitudes, 7-11 deg (within 0.01 at
 # 8-10), at the price of cruise attitude: CL 0.42 at -1.1 deg against c172p's 1.8. Cm at neutral elevator, flaps 10,
 # already c172p's within 0.02 (0.033 - 0.028 / deg against 0.051 - 0.028): the tail's incidence kept
-TAIL_SPAN_SCALE = 1.98 / 2.70
+TAIL_AREA = 1.98
 
 
 def spine_nodes(block):
@@ -145,6 +151,15 @@ def frame_q(y_axis, fwd=(0.0, 0.0, 1.0)):
     return q
 
 
+def fuselage_side(nodes, length, y0, z, y):
+    """the fuselage's half-width at craft z and height y: the Spine's elliptical section there"""
+    p = z / length + 0.5
+    pos = [n[0] for n in nodes]
+    w, h, off = (np.interp(p, pos, [n[k] for n in nodes]) for k in (1, 2, 3))
+    u = (y - (y0 - off)) / (h / 2)
+    return 0.5 * w * math.sqrt(max(0.0, 1 - u * u))
+
+
 def wing_lower(spec, y0, le_z, x, z):
     """the wing's lower surface's height (craft y) at craft (x, z): build.py's slab (thickness_ratio of the root chord),
     its root chord's quarter point at the spec's height, turned up by its incidence about that point and by its
@@ -205,16 +220,30 @@ ENGINE_BLOCK = """PART
 """
 
 
-def shrink_tail(parts, k):
-    """The horizontal tail's span (and so its area) times k, its chords kept: the B9 panels aft of the wing with a mirror
-    partner (the fin has none), their spans, their distances out from the center line and their offsets along their
-    parents' spans scaled."""
+def panel_area(b):
+    """a B9 panel's area: its span times its mean chord (leading edge, base and trailing edge widths, as B9 gives FAR)"""
+    g = lambda k_: float(re.search(r"(?m)^\t\t%s = (.*)$" % k_, b).group(1))
+    chord = lambda end: sum(g("shared%s%s" % (w, end)) for w in ("EdgeWidthLeading", "BaseWidth", "EdgeWidthTrailing"))
+    return g("sharedBaseLength") * 0.5 * (chord("Root") + chord("Tip"))
+
+
+def shrink_tail(parts, area):
+    """The horizontal tail's span (and so its area) cut to area, its chords kept: the B9 panels aft of the wing with a
+    mirror partner (the fin has none), their spans, their distances out from the center line and their offsets along
+    their parents' spans scaled. Its area: the panels' and a hinged elevator's behind them (its trailing edge widths)."""
     tail = set()
     for b in parts:
         pid = cio.part_id(b)
         pos = [float(v) for v in re.search(r"(?m)^\tpos = (.*)$", b).group(1).split(",")]
         if pid.startswith(("B9.Aero", "FARTest.B9")) and pos[2] < -2 and re.search(r"(?m)^\tsym = ", b):
             tail.add(pid)
+    def own_area(b):
+        if "TypeB" not in cio.part_id(b):
+            return panel_area(b)
+        g = lambda k_: float(re.search(r"(?m)^\t\t%s = (.*)$" % k_, b).group(1))
+        return g("sharedBaseLength") * 0.5 * (g("sharedEdgeWidthTrailingRoot") + g("sharedEdgeWidthTrailingTip"))
+    built = sum(own_area(b) for b in parts if cio.part_id(b) in tail)
+    k = area / built
     out = []
     for b in parts:
         pid = cio.part_id(b)
@@ -228,7 +257,7 @@ def shrink_tail(parts, k):
                 ap = [float(v) for v in re.search(r"(?m)^\tattPos0 = (.*)$", b).group(1).split(",")]
                 b = cio.setf(b, "attPos0", cio.fmt([ap[0] * k, ap[1], ap[2]]))
         out.append(b)
-    print(f"  horizontal tail: {len(tail)} panels, span x{k:.3f}")
+    print(f"  horizontal tail: {len(tail)} panels, {built:.2f} m2 as built, span x{k:.3f} to {area:.2f} m2")
     return out
 
 
@@ -280,8 +309,9 @@ def merge_wing_controls(parts):
 
 
 def merge_tail_elevator(parts):
-    """Each elevator (a B9 TypeB with FAR's pitch axis, centered on its span, over the two stabilizer strips it is
-    attached across: its parent and the parent's inboard strip) made part of those strips, as the wing's flaps are: each
+    """Each elevator (a B9 TypeB with FAR's pitch axis, centered on its span, over the stabilizer strips it is attached
+    across: its parent, and the parent's inboard strip where the parent is shorter) made part of those strips, as the
+    wing's flaps are: each
     strip FARTest_B9_TailElevator (ctrlSurfFrac in mods/FARTestFloatplane), its trailing edge the elevator's chord over
     its stretch of the span, the elevator's FAR settings. As two panels FAR gave the elevator a third of a plain flap's
     power and less going up than down."""
@@ -294,17 +324,20 @@ def merge_tail_elevator(parts):
         if not pid.startswith("B9.Aero.Wing.Procedural.TypeB") or "\t\tpitchaxis = 100\n" not in b:
             continue
         outer = parent_of(b)
-        inner = parent_of(parts[by_id[outer]])
-        assert outer.startswith("B9.Aero.Wing.Procedural.TypeA") and inner.startswith("B9.Aero.Wing.Procedural.TypeA")
-        a_in, a_out = parts[by_id[inner]], parts[by_id[outer]]
-        l_in, l_out, l_el = g(a_in, "sharedBaseLength"), g(a_out, "sharedBaseLength"), g(b, "sharedBaseLength")
-        assert abs(l_in + l_out - l_el) < 0.05 * l_el, (l_in, l_out, l_el)
+        assert outer.startswith("B9.Aero.Wing.Procedural.TypeA")
+        l_el = g(b, "sharedBaseLength")
+        strips = [outer]
+        if abs(g(parts[by_id[outer]], "sharedBaseLength") - l_el) > 0.05 * l_el:
+            strips.insert(0, parent_of(parts[by_id[outer]]))
+            assert strips[0].startswith("B9.Aero.Wing.Procedural.TypeA")
+        lens = [g(parts[by_id[sid]], "sharedBaseLength") for sid in strips]
+        assert abs(sum(lens) - l_el) < 0.05 * l_el, (lens, l_el)
         c_r, c_t = g(b, "sharedEdgeWidthTrailingRoot"), g(b, "sharedEdgeWidthTrailingTip")
-        c_mid = c_r + (c_t - c_r) * l_in / (l_in + l_out)
+        ends = np.cumsum([0.0] + lens) / sum(lens)
         i, j = cio.module_span(b, "FARControllableSurface")
         ctrl = b[i:j]
         area = el_area = 0.0
-        for sid, cr, ct in ((inner, c_r, c_mid), (outer, c_mid, c_t)):
+        for sid, cr, ct in zip(strips, c_r + (c_t - c_r) * ends[:-1], c_r + (c_t - c_r) * ends[1:]):
             a = parts[by_id[sid]]
             a = cio.set_mod(a, "WingProcedural", "sharedEdgeWidthTrailingRoot", "%.6g" % cr)
             a = cio.set_mod(a, "WingProcedural", "sharedEdgeWidthTrailingTip", "%.6g" % ct)
@@ -318,7 +351,7 @@ def merge_tail_elevator(parts):
             parts[by_id[sid]] = a
             renames[sid] = sid.replace("B9.Aero.Wing.Procedural.TypeA_", "FARTest.B9.TailElevator_")
         drop.add(pid)
-        print(f"  {inner} + {outer} + {pid}: elevator {el_area / area:.0%} of the strips' area")
+        print(f"  {' + '.join(strips)} + {pid}: elevator {el_area / area:.0%} of the strips' area")
     parts = [b for b in parts if cio.part_id(b) not in drop]
     out = []
     for b in parts:
@@ -393,7 +426,7 @@ def main():
         parts = merge_tail_elevator(parts)
         if not noplain:
             parts = plain_controls(parts)
-    parts = shrink_tail(parts, TAIL_SPAN_SCALE)
+    parts = shrink_tail(parts, TAIL_AREA)
 
     fus = parts[0]
     fus_name = cio.part_id(fus)
@@ -424,7 +457,8 @@ def main():
     for side in (1, -1):
         top = np.array([side * ls["wing_y"], 0.0, length / 2 - ls["wing_s"]])
         top[1] = wing_lower(spec, y0, le_z, top[0], top[2]) + 0.02
-        bot = np.array([side * ls["body_y"], y0 + ls["body_z"], length / 2 - ls["body_s"]])
+        bz = length / 2 - ls["body_s"]
+        bot = np.array([side * (fuselage_side(nodes, length, y0, bz, y0 + ls["body_z"]) - 0.01), y0 + ls["body_z"], bz])
         d = top - bot
         pid += 1
         sname = "proceduralStructural_%d" % pid
@@ -474,6 +508,12 @@ def main():
         else:
             new.append(fb)
             new[-3] = cio.add_links(new[-3], [fname])               # the front strut carries the float
+
+    for n, b in enumerate(parts):
+        if cio.part_id(b).startswith("proceduralTankLiquid") and n > 0 and "\t\tname = LiquidFuel\n" in b:
+            units = (GROSS_KG - EMPTY_KG) / 5.0
+            parts[n] = re.sub(r"(\t\tname = LiquidFuel\n\t\tamount = )[^\n]*", r"\g<1>%.3f" % units, b)
+            print(f"fuel: {units:.1f} units ({units * 5:.0f} kg) for {GROSS_KG:.0f} kg gross")
 
     parts[0] = cio.add_links(parts[0], links)
     out = head + "".join(parts + new)

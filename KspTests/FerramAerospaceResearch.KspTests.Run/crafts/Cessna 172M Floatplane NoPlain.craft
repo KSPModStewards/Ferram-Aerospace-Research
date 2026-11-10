@@ -4,7 +4,7 @@ description = The Cessna 172M on EDO 89-2000 floats for FAR's water tests (craft
 type = SPH
 size = 33.0132599,9.15447617,31.6725025
 steamPublishedFileId = 0
-persistentId = 1196962859
+persistentId = 2014969468
 rot = 0,0,0,1
 missionFlag = Squad/Flags/default
 vesselType = Plane
@@ -17,7 +17,7 @@ PART
 {
 	part = proceduralTankLiquid_4000000001
 	partName = Part
-	persistentId = 953075647
+	persistentId = 2610069993
 	pos = 0,6,0
 	attPos = 0,0,0
 	attPos0 = 0,6,0
@@ -43,11 +43,11 @@ PART
 	link = FARTest.B9.WingFlap_4000000003
 	link = B9.Aero.Wing.Procedural.TypeA_4000000014
 	link = B9.Aero.Wing.Procedural.TypeA_4000000015
+	link = B9.Aero.Wing.Procedural.TypeA_4000000022
+	link = B9.Aero.Wing.Procedural.TypeA_4000000023
 	link = B9.Aero.Wing.Procedural.TypeA_4000000024
-	link = B9.Aero.Wing.Procedural.TypeA_4000000025
-	link = B9.Aero.Wing.Procedural.TypeA_4000000026
-	link = probeCoreOcto_4000000031
-	link = proceduralTankLiquid_4000000032
+	link = probeCoreOcto_4000000029
+	link = proceduralTankLiquid_4000000030
 	link = FARTest.O320E2D_4100000001
 	link = proceduralStructural_4100000002
 	link = proceduralStructural_4100000003
@@ -726,55 +726,10 @@ PART
 		}
 		SPINE_NODE
 		{
-			position = 0.172414
-			sizeH = 0.42
-			sizeV = 0.425807
-			offsetV = -0.289144
-			offsetH = 0
-			tiltV = 0
-			tiltH = 0
-			filletTop = 0
-			filletBottom = 0
-			stretch = 0
-			profile = Ellipse
-			slopeAbove = Linear
-		}
-		SPINE_NODE
-		{
-			position = 0.159483
-			sizeH = 0.42
-			sizeV = 0.389617
-			offsetV = -0.28659
-			offsetH = 0
-			tiltV = 0
-			tiltH = 0
-			filletTop = 0
-			filletBottom = 0
-			stretch = 0
-			profile = Ellipse
-			slopeAbove = Linear
-		}
-		SPINE_NODE
-		{
-			position = 0.153017
-			sizeH = 0.849461
-			sizeV = 0.371522
-			offsetV = -0.285323
-			offsetH = 0
-			tiltV = 0
-			tiltH = 0
-			filletTop = 0
-			filletBottom = 0
-			stretch = 0
-			profile = Ellipse
-			slopeAbove = Linear
-		}
-		SPINE_NODE
-		{
-			position = 0.12069
-			sizeH = 0.81824
-			sizeV = 0.281047
-			offsetV = -0.278948
+			position = 0.0743534
+			sizeH = 0.226634
+			sizeV = 0.158307
+			offsetV = -0.268218
 			offsetH = 0
 			tiltV = 0
 			tiltH = 0
@@ -787,7 +742,7 @@ PART
 		SPINE_NODE
 		{
 			position = 0.0625
-			sizeH = 0.25625
+			sizeH = 0.199965
 			sizeV = 0.118192
 			offsetV = -0.254795
 			offsetH = 0
@@ -802,7 +757,7 @@ PART
 		SPINE_NODE
 		{
 			position = 0.0614224
-			sizeH = 0.245843
+			sizeH = 0.197541
 			sizeV = 0.05
 			offsetV = -0.236383
 			offsetH = 0
@@ -816,23 +771,8 @@ PART
 		}
 		SPINE_NODE
 		{
-			position = 0.0409483
-			sizeH = 0.08
-			sizeV = 0.05
-			offsetV = -0.229177
-			offsetH = 0
-			tiltV = 0
-			tiltH = 0
-			filletTop = 0
-			filletBottom = 0
-			stretch = 0
-			profile = Ellipse
-			slopeAbove = Linear
-		}
-		SPINE_NODE
-		{
 			position = 0
-			sizeH = 0.05
+			sizeH = 0.06
 			sizeV = 0.05
 			offsetV = -0.226326
 			offsetH = 0
@@ -865,7 +805,7 @@ PART
 {
 	part = FARTest.B9.WingFlap_4000000002
 	partName = Part
-	persistentId = 3630111799
+	persistentId = 1630852207
 	pos = 0,6.78205,1.28621
 	attPos = 0,0,0
 	attPos0 = 0,1.28621,-0.782054
@@ -1124,7 +1064,7 @@ PART
 {
 	part = FARTest.B9.WingFlap_4000000003
 	partName = Part
-	persistentId = 617547721
+	persistentId = 649513681
 	pos = 0,6.78205,1.28621
 	attPos = 0,0,0
 	attPos0 = 0,1.28621,-0.782054
@@ -1383,7 +1323,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000004
 	partName = Part
-	persistentId = 3584800035
+	persistentId = 1897797525
 	pos = 2.8496,6.85671,1.28373
 	attPos = 0,0,0
 	attPos0 = 2.85058,0.00339,-5.90854e-07
@@ -1615,7 +1555,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000005
 	partName = Part
-	persistentId = 2565141329
+	persistentId = 3692987171
 	pos = -2.8496,6.85671,1.28373
 	attPos = 0,0,0
 	attPos0 = 2.85058,0.00339,5.90854e-07
@@ -1847,7 +1787,7 @@ PART
 {
 	part = FARTest.B9.WingAileron_4000000006
 	partName = Part
-	persistentId = 1918927600
+	persistentId = 2975460383
 	pos = 3.014,6.8581,1.2466
 	attPos = 0,0,0
 	attPos0 = 0.164456,-0.03691,4.9642e-06
@@ -2106,7 +2046,7 @@ PART
 {
 	part = FARTest.B9.WingAileron_4000000007
 	partName = Part
-	persistentId = 1303773637
+	persistentId = 2954627762
 	pos = -3.014,6.8581,1.2466
 	attPos = 0,0,0
 	attPos0 = 0.164456,-0.03691,-4.9642e-06
@@ -2365,7 +2305,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000008
 	partName = Part
-	persistentId = 4100996638
+	persistentId = 3282691602
 	pos = 5.206,6.91924,1.2919
 	attPos = 0,0,0
 	attPos0 = 2.19275,0.04996,-4.54503e-07
@@ -2596,7 +2536,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000009
 	partName = Part
-	persistentId = 782625487
+	persistentId = 3219048523
 	pos = -5.206,6.91924,1.2919
 	attPos = 0,0,0
 	attPos0 = 2.19275,0.04996,4.54503e-07
@@ -2827,10 +2767,10 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000014
 	partName = Part
-	persistentId = 2686898854
-	pos = 0,6.40983,-3.26008
+	persistentId = 2695910619
+	pos = 0,6.41296,-2.87522
 	attPos = 0,0,0
-	attPos0 = 0,-3.26008,-0.409828
+	attPos0 = 0,-2.87522,-0.412957
 	rot = -0.716911,0,0,-0.697165
 	attRot = 0,0,0,1
 	attRot0 = -0.0139622,0,0,-0.999903
@@ -2903,19 +2843,19 @@ PART
 		isEnabled = True
 		isAttached = True
 		isSetToDefaultValues = True
-		sharedBaseLength = 0.0605
-		sharedBaseWidthRoot = 0.196976
-		sharedBaseWidthTip = 0.196976
+		sharedBaseLength = 0.0553309
+		sharedBaseWidthRoot = 0.582133
+		sharedBaseWidthTip = 0.582133
 		sharedBaseOffsetRoot = 0
 		sharedBaseOffsetTip = 0
-		sharedBaseThicknessRoot = 0.0738661
-		sharedBaseThicknessTip = 0.0738661
+		sharedBaseThicknessRoot = 0.130713
+		sharedBaseThicknessTip = 0.130713
 		sharedEdgeTypeLeading = 2
-		sharedEdgeWidthLeadingRoot = 0.0492441
-		sharedEdgeWidthLeadingTip = 0.0492441
+		sharedEdgeWidthLeadingRoot = 0.087142
+		sharedEdgeWidthLeadingTip = 0.087142
 		sharedEdgeTypeTrailing = 3
-		sharedEdgeWidthTrailingRoot = 0.369331
-		sharedEdgeWidthTrailingTip = 0.369331
+		sharedEdgeWidthTrailingRoot = 0.42
+		sharedEdgeWidthTrailingTip = 0.42
 		sharedMaterialST = 1
 		sharedColorSTOpacity = 0
 		sharedColorSTHue = 0.100000001
@@ -3059,10 +2999,10 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000015
 	partName = Part
-	persistentId = 636898812
-	pos = 0,6.40983,-3.26008
+	persistentId = 1421078042
+	pos = 0,6.41296,-2.87522
 	attPos = 0,0,0
-	attPos0 = 0,-3.26008,-0.409828
+	attPos0 = 0,-2.87522,-0.412957
 	rot = 0,-0.697165,-0.716911,0
 	attRot = 0,0,0,1
 	attRot0 = 0,-0.999903,-0.0139622,0
@@ -3135,19 +3075,19 @@ PART
 		isEnabled = True
 		isAttached = True
 		isSetToDefaultValues = True
-		sharedBaseLength = 0.0605
-		sharedBaseWidthRoot = 0.196976
-		sharedBaseWidthTip = 0.196976
+		sharedBaseLength = 0.0553309
+		sharedBaseWidthRoot = 0.582133
+		sharedBaseWidthTip = 0.582133
 		sharedBaseOffsetRoot = 0
 		sharedBaseOffsetTip = 0
-		sharedBaseThicknessRoot = 0.0738661
-		sharedBaseThicknessTip = 0.0738661
+		sharedBaseThicknessRoot = 0.130713
+		sharedBaseThicknessTip = 0.130713
 		sharedEdgeTypeLeading = 2
-		sharedEdgeWidthLeadingRoot = 0.0492441
-		sharedEdgeWidthLeadingTip = 0.0492441
+		sharedEdgeWidthLeadingRoot = 0.087142
+		sharedEdgeWidthLeadingTip = 0.087142
 		sharedEdgeTypeTrailing = 3
-		sharedEdgeWidthTrailingRoot = 0.369331
-		sharedEdgeWidthTrailingTip = 0.369331
+		sharedEdgeWidthTrailingRoot = 0.42
+		sharedEdgeWidthTrailingTip = 0.42
 		sharedMaterialST = 1
 		sharedColorSTOpacity = 0
 		sharedColorSTHue = 0.100000001
@@ -3291,10 +3231,10 @@ PART
 {
 	part = FARTest.B9.TailElevator_4000000016
 	partName = Part
-	persistentId = 3554706181
-	pos = 0.0605,6.40983,-3.26008
+	persistentId = 3164447734
+	pos = 0.0553309,6.41296,-2.87522
 	attPos = 0,0,0
-	attPos0 = 0.0605001,0,-0
+	attPos0 = 0.055331,0,-0
 	rot = -0.716911,0,0,-0.697165
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
@@ -3315,7 +3255,7 @@ PART
 	modSize = 0,0,0
 	srfN = srfAttach,B9.Aero.Wing.Procedural.TypeA_4000000014,,0|0|0,-1|0|0,0|0|0
 	sym = FARTest.B9.TailElevator_4000000017
-	link = FARTest.B9.TailElevator_4000000018
+	link = B9.Aero.Wing.Procedural.TypeA_4000000018
 	EVENTS
 	{
 	}
@@ -3367,19 +3307,19 @@ PART
 		isEnabled = True
 		isAttached = True
 		isSetToDefaultValues = True
-		sharedBaseLength = 0.548167
-		sharedBaseWidthRoot = 0.196976
-		sharedBaseWidthTip = 0.554114
+		sharedBaseLength = 1.01809
+		sharedBaseWidthRoot = 0.582133
+		sharedBaseWidthTip = 0.351024
 		sharedBaseOffsetRoot = 0
-		sharedBaseOffsetTip = -0.280125
-		sharedBaseThicknessRoot = 0.0738661
-		sharedBaseThicknessTip = 0.124326
+		sharedBaseOffsetTip = 0.191555
+		sharedBaseThicknessRoot = 0.130713
+		sharedBaseThicknessTip = 0.0849162
 		sharedEdgeTypeLeading = 2
-		sharedEdgeWidthLeadingRoot = 0.0492441
-		sharedEdgeWidthLeadingTip = 0.082884
+		sharedEdgeWidthLeadingRoot = 0.087142
+		sharedEdgeWidthLeadingTip = 0.0566108
 		sharedEdgeTypeTrailing = 3
-		sharedEdgeWidthTrailingRoot = 0.365968
-		sharedEdgeWidthTrailingTip = 0.376054
+		sharedEdgeWidthTrailingRoot = 0.419475
+		sharedEdgeWidthTrailingTip = 0.299625
 		sharedMaterialST = 1
 		sharedColorSTOpacity = 0
 		sharedColorSTHue = 0.100000001
@@ -3549,10 +3489,10 @@ PART
 {
 	part = FARTest.B9.TailElevator_4000000017
 	partName = Part
-	persistentId = 147705476
-	pos = -0.0605,6.40983,-3.26008
+	persistentId = 3089508799
+	pos = -0.0553309,6.41296,-2.87522
 	attPos = 0,0,0
-	attPos0 = 0.0605001,0,0
+	attPos0 = 0.055331,0,0
 	rot = 0,-0.697165,-0.716911,0
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
@@ -3573,7 +3513,7 @@ PART
 	modSize = 0,0,0
 	srfN = srfAttach,B9.Aero.Wing.Procedural.TypeA_4000000015,,0|0|0,-1|0|0,0|0|0
 	sym = FARTest.B9.TailElevator_4000000016
-	link = FARTest.B9.TailElevator_4000000019
+	link = B9.Aero.Wing.Procedural.TypeA_4000000019
 	EVENTS
 	{
 	}
@@ -3625,19 +3565,19 @@ PART
 		isEnabled = True
 		isAttached = True
 		isSetToDefaultValues = True
-		sharedBaseLength = 0.548167
-		sharedBaseWidthRoot = 0.196976
-		sharedBaseWidthTip = 0.554114
+		sharedBaseLength = 1.01809
+		sharedBaseWidthRoot = 0.582133
+		sharedBaseWidthTip = 0.351024
 		sharedBaseOffsetRoot = 0
-		sharedBaseOffsetTip = -0.280125
-		sharedBaseThicknessRoot = 0.0738661
-		sharedBaseThicknessTip = 0.124326
+		sharedBaseOffsetTip = 0.191555
+		sharedBaseThicknessRoot = 0.130713
+		sharedBaseThicknessTip = 0.0849162
 		sharedEdgeTypeLeading = 2
-		sharedEdgeWidthLeadingRoot = 0.0492441
-		sharedEdgeWidthLeadingTip = 0.082884
+		sharedEdgeWidthLeadingRoot = 0.087142
+		sharedEdgeWidthLeadingTip = 0.0566108
 		sharedEdgeTypeTrailing = 3
-		sharedEdgeWidthTrailingRoot = 0.365968
-		sharedEdgeWidthTrailingTip = 0.376054
+		sharedEdgeWidthTrailingRoot = 0.419475
+		sharedEdgeWidthTrailingTip = 0.299625
 		sharedMaterialST = 1
 		sharedColorSTOpacity = 0
 		sharedColorSTHue = 0.100000001
@@ -3805,12 +3745,12 @@ PART
 }
 PART
 {
-	part = FARTest.B9.TailElevator_4000000018
+	part = B9.Aero.Wing.Procedural.TypeA_4000000018
 	partName = Part
-	persistentId = 896054988
-	pos = 0.608667,6.40201,-2.98006
+	persistentId = 1494349881
+	pos = 1.07342,6.41831,-3.0667
 	attPos = 0,0,0
-	attPos0 = 0.548167,0.28013,3.88578e-16
+	attPos0 = 1.01809,-0.19156,1.94289e-16
 	rot = -0.716911,0,0,-0.697165
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
@@ -3830,8 +3770,7 @@ PART
 	modMass = 2.92389822
 	modSize = 0,0,0
 	srfN = srfAttach,FARTest.B9.TailElevator_4000000016,,0|0|0,-1|0|0,0|0|0
-	sym = FARTest.B9.TailElevator_4000000019
-	link = B9.Aero.Wing.Procedural.TypeA_4000000020
+	sym = B9.Aero.Wing.Procedural.TypeA_4000000019
 	EVENTS
 	{
 	}
@@ -3883,19 +3822,19 @@ PART
 		isEnabled = True
 		isAttached = True
 		isSetToDefaultValues = True
-		sharedBaseLength = 0.565033
-		sharedBaseWidthRoot = 0.554114
-		sharedBaseWidthTip = 0.261024
+		sharedBaseLength = 0.0331985
+		sharedBaseWidthRoot = 0.351024
+		sharedBaseWidthTip = 0.1116
 		sharedBaseOffsetRoot = 0
-		sharedBaseOffsetTip = 0.0418637
-		sharedBaseThicknessRoot = 0.124326
-		sharedBaseThicknessTip = 0.0849162
+		sharedBaseOffsetTip = 0.324335
+		sharedBaseThicknessRoot = 0.0849162
+		sharedBaseThicknessTip = 0.03
 		sharedEdgeTypeLeading = 2
-		sharedEdgeWidthLeadingRoot = 0.082884
-		sharedEdgeWidthLeadingTip = 0.0566108
+		sharedEdgeWidthLeadingRoot = 0.0566108
+		sharedEdgeWidthLeadingTip = 0.017998
 		sharedEdgeTypeTrailing = 3
-		sharedEdgeWidthTrailingRoot = 0.376054
-		sharedEdgeWidthTrailingTip = 0.38645
+		sharedEdgeWidthTrailingRoot = 0.3
+		sharedEdgeWidthTrailingTip = 0.0953778
 		sharedMaterialST = 1
 		sharedColorSTOpacity = 0
 		sharedColorSTHue = 0.100000001
@@ -3962,22 +3901,8 @@ PART
 	}
 	MODULE
 	{
-		name = FARControllableSurface
+		name = FARWingAerodynamicModel
 		isEnabled = True
-		pitchaxis = 100
-		yawaxis = 0
-		rollaxis = 0
-		pitchaxisDueToAoA = 0
-		brakeRudder = 0
-		maxdeflect = 28
-		isFlap = False
-		isSpoiler = False
-		flapDeflectionLevel = 0
-		maxdeflectFlap = 15
-		isDynamicDeflection = False
-		dynamicControlStartSpeed = 200
-		exponent = 2
-		minControl = 0.100000001
 		massMultiplier = 0.1134
 		massOverride = -3.40282347E+38
 		stagingEnabled = True
@@ -3986,18 +3911,6 @@ PART
 		}
 		ACTIONS
 		{
-			ActivateSpoiler
-			{
-				actionGroup = Brakes
-			}
-			IncreaseDeflect
-			{
-				actionGroup = None
-			}
-			DecreaseDeflect
-			{
-				actionGroup = None
-			}
 		}
 		UPGRADESAPPLIED
 		{
@@ -4063,12 +3976,12 @@ PART
 }
 PART
 {
-	part = FARTest.B9.TailElevator_4000000019
+	part = B9.Aero.Wing.Procedural.TypeA_4000000019
 	partName = Part
-	persistentId = 2111049709
-	pos = -0.608667,6.40201,-2.98006
+	persistentId = 284187976
+	pos = -1.07342,6.41831,-3.0667
 	attPos = 0,0,0
-	attPos0 = 0.548167,0.28013,-3.88578e-16
+	attPos0 = 1.01809,-0.19156,-1.94289e-16
 	rot = 0,-0.697165,-0.716911,0
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
@@ -4088,8 +4001,7 @@ PART
 	modMass = 2.92389822
 	modSize = 0,0,0
 	srfN = srfAttach,FARTest.B9.TailElevator_4000000017,,0|0|0,-1|0|0,0|0|0
-	sym = FARTest.B9.TailElevator_4000000018
-	link = B9.Aero.Wing.Procedural.TypeA_4000000021
+	sym = B9.Aero.Wing.Procedural.TypeA_4000000018
 	EVENTS
 	{
 	}
@@ -4141,276 +4053,19 @@ PART
 		isEnabled = True
 		isAttached = True
 		isSetToDefaultValues = True
-		sharedBaseLength = 0.565033
-		sharedBaseWidthRoot = 0.554114
-		sharedBaseWidthTip = 0.261024
+		sharedBaseLength = 0.0331985
+		sharedBaseWidthRoot = 0.351024
+		sharedBaseWidthTip = 0.1116
 		sharedBaseOffsetRoot = 0
-		sharedBaseOffsetTip = 0.0418637
-		sharedBaseThicknessRoot = 0.124326
-		sharedBaseThicknessTip = 0.0849162
-		sharedEdgeTypeLeading = 2
-		sharedEdgeWidthLeadingRoot = 0.082884
-		sharedEdgeWidthLeadingTip = 0.0566108
-		sharedEdgeTypeTrailing = 3
-		sharedEdgeWidthTrailingRoot = 0.376054
-		sharedEdgeWidthTrailingTip = 0.38645
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
-		sharedMaterialSB = 4
-		sharedColorSBOpacity = 0
-		sharedColorSBHue = 0.100000001
-		sharedColorSBSaturation = 0.75
-		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
-		sharedColorETOpacity = 0
-		sharedColorETHue = 0.100000001
-		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
-		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
-		sharedSweptAngleFront = 90
-		sharedSweptAngleBack = 90
-		sharedArmorRatio = 0
-		sweepMode = 0
-		sharedVariableSweep = False
-		sharedMaxSweepAngle = 45
-		sweepDriveJoint = False
-		sweepInvertFlaps = False
-		sweepFlapLevel = 0
-		aeroUIMass = 0
-		stockLiftCoefficient = 0
-		aeroIsLiftingSurface = True
-		aeroStatMeanAerodynamicChord = 3.7000001072883606
-		aeroStatSemispan = 14.800000190734863
-		aeroStatMidChordSweep = 20.894692542102764
-		aeroStatTaperRatio = 0.17460317310141993
-		fuelSelectedTankSetup = 1
-		stagingEnabled = True
-		mirrorTexturing = False
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-			SweepFlapMoreAction
-			{
-				actionGroup = None
-				active = False
-			}
-			SweepFlapLessAction
-			{
-				actionGroup = None
-				active = False
-			}
-			SweepFlapToggleAction
-			{
-				actionGroup = None
-				active = False
-			}
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
-		name = FARControllableSurface
-		isEnabled = True
-		pitchaxis = 100
-		yawaxis = 0
-		rollaxis = 0
-		pitchaxisDueToAoA = 0
-		brakeRudder = 0
-		maxdeflect = 28
-		isFlap = False
-		isSpoiler = False
-		flapDeflectionLevel = 0
-		maxdeflectFlap = 15
-		isDynamicDeflection = False
-		dynamicControlStartSpeed = 200
-		exponent = 2
-		minControl = 0.100000001
-		massMultiplier = 0.1134
-		massOverride = -3.40282347E+38
-		stagingEnabled = True
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-			ActivateSpoiler
-			{
-				actionGroup = Brakes
-			}
-			IncreaseDeflect
-			{
-				actionGroup = None
-			}
-			DecreaseDeflect
-			{
-				actionGroup = None
-			}
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
-		name = GeometryPartModule
-		isEnabled = True
-		stagingEnabled = True
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
-		name = FARAeroPartModule
-		isEnabled = True
-		stagingEnabled = True
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
-		name = KOSNameTag
-		isEnabled = False
-		nameTag = 
-		stagingEnabled = True
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	RESOURCE
-	{
-		name = LiquidFuel
-		amount = 0
-		maxAmount = 2776.4801025390625
-		flowState = True
-		isTweakable = True
-		hideFlow = False
-		isVisible = True
-		flowMode = Both
-	}
-}
-PART
-{
-	part = B9.Aero.Wing.Procedural.TypeA_4000000020
-	partName = Part
-	persistentId = 2238519747
-	pos = 1.1737,6.40318,-3.02192
-	attPos = 0,0,0
-	attPos0 = 0.565033,-0.04187,-6.93889e-18
-	rot = -0.716911,0,0,-0.697165
-	attRot = 0,0,0,1
-	attRot0 = 0,0,0,1
-	mir = 1,1,1
-	symMethod = Mirror
-	autostrutMode = Heaviest
-	rigidAttachment = True
-	istg = -1
-	resPri = 0
-	dstg = 0
-	sidx = -1
-	sqor = -1
-	sepI = -1
-	attm = 1
-	sameVesselCollision = False
-	modCost = 8951.18359
-	modMass = 2.92389822
-	modSize = 0,0,0
-	srfN = srfAttach,FARTest.B9.TailElevator_4000000018,,0|0|0,-1|0|0,0|0|0
-	sym = B9.Aero.Wing.Procedural.TypeA_4000000021
-	EVENTS
-	{
-	}
-	ACTIONS
-	{
-		ToggleSameVesselInteraction
-		{
-			actionGroup = None
-		}
-		SetSameVesselInteraction
-		{
-			actionGroup = None
-		}
-		RemoveSameVesselInteraction
-		{
-			actionGroup = None
-		}
-		AutostrutOff
-		{
-			actionGroup = None
-		}
-		AutostrutRoot
-		{
-			actionGroup = None
-		}
-		AutostrutHeaviest
-		{
-			actionGroup = None
-		}
-		AutostrutGrandparent
-		{
-			actionGroup = None
-		}
-		ResourcesEnableFlow
-		{
-			actionGroup = None
-		}
-		ResourcesDisableFlow
-		{
-			actionGroup = None
-		}
-	}
-	PARTDATA
-	{
-	}
-	MODULE
-	{
-		name = WingProcedural
-		isEnabled = True
-		isAttached = True
-		isSetToDefaultValues = True
-		sharedBaseLength = 0.0363
-		sharedBaseWidthRoot = 0.261024
-		sharedBaseWidthTip = 0.0829864
-		sharedBaseOffsetRoot = 0
-		sharedBaseOffsetTip = 0.355028
+		sharedBaseOffsetTip = 0.324335
 		sharedBaseThicknessRoot = 0.0849162
 		sharedBaseThicknessTip = 0.03
 		sharedEdgeTypeLeading = 2
 		sharedEdgeWidthLeadingRoot = 0.0566108
 		sharedEdgeWidthLeadingTip = 0.017998
 		sharedEdgeTypeTrailing = 3
-		sharedEdgeWidthTrailingRoot = 0.39
-		sharedEdgeWidthTrailingTip = 0.123991
+		sharedEdgeWidthTrailingRoot = 0.3
+		sharedEdgeWidthTrailingTip = 0.0953778
 		sharedMaterialST = 1
 		sharedColorSTOpacity = 0
 		sharedColorSTHue = 0.100000001
@@ -4552,240 +4207,9 @@ PART
 }
 PART
 {
-	part = B9.Aero.Wing.Procedural.TypeA_4000000021
+	part = B9.Aero.Wing.Procedural.TypeA_4000000022
 	partName = Part
-	persistentId = 2931114325
-	pos = -1.1737,6.40318,-3.02192
-	attPos = 0,0,0
-	attPos0 = 0.565033,-0.04187,6.93889e-18
-	rot = 0,-0.697165,-0.716911,0
-	attRot = 0,0,0,1
-	attRot0 = 0,0,0,1
-	mir = 1,1,1
-	symMethod = Mirror
-	autostrutMode = Heaviest
-	rigidAttachment = True
-	istg = -1
-	resPri = 0
-	dstg = 0
-	sidx = -1
-	sqor = -1
-	sepI = -1
-	attm = 1
-	sameVesselCollision = False
-	modCost = 8951.18359
-	modMass = 2.92389822
-	modSize = 0,0,0
-	srfN = srfAttach,FARTest.B9.TailElevator_4000000019,,0|0|0,-1|0|0,0|0|0
-	sym = B9.Aero.Wing.Procedural.TypeA_4000000020
-	EVENTS
-	{
-	}
-	ACTIONS
-	{
-		ToggleSameVesselInteraction
-		{
-			actionGroup = None
-		}
-		SetSameVesselInteraction
-		{
-			actionGroup = None
-		}
-		RemoveSameVesselInteraction
-		{
-			actionGroup = None
-		}
-		AutostrutOff
-		{
-			actionGroup = None
-		}
-		AutostrutRoot
-		{
-			actionGroup = None
-		}
-		AutostrutHeaviest
-		{
-			actionGroup = None
-		}
-		AutostrutGrandparent
-		{
-			actionGroup = None
-		}
-		ResourcesEnableFlow
-		{
-			actionGroup = None
-		}
-		ResourcesDisableFlow
-		{
-			actionGroup = None
-		}
-	}
-	PARTDATA
-	{
-	}
-	MODULE
-	{
-		name = WingProcedural
-		isEnabled = True
-		isAttached = True
-		isSetToDefaultValues = True
-		sharedBaseLength = 0.0363
-		sharedBaseWidthRoot = 0.261024
-		sharedBaseWidthTip = 0.0829864
-		sharedBaseOffsetRoot = 0
-		sharedBaseOffsetTip = 0.355028
-		sharedBaseThicknessRoot = 0.0849162
-		sharedBaseThicknessTip = 0.03
-		sharedEdgeTypeLeading = 2
-		sharedEdgeWidthLeadingRoot = 0.0566108
-		sharedEdgeWidthLeadingTip = 0.017998
-		sharedEdgeTypeTrailing = 3
-		sharedEdgeWidthTrailingRoot = 0.39
-		sharedEdgeWidthTrailingTip = 0.123991
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
-		sharedMaterialSB = 4
-		sharedColorSBOpacity = 0
-		sharedColorSBHue = 0.100000001
-		sharedColorSBSaturation = 0.75
-		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
-		sharedColorETOpacity = 0
-		sharedColorETHue = 0.100000001
-		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
-		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
-		sharedSweptAngleFront = 90
-		sharedSweptAngleBack = 90
-		sharedArmorRatio = 0
-		sweepMode = 0
-		sharedVariableSweep = False
-		sharedMaxSweepAngle = 45
-		sweepDriveJoint = False
-		sweepInvertFlaps = False
-		sweepFlapLevel = 0
-		aeroUIMass = 0
-		stockLiftCoefficient = 0
-		aeroIsLiftingSurface = True
-		aeroStatMeanAerodynamicChord = 3.7000001072883606
-		aeroStatSemispan = 14.800000190734863
-		aeroStatMidChordSweep = 20.894692542102764
-		aeroStatTaperRatio = 0.17460317310141993
-		fuelSelectedTankSetup = 1
-		stagingEnabled = True
-		mirrorTexturing = False
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-			SweepFlapMoreAction
-			{
-				actionGroup = None
-				active = False
-			}
-			SweepFlapLessAction
-			{
-				actionGroup = None
-				active = False
-			}
-			SweepFlapToggleAction
-			{
-				actionGroup = None
-				active = False
-			}
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
-		name = FARWingAerodynamicModel
-		isEnabled = True
-		massMultiplier = 0.1134
-		massOverride = -3.40282347E+38
-		stagingEnabled = True
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
-		name = GeometryPartModule
-		isEnabled = True
-		stagingEnabled = True
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
-		name = FARAeroPartModule
-		isEnabled = True
-		stagingEnabled = True
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
-		name = KOSNameTag
-		isEnabled = False
-		nameTag = 
-		stagingEnabled = True
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	RESOURCE
-	{
-		name = LiquidFuel
-		amount = 0
-		maxAmount = 2776.4801025390625
-		flowState = True
-		isTweakable = True
-		hideFlow = False
-		isVisible = True
-		flowMode = Both
-	}
-}
-PART
-{
-	part = B9.Aero.Wing.Procedural.TypeA_4000000024
-	partName = Part
-	persistentId = 668956032
+	persistentId = 4042515637
 	pos = 0,6.24032,-2.78526
 	attPos = 0,0,0
 	attPos0 = 0,-2.78526,-0.240323
@@ -5013,9 +4437,9 @@ PART
 }
 PART
 {
-	part = B9.Aero.Wing.Procedural.TypeA_4000000025
+	part = B9.Aero.Wing.Procedural.TypeA_4000000023
 	partName = Part
-	persistentId = 2500189608
+	persistentId = 2948754893
 	pos = 0,6.32621,-2.79938
 	attPos = 0,0,0
 	attPos0 = 0,-2.79938,-0.326209
@@ -5038,7 +4462,7 @@ PART
 	modMass = 2.92389822
 	modSize = 0,0,0
 	srfN = srfAttach,proceduralTankLiquid_4000000001,,0|0|0,-1|0|0,0|0|0
-	link = B9.Aero.Wing.Procedural.TypeB_4000000027
+	link = B9.Aero.Wing.Procedural.TypeB_4000000025
 	EVENTS
 	{
 	}
@@ -5244,9 +4668,9 @@ PART
 }
 PART
 {
-	part = B9.Aero.Wing.Procedural.TypeA_4000000026
+	part = B9.Aero.Wing.Procedural.TypeA_4000000024
 	partName = Part
-	persistentId = 1007369427
+	persistentId = 48352938
 	pos = 0,7.87216,-3.02339
 	attPos = 0,0,0
 	attPos0 = 0,-3.02339,-1.87215
@@ -5474,9 +4898,9 @@ PART
 }
 PART
 {
-	part = B9.Aero.Wing.Procedural.TypeB_4000000027
+	part = B9.Aero.Wing.Procedural.TypeB_4000000025
 	partName = Part
-	persistentId = 2205755248
+	persistentId = 1236662188
 	pos = 0,7.09918,-3.17886
 	attPos = 0,0,0
 	attPos0 = 0.772973,-0.379486,0
@@ -5498,7 +4922,7 @@ PART
 	modCost = 3120
 	modMass = 0.29843992
 	modSize = 0,0,0
-	srfN = srfAttach,B9.Aero.Wing.Procedural.TypeA_4000000025,,0|0|0,0|1|0,0|0|0
+	srfN = srfAttach,B9.Aero.Wing.Procedural.TypeA_4000000023,,0|0|0,0|1|0,0|0|0
 	EVENTS
 	{
 	}
@@ -5721,9 +5145,9 @@ PART
 }
 PART
 {
-	part = probeCoreOcto_4000000031
+	part = probeCoreOcto_4000000029
 	partName = Part
-	persistentId = 1911859705
+	persistentId = 2841604629
 	pos = 0,5.91333,2.55924
 	attPos = 0,0,0
 	attPos0 = 0,2.55924,0.0866738
@@ -5912,9 +5336,9 @@ PART
 }
 PART
 {
-	part = proceduralTankLiquid_4000000032
+	part = proceduralTankLiquid_4000000030
 	partName = Part
-	persistentId = 3006696892
+	persistentId = 3713072918
 	pos = 0,6.099,1.51423
 	attPos = 0,0,0
 	attPos0 = 0,1.51423,-0.0989955
@@ -6400,7 +5824,7 @@ PART
 	RESOURCE
 	{
 		name = LiquidFuel
-		amount = 127.276
+		amount = 91.395
 		maxAmount = 127.276
 		flowState = True
 		isTweakable = True
@@ -6450,12 +5874,12 @@ PART
 	part = proceduralStructural_4100000002
 	partName = Part
 	persistentId = 4100000002
-	pos = 1.395,6.19231,1.72606
+	pos = 1.2982,6.19231,1.72606
 	attPos = 0,0,0
-	attPos0 = 1.395,1.72606,-0.192305
-	rot = -0.0204392,0.0108816,-0.469814,0.882462
+	attPos0 = 1.2982,1.72606,-0.192305
+	rot = -0.0187637,0.0105578,-0.490259,0.871311
 	attRot = 0,0,0,1
-	attRot0 = -0.638448,-0.324514,-0.339903,0.609542
+	attRot0 = -0.629378,-0.3392,-0.354131,0.602842
 	mir = 1,1,1
 	symMethod = Mirror
 	autostrutMode = Root
@@ -6852,7 +6276,7 @@ PART
 	{
 		name = ProceduralShapeSpine
 		isEnabled = True
-		length = 2.15990
+		length = 2.32287
 		hScale = 1
 		vScale = 1
 		shellMode = False
@@ -6904,12 +6328,12 @@ PART
 	part = proceduralStructural_4100000003
 	partName = Part
 	persistentId = 4100000003
-	pos = -1.395,6.19231,1.72606
+	pos = -1.2982,6.19231,1.72606
 	attPos = 0,0,0
-	attPos0 = -1.395,1.72606,-0.192305
-	rot = -0.0204392,-0.0108816,0.469814,0.882462
+	attPos0 = -1.2982,1.72606,-0.192305
+	rot = -0.0187637,-0.0105578,0.490259,0.871311
 	attRot = 0,0,0,1
-	attRot0 = -0.638448,0.324514,0.339903,0.609542
+	attRot0 = -0.629378,0.3392,0.354131,0.602842
 	mir = 1,1,1
 	symMethod = Mirror
 	autostrutMode = Root
@@ -7306,7 +6730,7 @@ PART
 	{
 		name = ProceduralShapeSpine
 		isEnabled = True
-		length = 2.15990
+		length = 2.32287
 		hScale = 1
 		vScale = 1
 		shellMode = False
