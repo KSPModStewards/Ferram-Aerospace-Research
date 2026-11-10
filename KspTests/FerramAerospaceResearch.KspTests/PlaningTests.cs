@@ -25,7 +25,7 @@ namespace FerramAerospaceResearch.KspTests
         /// velocity and roll and yaw rates zeroed; it heaves and pitches freely. At each speed it settles 8 s, then 6 s
         /// are averaged: the tow force (mass times the speed lost per step), the air's share of it (FAR's API on the
         /// same attitude in air), trim, keel depth at the transom, buoyancy and FAR's vertical force.
-        /// Writes planing.csv (a row a speed) and planing-steps.csv (every step).
+        /// Writes planing-{vessel}.csv (a row a speed) and planing-steps-{vessel}.csv (every step).
         /// Parameters: mass (t), lcg (m from the transom), cgHeight (m above the bottom), speeds (m/s, + separated).
         /// </summary>
         [UITest(Kind = "Measure", StartsAt = StartState.Flight, Craft = Box, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 1500)]
@@ -254,8 +254,8 @@ namespace FerramAerospaceResearch.KspTests
                                         $"transom {dT.Average():F2} m deep, bow {dB.Average():F2}, buoyancy up {buoy.Average():F1} kN, FAR up {farUp.Average():F1} kN, " +
                                         $"hydro up {hUp.Average():F1} kN drag {hDrag.Average():F2} kN, wetted {wetL.Average():F2} m, of {weightKN:F1}");
                 }
-                File.WriteAllText(Path.Combine(ctx.ResultsDir, "planing.csv"), rows.ToString());
-                File.WriteAllText(Path.Combine(ctx.ResultsDir, "planing-steps.csv"), steps.ToString());
+                File.WriteAllText(Path.Combine(ctx.ResultsDir, $"planing-{v.vesselName}.csv"), rows.ToString());
+                File.WriteAllText(Path.Combine(ctx.ResultsDir, $"planing-steps-{v.vesselName}.csv"), steps.ToString());
             }
             finally
             {
