@@ -860,6 +860,9 @@ namespace ferram4
             float mass = 0;
             foreach (Part p in VesselPartList)
             {
+                // a part the list was made with can be gone since (one being placed, dropped back in the parts bin)
+                if (p == null)
+                    continue;
                 CoM += p.transform.position * p.mass;
                 mass += p.mass;
             }
