@@ -20,7 +20,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
     ///   whose momentum m_a V is more than SeparationDrop below the run's peak (narrower, or its bottom less steep to the
     ///   flow) is in the separated, ventilated wake. It takes no momentum (the water keeps what it was given; no
     ///   suction) and no crossflow pull, and the run's pressure ends ahead of it. It planes again only where it meets
-    ///   the water harder than the run ahead did;
+    ///   the water harder than the run ahead did. Once the flow ventilates the step, past the hump (from C_V
+    ///   VentStartCv to VentFullCv), it carries no hydrostatic pressure either: it is in the hollow the bottom ahead
+    ///   leaves, not under the level water;
     /// - crossflow drag 1/2 Cd rho w V|V| per strip (damping when U is small);
     /// - impact pressure 1/2 Cp rho vn^2 on steep faces moving into the water (a blunt bow);
     /// - skin friction (ITTC-57) on the wetted area.
@@ -35,6 +37,10 @@ namespace FerramAerospaceResearch.FARAeroComponents
         public static double StripLength = 0.25;
         public static double PlaningBuoyancy = 0.5;   // share of the hydrostatic force kept once planing (1: all of it)
         public static double SeparationDrop = 0.1;    // a section's m_a V this share below the run's peak: flow separated
+        // the step ventilates past the hump: in the volume Froude number V / sqrt(g vol^1/3), which takes out the load,
+        // NACA TN 470's Model 11-A humps at 2.7 - 3.0 and TM 826's float planes clear at 4.1; on the mean wetted beam
+        // (C_V = F_vol C_Delta^1/6, C_Delta 0.5 - 1.8 for floats and hulls) 3.5 to 5
+        public static double VentStartCv = 3.5, VentFullCv = 5.0;
         // a mesh whose area-weighted normals sum to more than this share of its area is not closed: its hydrostatic
         // pressure would not add up to a buoyancy, and stock's stays
         public const double ClosureTolerance = 0.02;
@@ -53,6 +59,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
         private readonly List<int> polyCounts = new List<int>();
         private readonly List<Vector3> polyNormals = new List<Vector3>();
         private readonly List<Vector3> scratchA = new List<Vector3>(8), scratchB = new List<Vector3>(8);
+        // each wet fan triangle's hydrostatic force and moment about the CoM, and where it lies along the flow
+        private readonly List<Vector3> hsForces = new List<Vector3>(), hsTorques = new List<Vector3>();
+        private readonly List<float> hsXs = new List<float>();
 
         private Strip[] strips = new Strip[MaxStrips];
 
@@ -225,7 +234,10 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 part.buoyancy = 0;
             }
             double g = FlightGlobals.getGeeForceAtPosition((Vector3d)p0).magnitude;
-            Vector3 com = rb.worldCenterOfMass, hsForce = Vector3.zero, hsTorque = Vector3.zero;
+            Vector3 com = rb.worldCenterOfMass;
+            hsForces.Clear();
+            hsTorques.Clear();
+            hsXs.Clear();
 
             // clip every triangle to the part of it under the water
             polyVerts.Clear();
@@ -268,8 +280,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
                         Vector3 ro = o - com, r1 = q1 - com, r2 = q2 - com;
                         Vector3 moment = (po * ro + p1 * r1 + p2 * r2 + ps * (ro + r1 + r2)) * (ta / 12f);  // integral of depth * r
                         float scale = (float)(rho * g);
-                        hsForce += -n * (scale * ta * ps / 3f);
-                        hsTorque += Vector3.Cross(moment * scale, -n);
+                        hsForces.Add(-n * (scale * ta * ps / 3f));
+                        hsTorques.Add(Vector3.Cross(moment * scale, -n));
+                        hsXs.Add(Vector3.Dot((o + q1 + q2) / 3f - p0, xHat));
                     }
                 }
                 foreach (Vector3 v in scratchA)
@@ -477,19 +490,30 @@ namespace FerramAerospaceResearch.FARAeroComponents
             // hydrostatics at speed: once the flow leaves the transom dry, the bottom near it carries no hydrostatic
             // pressure (Savitsky's buoyancy term is about half the displacement's; Zarnick scales it by 0.5): the
             // share kept fades from all of it to PlaningBuoyancy from C_V 1 to 3 on the mean wetted beam
-            double take = 0;
-            if (PlaningBuoyancy < 1 && planformTotal > 0 && wettedLength > 0)
+            double take = 0, vented = 0;
+            if (planformTotal > 0 && wettedLength > 0)
             {
                 double beam = planformTotal / wettedLength;
                 double cv = U / Math.Sqrt(g * Math.Max(0.05, beam));
                 double x = Math.Max(0, Math.Min(1, (cv - 1) / 2));
                 take = (1 - PlaningBuoyancy) * x * x * (3 - 2 * x);
+                double xv = Math.Max(0, Math.Min(1, (cv - VentStartCv) / (VentFullCv - VentStartCv)));
+                vented = xv * xv * (3 - 2 * xv);
             }
             Vector3 hydrostatic = Vector3.zero;
             PartBuoyancy pb = part.partBuoyancy;
             if (OwnsBuoyancy)
             {
-                // the part's own buoyancy: its pressure, times its cfg buoyancy (stock's buoyancyScalar left out)
+                // the part's own buoyancy: its pressure, times its cfg buoyancy (stock's buoyancyScalar left out); the
+                // separated strips' pressure gone as the step ventilates
+                Vector3 hsForce = Vector3.zero, hsTorque = Vector3.zero;
+                for (int i = 0; i < hsForces.Count; i++)
+                {
+                    int k = Mathf.Clamp((int)((hsXs[i] - xMin) / dx), 0, nStrips - 1);
+                    float w = strips[k].Separated ? (float)(1 - vented) : 1f;
+                    hsForce += hsForces[i] * w;
+                    hsTorque += hsTorques[i] * w;
+                }
                 float keep = (float)((1 - take) * (stockBuoyancy >= 0 ? stockBuoyancy : 1));
                 hydrostatic = hsForce * (keep * 0.001f);
                 part.AddForce((Vector3d)hydrostatic);
