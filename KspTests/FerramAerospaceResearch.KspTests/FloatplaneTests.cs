@@ -18,6 +18,9 @@ namespace FerramAerospaceResearch.KspTests
     public static class FloatplaneTests
     {
         private const string Craft = "Cessna 172M Floatplane";
+        // the same plane with each float three parts (crafts/c172_floatplane.py split): the *Split tests run it as the
+        // one-part floats are run; FAR's water should not tell them apart
+        private const string SplitCraft = "Cessna 172M Floatplane Split";
         private const string Mods = @"AdvancedJetEngine;Firespitter;TimeControl;..\..\..\CustomProceduralParts\GameData\CustomProceduralParts;" +
                                     @"..\FerramAerospaceResearch.KspTests.Run\mods\FARTestFloatplane";
 
@@ -36,7 +39,7 @@ namespace FerramAerospaceResearch.KspTests
         {
             public Vessel V;
             public Part Root, Fuel, Engine;
-            public Part[] Floats;
+            public HullParts[] Floats;
             public PartModule Aje;
             public double Get(string field) => Convert.ToDouble(Aje.Fields[field].GetValue(Aje), CultureInfo.InvariantCulture);
         }
@@ -49,10 +52,18 @@ namespace FerramAerospaceResearch.KspTests
         /// </summary>
         [UITest(Kind = "Measure", Explicit = true, Mods = Mods, StartsAt = StartState.Flight, Craft = Craft, CraftDir = "SPH",
                 LaunchSite = "Runway", TimeoutSec = 900)]
-        public static IEnumerator Setup_C172Floatplane(TestContext ctx)
+        public static IEnumerator Setup_C172Floatplane(TestContext ctx) => Setup(ctx);
+
+        /// <summary>Setup_C172Floatplane with each float three parts.</summary>
+        [UITest(Kind = "Measure", Explicit = true, Mods = Mods, StartsAt = StartState.Flight, Craft = SplitCraft, CraftDir = "SPH",
+                LaunchSite = "Runway", TimeoutSec = 900)]
+        public static IEnumerator Setup_C172FloatplaneSplit(TestContext ctx) => Setup(ctx);
+
+        private static IEnumerator Setup(TestContext ctx)
         {
             Hyper(ctx, false);
             StandardDay(ctx, null);
+            WaterParams.Restore();
             yield return Wait.Seconds(5);
             Plane p = null;
             foreach (object o in Prepare(ctx, r => p = r))
@@ -74,7 +85,7 @@ namespace FerramAerospaceResearch.KspTests
                 if (Planetarium.GetUniversalTime() - t0 > 15)
                 {
                     trim.Add(Math.Asin(Mathf.Clamp(Vector3.Dot(p.Root.transform.up, up), -1, 1)) * 180 / Math.PI);
-                    draft.Add(p.Floats.Average(f => -FlightGlobals.getAltitudeAtPos(f.transform.TransformPoint(StepKeel), body)));
+                    draft.Add(p.Floats.Average(f => -FlightGlobals.getAltitudeAtPos(f.TransformPoint(StepKeel), body)));
                 }
                 yield return fixedWait;
             }
@@ -107,6 +118,7 @@ namespace FerramAerospaceResearch.KspTests
                                  $"(AJE's propeller {aje.Average() / 4.448e-3:F0} lbf), {hp.Average():F0} hp, {map.Average():F2} inHg; {Ambient(v)}");
             Hyper(ctx, false);
             StandardDay(ctx, null);
+            WaterParams.Restore();
             Assert.True(r >= StaticRpmMin && r <= StaticRpmMax, $"static rpm {r:F0} within the TCDS band {StaticRpmMin}-{StaticRpmMax}");
         }
 
@@ -191,6 +203,7 @@ namespace FerramAerospaceResearch.KspTests
             double weightLb = ctx.ParamDouble("weightLb", 2220);
             Hyper(ctx, false);
             StandardDay(ctx, null);
+            WaterParams.Restore();
             yield return Wait.Seconds(5);
             Plane p = null;
             foreach (object o in Prepare(ctx, r => p = r, weightLb * Lb, afloat: false))
@@ -342,7 +355,8 @@ namespace FerramAerospaceResearch.KspTests
             Ctrl.Pitch = 0;
             Hyper(ctx, false);
             StandardDay(ctx, null);
-            File.WriteAllText(Path.Combine(ctx.ResultsDir, "trim.csv"), csv.ToString());
+            WaterParams.Restore();
+            File.WriteAllText(Path.Combine(ctx.ResultsDir, $"trim-{FlightGlobals.ActiveVessel.vesselName}.csv"), csv.ToString());
         }
 
         /// <summary>
@@ -356,12 +370,20 @@ namespace FerramAerospaceResearch.KspTests
         /// </summary>
         [UITest(Kind = "Measure", Explicit = true, Mods = Mods, StartsAt = StartState.Flight, Craft = Craft, CraftDir = "SPH",
                 LaunchSite = "Runway", TimeoutSec = 1200)]
-        public static IEnumerator Captive_C172Floatplane(TestContext ctx)
+        public static IEnumerator Captive_C172Floatplane(TestContext ctx) => Captive(ctx);
+
+        /// <summary>Captive_C172Floatplane with each float three parts.</summary>
+        [UITest(Kind = "Measure", Explicit = true, Mods = Mods, StartsAt = StartState.Flight, Craft = SplitCraft, CraftDir = "SPH",
+                LaunchSite = "Runway", TimeoutSec = 1200)]
+        public static IEnumerator Captive_C172FloatplaneSplit(TestContext ctx) => Captive(ctx);
+
+        private static IEnumerator Captive(TestContext ctx)
         {
             double V = ctx.ParamDouble("mph", 60) * 0.44704, weightLb = ctx.ParamDouble("weightLb", 2220);
             double[] pitches = ctx.ParamList("pitches", "4+6+8+10+12").Select(s => double.Parse(s, CultureInfo.InvariantCulture)).ToArray();
             Hyper(ctx, false);
             StandardDay(ctx, null);
+            WaterParams.Restore();
             yield return Wait.Seconds(5);
             Plane p = null;
             foreach (object o in Prepare(ctx, r => p = r, weightLb * Lb))
@@ -430,15 +452,11 @@ namespace FerramAerospaceResearch.KspTests
                             thrustM.Add(-Vector3.Dot(Vector3.Cross(tt.position - com, tf), right));
                             thr.Add(thrust);
                             Vector3 water = Vector3.zero;
-                            foreach (Part f in p.Floats)
-                            {
-                                var hd = f.Modules.GetModule<FARAeroComponents.FARAeroPartModule>()?.Hydrodynamics;
-                                if (hd != null)
-                                    water += hd.LastForce + hd.LastHydrostaticForce;
-                            }
+                            foreach (HullParts f in p.Floats)
+                                water += f.Sum(x => x.LastForce + x.LastHydrostaticForce);
                             wUp.Add(Vector3.Dot(water, up));
                             wDrag.Add(-Vector3.Dot(water, h));
-                            keel.Add(-p.Floats.Average(f => FlightGlobals.getAltitudeAtPos(f.transform.TransformPoint(StepKeel), body)));
+                            keel.Add(-p.Floats.Average(f => FlightGlobals.getAltitudeAtPos(f.TransformPoint(StepKeel), body)));
                             speed.Add(Vector3.Dot(v.srf_velocity, h));
                         }
                         yield return fixedWait;
@@ -453,7 +471,8 @@ namespace FerramAerospaceResearch.KspTests
                 }
             Hyper(ctx, false);
             StandardDay(ctx, null);
-            File.WriteAllText(Path.Combine(ctx.ResultsDir, "captive.csv"), csv.ToString());
+            WaterParams.Restore();
+            File.WriteAllText(Path.Combine(ctx.ResultsDir, $"captive-{FlightGlobals.ActiveVessel.vesselName}.csv"), csv.ToString());
             Ctrl.SetThrottle(0f);
             Ctrl.Neutral();
         }
@@ -476,7 +495,14 @@ namespace FerramAerospaceResearch.KspTests
         /// </summary>
         [UITest(Kind = "Measure", Explicit = true, Mods = Mods, StartsAt = StartState.Flight, Craft = Craft, CraftDir = "SPH",
                 LaunchSite = "Runway", TimeoutSec = 1200)]
-        public static IEnumerator Takeoff_C172Floatplane(TestContext ctx)
+        public static IEnumerator Takeoff_C172Floatplane(TestContext ctx) => Takeoff(ctx);
+
+        /// <summary>Takeoff_C172Floatplane with each float three parts.</summary>
+        [UITest(Kind = "Measure", Explicit = true, Mods = Mods, StartsAt = StartState.Flight, Craft = SplitCraft, CraftDir = "SPH",
+                LaunchSite = "Runway", TimeoutSec = 1200)]
+        public static IEnumerator Takeoff_C172FloatplaneSplit(TestContext ctx) => Takeoff(ctx);
+
+        private static IEnumerator Takeoff(TestContext ctx)
         {
             double weightLb = ctx.ParamDouble("weightLb", 2220);
             // supplement Fig. 4-3, sea level, 59 F, no wind: water run, to clear 50 ft (ft), IAS at 50 ft (mph)
@@ -495,6 +521,7 @@ namespace FerramAerospaceResearch.KspTests
 
             Hyper(ctx, false);
             StandardDay(ctx, null);
+            WaterParams.Restore();
             yield return Wait.Seconds(5);
             Plane p = null;
             foreach (object o in Prepare(ctx, r => p = r, weightLb * Lb))
@@ -520,9 +547,20 @@ namespace FerramAerospaceResearch.KspTests
             double t0 = Planetarium.GetUniversalTime(), peak = -90, lastPitch = 0, lastRoll = 0, lastHdg = 0, x = 0, integral = 0;
             int steps = 0;
             double runX = double.NaN, runT = double.NaN, obstacleX = double.NaN, obstacleT = double.NaN, airborneSince = double.NaN;
+            // floats of several parts: how far their joints bend them (rigidFloats=true: put back in shape every step)
+            bool rigidFloats = ctx.Param("rigidFloats") == "true";
+            double bendDeg = 0, bendM = 0;
             while (Planetarium.GetUniversalTime() - t0 < 150 && double.IsNaN(obstacleX) && !(phase == "hump" && Planetarium.GetUniversalTime() - t0 > 40))
             {
                 double t = Planetarium.GetUniversalTime() - t0, dt = TimeWarp.fixedDeltaTime;
+                foreach (HullParts f in p.Floats.Where(f => f.Parts.Length > 1))
+                {
+                    (double d, double m) fb = f.Bend();
+                    bendDeg = Math.Max(bendDeg, fb.d);
+                    bendM = Math.Max(bendM, fb.m);
+                    if (rigidFloats)
+                        f.Snap();
+                }
                 up = v.upAxis;
                 Vector3 fwd = p.Root.transform.up, right = p.Root.transform.right;
                 double pitch = Math.Asin(Mathf.Clamp(Vector3.Dot(fwd, up), -1, 1)) * 180 / Math.PI;
@@ -532,8 +570,8 @@ namespace FerramAerospaceResearch.KspTests
                 lastPitch = pitch; lastRoll = roll; lastHdg = hdg;
                 double V = v.srfSpeed, ias = v.indicatedAirSpeed;
                 x += Vector3.ProjectOnPlane(v.srf_velocity, up).magnitude * dt;     // the run over the surface (the floating origin moves)
-                bool wet = p.Floats.Any(f => f.submergedPortion > 0);
-                double keelAlt = p.Floats.Min(f => FlightGlobals.getAltitudeAtPos(f.transform.TransformPoint(StepKeel), body));
+                bool wet = p.Floats.Any(f => f.Parts.Any(q => q.submergedPortion > 0));
+                double keelAlt = p.Floats.Min(f => FlightGlobals.getAltitudeAtPos(f.TransformPoint(StepKeel), body));
 
                 // the pilot
                 double target;
@@ -606,23 +644,22 @@ namespace FerramAerospaceResearch.KspTests
                 }
                 // the water's force on the floats: up, and its drag along the run
                 Vector3 water = Vector3.zero;
-                foreach (Part f in p.Floats)
-                {
-                    var hd = f.Modules.GetModule<FARAeroComponents.FARAeroPartModule>()?.Hydrodynamics;
-                    if (hd != null)
-                        water += hd.LastForce + hd.LastHydrostaticForce;
-                }
+                foreach (HullParts f in p.Floats)
+                    water += f.Sum(x => x.LastForce + x.LastHydrostaticForce);
                 Vector3 runDir = Vector3.ProjectOnPlane(v.srf_velocity, up).normalized;
                 csv.AppendLine(string.Join(",", F(t), F(x), F(V), F(ias / Mph), F(pitch), F(roll), F(hdg), F(keelAlt), wet ? "1" : "0", phase, F(elevator),
-                                           F(p.Get("propRPM")), F(p.Get("propThrust") / 4.448e-3), F(p.Floats.Max(f => f.rb.drag)), F(aeroMoment), F(q),
+                                           F(p.Get("propRPM")), F(p.Get("propThrust") / 4.448e-3), F(p.Floats.Max(f => f.Ref.rb.drag)), F(aeroMoment), F(q),
                                            F(aeroLift), F(aeroDrag), F(Vector3.Dot(water, up)), F(-Vector3.Dot(water, runDir))));
                 yield return fixedWait;
             }
             Hyper(ctx, false);
             StandardDay(ctx, null);
-            File.WriteAllText(Path.Combine(ctx.ResultsDir, "takeoff.csv"), csv.ToString());
+            WaterParams.Restore();
+            File.WriteAllText(Path.Combine(ctx.ResultsDir, $"takeoff-{FlightGlobals.ActiveVessel.vesselName}.csv"), csv.ToString());
             Ctrl.SetThrottle(0f);
             Ctrl.Neutral();
+            if (p.Floats.Any(f => f.Parts.Length > 1))
+                ctx.Record("float bend", $"the joints bent the floats up to {bendDeg:F3} deg, {bendM * 1000:F1} mm" + (rigidFloats ? " in a step (put back every step)" : ""));
             ctx.Record("takeoff", $"{weightLb:F0} lb: water run {runX / Ft:F0} ft in {runT:F1} s (supplement {book.run:F0} ft), to 50 ft {obstacleX / Ft:F0} ft " +
                                   $"in {obstacleT:F1} s (supplement {book.obstacle:F0} ft at {book.ias50:F0} mph); peak hump pitch {peak:F1} deg");
             Assert.True(!double.IsNaN(runX), "off the water");
@@ -649,6 +686,7 @@ namespace FerramAerospaceResearch.KspTests
         {
             Vessel v = FlightGlobals.ActiveVessel;
             StandardDay(ctx, v.mainBody);
+            WaterParams.Apply(ctx);
             var p = new Plane { V = v, Root = v.rootPart };
             p.Engine = v.parts.FirstOrDefault(q => q.Modules.Contains("ModuleEnginesAJEPropeller"));
             Assert.True(p.Engine != null, "the O-320 (AJE propeller engine) is on the craft");
@@ -656,10 +694,13 @@ namespace FerramAerospaceResearch.KspTests
             // the fuel: the tank inside the fuselage (B9's wing panels hold fuel too)
             p.Fuel = v.parts.FirstOrDefault(q => q != p.Root && q.partInfo.name == "proceduralTankLiquid" && q.Resources.Contains("LiquidFuel"));
             Assert.True(p.Fuel != null, "a fuel tank");
-            // the floats: the Spines as long as the float (crafts/edo_float.py: 16.05 ft)
-            p.Floats = v.parts.Where(q => q.Modules.Contains("ProceduralShapeSpine") &&
-                                          Math.Abs(Convert.ToSingle(q.Modules["ProceduralShapeSpine"].Fields.GetValue("length")) - FloatLength) < 0.05f).ToArray();
+            // the floats: the structural Spines along the fuselage (the struts stand across it), one part or several end to
+            // end, each as long as the float (crafts/edo_float.py: 16.05 ft)
+            p.Floats = HullParts.Find(v, q => q != p.Root && q.partInfo.name == "proceduralStructural" &&
+                                              Math.Abs(Vector3.Dot(q.transform.up, p.Root.transform.up)) > 0.99f).ToArray();
             Assert.True(p.Floats.Length == 2, $"two floats ({p.Floats.Length})");
+            ctx.Record("floats", string.Join("; ", p.Floats.Select(f => $"{f.Parts.Length} part(s), {f.Length:F3} m")));
+            Assert.True(p.Floats.All(f => Math.Abs(f.Length - FloatLength) < 0.05), $"floats {FloatLength} m long");
 
             // weight: everything as built and emptied (but electric charge and air), the fuel making up the gross
             foreach (PartResource res in v.parts.SelectMany(q => q.Resources.Cast<PartResource>()))
@@ -697,8 +738,8 @@ namespace FerramAerospaceResearch.KspTests
             }
             Vector3 cg = p.Root.transform.InverseTransformPoint(WorldCoM(v));
             ctx.Record("cg", $"local y {cg.y:F3} m (target {CgLocalY:F3}: 28.4% MAC), {-cg.z:F3} m above the fuselage axis; fuel tank CoM offset {p.Fuel.CoMOffset}; " +
-                             "steps " + string.Join(", ", p.Floats.Select(f => $"{p.Root.transform.InverseTransformPoint(f.transform.TransformPoint(StepKeel)).y - cg.y:F3}")) +
-                             " m ahead of it (generator: -0.234), float origins " + string.Join(", ", p.Floats.Select(f => $"{p.Root.transform.InverseTransformPoint(f.transform.position)}")));
+                             "steps " + string.Join(", ", p.Floats.Select(f => $"{p.Root.transform.InverseTransformPoint(f.TransformPoint(StepKeel)).y - cg.y:F3}")) +
+                             " m ahead of it (generator: -0.234), float origins " + string.Join(", ", p.Floats.Select(f => $"{p.Root.transform.InverseTransformPoint(f.Position)}")));
 
             // FAR's surfaces: area by kind (the wing high, the tail aft, the fin upright), control surfaces
             double wing = 0, tail = 0, fin = 0;
@@ -736,7 +777,7 @@ namespace FerramAerospaceResearch.KspTests
             Vector3 h = Vector3.ProjectOnPlane(p.Root.transform.up, up).normalized;
             Flight.PointAtAoA(0, h, up);
             yield return new WaitForFixedUpdate();
-            double keelAlt = p.Floats.Min(f => FlightGlobals.getAltitudeAtPos(f.transform.TransformPoint(StepKeel), v.mainBody));
+            double keelAlt = p.Floats.Min(f => FlightGlobals.getAltitudeAtPos(f.TransformPoint(StepKeel), v.mainBody));
             v.SetPosition(v.vesselTransform.position + (Vector3d)up * (-0.30 - keelAlt));
             foreach (Part q in v.parts)
             {

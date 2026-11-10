@@ -17,7 +17,9 @@ The centre of gravity is the test's to set (FloatplaneTests: the fuel and the fu
 mid-range, 28.4% MAC); its station here, for placing the floats, is that share of the wing's MAC as build.py lays the
 wing out (the root panel's chord at its origin).
 
-    python c172_floatplane.py AIRFRAME.craft      writes Cessna 172M Floatplane.craft beside this script
+    python c172_floatplane.py AIRFRAME.craft          writes Cessna 172M Floatplane.craft beside this script
+    python c172_floatplane.py AIRFRAME.craft split    writes Cessna 172M Floatplane Split.craft: each float three parts
+                                                      (split_hull.py), cut at station 3 and at the step (FLOAT_CUTS)
 """
 import math
 import os
@@ -30,6 +32,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import craftio as cio  # noqa: E402
 
 import edo_float  # noqa: E402
+import split_hull  # noqa: E402
 from spine_loft import spine_module  # noqa: E402
 
 IN = 0.0254
@@ -40,6 +43,7 @@ FLOAT_SPACING = 88 * IN
 DECK_BELOW_BELLY = 30 * IN
 STEP_AFT_OF_CG = 0.36 * 2.128 * 0.3048       # 0.36 beam over the spray strips
 CG_MAC = 0.284
+FLOAT_CUTS = ("3", "10 fwd")                  # split floats: cut at these stations (the bow piece, forebody, afterbody)
 MAC = 58.8 * IN                               # the 172's (its leading edge the wing's root leading edge)
 ENGINE_S = 0.40                               # m aft of the nose: the engine part inside the cowling
 STRUT = (0.10, 0.04)                          # m: a strut's chord and thickness
@@ -326,12 +330,14 @@ def plain_controls(parts):
 
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
+    split = len(sys.argv) > 2 and sys.argv[2] == "split"
+    ship = "Cessna 172M Floatplane Split" if split else "Cessna 172M Floatplane"
     text = open(sys.argv[1], encoding="utf-8").read().replace("\r\n", "\n")
     head, parts = cio.split_parts(text)
-    head = re.sub(r"(?m)^ship = .*$", "ship = Cessna 172M Floatplane", head)
+    head = re.sub(r"(?m)^ship = .*$", "ship = " + ship, head)
     head = re.sub(r"(?m)^description = .*$", "description = The Cessna 172M on EDO 89-2000 floats for FAR's water tests "
                   "(crafts/c172_floatplane.py): Lycoming O-320-E2D on the 80 x 42 seaplane propeller (AJE), NACA 57-B-5 "
-                  "floats at the EDO's size", head)
+                  "floats at the EDO's size" + ("; each float three parts (split_hull.py)" if split else ""), head)
 
     # the wheels off
     gear = [cio.part_id(b) for b in parts if cio.part_id(b).startswith("KF-")]
@@ -401,12 +407,19 @@ def main():
         fname = "proceduralStructural_%d" % pid
         fpos = np.array([x, deck, z_float])
         fb = structural(fus, fname, pid, float_spine, fpos, Q_UP, struts[0])
-        new.append(fb)
-        new[-3] = cio.add_links(new[-3], [fname])               # the front strut carries the float
+        if split:
+            cuts = [1 - x / s.LENGTH_IN for name, x, _, _ in s.STATIONS if name in FLOAT_CUTS]
+            pieces = split_hull.split_part(fb, cuts, pid, parent=(struts[0][1], struts[0][2]))
+            pid += len(pieces)
+            new.extend(b for b, _ in pieces)
+            new[-2 - len(pieces)] = cio.add_links(new[-2 - len(pieces)], [fname])   # the front strut carries it
+        else:
+            new.append(fb)
+            new[-3] = cio.add_links(new[-3], [fname])               # the front strut carries the float
 
     parts[0] = cio.add_links(parts[0], links)
     out = head + "".join(parts + new)
-    path = os.path.join(here, "Cessna 172M Floatplane.craft")
+    path = os.path.join(here, ship + ".craft")
     open(path, "w", encoding="utf-8", newline="\n").write(out)
     print(f"wrote {path}: {len(parts) + len(new)} parts")
 

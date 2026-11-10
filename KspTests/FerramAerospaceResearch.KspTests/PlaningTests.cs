@@ -26,7 +26,9 @@ namespace FerramAerospaceResearch.KspTests
         /// are averaged: the tow force (mass times the speed lost per step), the air's share of it (FAR's API on the
         /// same attitude in air), trim, keel depth at the transom, buoyancy and FAR's vertical force.
         /// Writes planing-{vessel}.csv (a row a speed) and planing-steps-{vessel}.csv (every step).
-        /// Parameters: mass (t), lcg (m from the transom), cgHeight (m above the bottom), speeds (m/s, + separated).
+        /// Parameters: mass (t), lcg (m from the transom), cgHeight (m above the bottom), speeds (m/s, + separated),
+        /// rigid (default true: a hull of several parts put back in its built shape every step, so its joints don't bend
+        /// it; the bend they would have put in it each step is recorded).
         /// </summary>
         [UITest(Kind = "Measure", StartsAt = StartState.Flight, Craft = Box, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 1500)]
         public static IEnumerator Tow_PlaningBox(TestContext ctx) => Tow(ctx, 2, 8, 2, new Rest(32.0, 0.250, 2.68), false);
@@ -52,6 +54,25 @@ namespace FerramAerospaceResearch.KspTests
                 StartsAt = StartState.Flight, Craft = VHull, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 1500)]
         public static IEnumerator Tow_PlaningVHull(TestContext ctx) => Tow(ctx, 2, 8, 0.6, new Rest(26.03, 0.493, 0.70), true);
 
+        // the same hulls split into three parts each (crafts/split_hull.py, cut at 35% and 70% of the length from the
+        // transom): towed and checked as the one-part hulls are; FAR's water should not tell them apart
+        private const string SplitMods = @"..\..\..\CustomProceduralParts\GameData\CustomProceduralParts";
+
+        /// <summary>Tow_PlaningBox on Planing Box Split (three prisms end to end).</summary>
+        [UITest(Kind = "Measure", Explicit = true, StartsAt = StartState.Flight, Craft = Box + " Split", CraftDir = "SPH",
+                LaunchSite = "Runway", TimeoutSec = 1500)]
+        public static IEnumerator Tow_PlaningBoxSplit(TestContext ctx) => Tow(ctx, 2, 8, 2, new Rest(32.0, 0.250, 2.68), false);
+
+        /// <summary>Tow_PlaningHull on Planing Hull Split (three Spines end to end).</summary>
+        [UITest(Kind = "Measure", Explicit = true, Mods = SplitMods, StartsAt = StartState.Flight, Craft = Hull + " Split", CraftDir = "SPH",
+                LaunchSite = "Runway", TimeoutSec = 1500)]
+        public static IEnumerator Tow_PlaningHullSplit(TestContext ctx) => Tow(ctx, 2, 8, 0.5, new Rest(28.40, 0.323, 0.33), false);
+
+        /// <summary>Tow_PlaningVHull on Planing V Hull Split (three Spines end to end).</summary>
+        [UITest(Kind = "Measure", Explicit = true, Mods = SplitMods, StartsAt = StartState.Flight, Craft = VHull + " Split", CraftDir = "SPH",
+                LaunchSite = "Runway", TimeoutSec = 1500)]
+        public static IEnumerator Tow_PlaningVHullSplit(TestContext ctx) => Tow(ctx, 2, 8, 0.6, new Rest(26.03, 0.493, 0.70), true);
+
         /// <summary>
         /// A hull at rest at 4 t with its CG 3 m from the transom, by hand (sections integrated along the length): its
         /// volume (m3), the keel's depth below the water at the middle of its length (m) and its trim (deg, bow up).
@@ -67,6 +88,17 @@ namespace FerramAerospaceResearch.KspTests
         private static IEnumerator Tow(TestContext ctx, double beam, double length, double bowDepthOfHull, Rest rest, bool vKeel)
         {
             double massT = ctx.ParamDouble("mass", 4.0), lcg = ctx.ParamDouble("lcg", 3.0), cgHeight = ctx.ParamDouble("cgHeight", 0.5);
+            bool rigid = ctx.Param("rigid") != "false";
+            WaterParams.Apply(ctx);
+            double bendDeg = 0, bendM = 0;
+            void Hold(Vessel vs, Part reference)
+            {
+                (double d, double m) b = RigidVessel.Bend(vs, reference);
+                bendDeg = Math.Max(bendDeg, b.d);
+                bendM = Math.Max(bendM, b.m);
+                if (rigid)
+                    RigidVessel.Snap(vs, reference);
+            }
             double[] speeds = ctx.ParamList("speeds", "2+3+4+5+6+8+10+12+14+16+18+20").Select(s => double.Parse(s, CultureInfo.InvariantCulture)).ToArray();
             bool hydroWas = Settings.FARSettings.Hydrodynamics;
             string hydro = ctx.Param("hydro");
@@ -81,19 +113,22 @@ namespace FerramAerospaceResearch.KspTests
 
             yield return Wait.Seconds(5);
             Vessel v = FlightGlobals.ActiveVessel;
-            Part hull = v.rootPart;
-            Assert.True(v.parts.Count == 1, $"the hull is one part ({v.parts.Count})");
+            HullParts hull = HullParts.Whole(v);
+            ctx.Record("parts", $"{hull.Parts.Length}: " + string.Join(", ", hull.Parts.Select(q => $"{q.partInfo.name} at {hull.InverseTransformPoint(q.transform.position).y:F3}")) +
+                                $", {hull.Length:F3} m long");
 
-            // mass: tank emptied, then filled with liquid fuel to the mass asked for
-            foreach (PartResource r in hull.Resources)
+            // mass: tanks emptied, then filled with liquid fuel to the mass asked for (each tank its share of the room)
+            foreach (PartResource r in hull.Parts.SelectMany(q => q.Resources.Cast<PartResource>()))
                 r.amount = 0;
             yield return Wait.Frames(2);
-            double dry = hull.mass;
-            PartResource lf = hull.Resources.Get("LiquidFuel");
-            Assert.True(lf != null, "the hull tank holds liquid fuel");
-            double add = (massT - dry) / lf.info.density;
-            Assert.True(add >= 0 && add <= lf.maxAmount, $"{massT} t reachable: dry {dry:F3} t, {lf.maxAmount:F0} units of {lf.info.density} t");
-            lf.amount = add;
+            double dry = hull.Parts.Sum(q => q.mass);
+            PartResource[] lfs = hull.Parts.Select(q => q.Resources.Get("LiquidFuel")).ToArray();
+            Assert.True(lfs.All(r => r != null), "the hull's tanks hold liquid fuel");
+            double room = lfs.Sum(r => r.maxAmount), density = lfs[0].info.density;
+            double add = (massT - dry) / density;
+            Assert.True(add >= 0 && add <= room, $"{massT} t reachable: dry {dry:F3} t, {room:F0} units of {density} t");
+            foreach (PartResource r in lfs)
+                r.amount = add * r.maxAmount / room;
             yield return Wait.Frames(2);
 
             bool crashWas = CheatOptions.NoCrashDamage;
@@ -107,23 +142,46 @@ namespace FerramAerospaceResearch.KspTests
                 CelestialBody body = v.mainBody;
                 Assert.True(body.ocean, "over the sea");
                 double rho = body.oceanDensity * 1000;   // t/m3 -> kg/m3
-                Rigidbody rb = hull.rb;
+                hull = HullParts.Whole(v);
+                Rigidbody rb = hull.Ref.rb;
 
                 // the hull's axes: bow is the part's +y (its long axis, nose of a craft built along the SPH);
                 // its bottom is whichever of +-x, +-z points down
                 Vector3 up = v.upAxis;
-                Vector3 h = Vector3.ProjectOnPlane(hull.transform.up, up).normalized;
+                Vector3 h = Vector3.ProjectOnPlane(hull.Forward, up).normalized;
                 Vector3 localDown;
                 if (vKeel)
-                    localDown = PlaningVideoTests.KeelAxis(hull);
+                    localDown = PlaningVideoTests.KeelAxis(hull.Ref);
                 else
-                    localDown = Quantize(hull.transform.InverseTransformDirection(-up));
+                    localDown = Quantize(hull.Ref.transform.InverseTransformDirection(-up));
                 ctx.Record("hull", $"local down {localDown}, ocean density {body.oceanDensity} t/m3, g {body.GeeASL * 9.80665:F3} m/s2, " +
                                    $"mass {v.GetTotalMass():F3} t (dry {dry:F3}), C_Delta {v.GetTotalMass() * 1000 / (rho * beam * beam * beam):F3}");
 
                 // CG: lcg from the transom (local y = -length/2), cgHeight above the bottom
-                hull.CoMOffset = new Vector3(0, (float)(lcg - length / 2), 0) + localDown * (float)(beam / 2 - cgHeight);
-                rb.centerOfMass = hull.CoMOffset;
+                Vector3 cgLocal = new Vector3(0, (float)(lcg - length / 2), 0) + localDown * (float)(beam / 2 - cgHeight);
+                hull.SetCoM(v, cgLocal);
+
+                // FAR's voxel model of it: its length and largest cross-section (one hull: 8 m and its section's area)
+                var fva = v.GetComponent<FARAeroComponents.FARVesselAero>();
+                ctx.Record("voxel", $"FAR's model {fva.Length:F3} m long, largest section {fva.MaxCrossSectionArea:F3} m2");
+
+                // held still in the air first: the moment on it about its CoM (its angular momentum gained each step, then
+                // taken out), which with gravity alone is nothing
+                {
+                    Vector3 sideA = Vector3.Cross(up, h).normalized;
+                    var airM = new List<double>();
+                    double ta = Planetarium.GetUniversalTime();
+                    while (Planetarium.GetUniversalTime() - ta < 3)
+                    {
+                        Vector3 l = RigidVessel.AngularMomentum(v);
+                        if (Planetarium.GetUniversalTime() - ta > 1)
+                            airM.Add(Vector3.Dot(l, sideA) / TimeWarp.fixedDeltaTime);
+                        Hold(v, hull.Ref);
+                        RigidVessel.Set(v, Vector3.zero, Vector3.zero);
+                        yield return new WaitForFixedUpdate();
+                    }
+                    ctx.Record("air", $"held still in the air: moment about the CoM {airM.Average():F4} kN m (sd {Sd(airM):F4}; bow down +)");
+                }
 
                 // level on the water at the tow speed, floating at its static draft
                 double draft = v.GetTotalMass() * 1000 / (rho * beam * length);
@@ -138,11 +196,7 @@ namespace FerramAerospaceResearch.KspTests
                 }
                 double centerAlt = beam / 2 - draft;
                 v.SetPosition(v.vesselTransform.position + (Vector3d)up * (centerAlt - v.altitude));
-                foreach (Part p in v.parts)
-                {
-                    p.rb.velocity = Vector3.zero;
-                    p.rb.angularVelocity = Vector3.zero;
-                }
+                RigidVessel.Set(v, Vector3.zero, Vector3.zero);
 
                 var steps = new StringBuilder("V,t,tow_kN,air_kN,trim_deg,transomDepth_m,bowDepth_m,buoyUp_kN,farUp_kN,farAlong_kN,rbDrag,submerged,comOffsetY," +
                                               "hydroUp_kN,hydroDrag_kN,momUp_kN,momDrag_kN,crossUp_kN,friction_kN,impact_kN,wetLength_m,planform_m2,limiter,hydrostaticUp_kN\n");
@@ -150,35 +204,73 @@ namespace FerramAerospaceResearch.KspTests
                                              "hydroUp_kN,hydroDrag_kN,wetLength_m,limiter\n");
                 var fixedWait = new WaitForFixedUpdate();
                 double g = body.GeeASL * 9.80665, weightKN = v.GetTotalMass() * g;
-                var aeroModule = hull.Modules.GetModule<FARAeroComponents.FARAeroPartModule>();
+                var aeroModules = hull.Parts.Select(q => q.Modules.GetModule<FARAeroComponents.FARAeroPartModule>()).Where(a => a != null).ToArray();
 
                 // at rest first: the setup the tow stands on (mass, volume, draft, trim) against the hand calculation
                 ctx.Step("at rest");
                 double tr0 = Planetarium.GetUniversalTime();
                 var restKeel = new List<double>(); var restTrim = new List<double>(); var restBuoy = new List<double>();
+                var restCom = new List<double>(); var restCb = new List<double>(); var restDyn = new List<double>();
+                var restMeas = new List<double>(); var restPerPart = new List<string>();
+                double lSet = double.NaN;
                 Vector3 sideAxis = Vector3.Cross(up, h).normalized;
                 while (Planetarium.GetUniversalTime() - tr0 < 12)
                 {
-                    rb.velocity = up * Vector3.Dot(rb.velocity, up);
-                    rb.angularVelocity = sideAxis * Vector3.Dot(rb.angularVelocity, sideAxis);
+                    // the moment that acted over the last step: the angular momentum it put on the hull since the hold
+                    double lNow = Vector3.Dot(RigidVessel.AngularMomentum(v), sideAxis);
+                    double measured = double.IsNaN(lSet) ? double.NaN : (lNow - lSet) / TimeWarp.fixedDeltaTime;
+                    bool freeRest = ctx.Param("freeRest") == "true" && Planetarium.GetUniversalTime() - tr0 > 2;   // left alone after 2 s
+                    if (!freeRest)
+                        Hold(v, hull.Ref);
+                    if (!freeRest)
+                        RigidVessel.Set(v, up * Vector3.Dot(RigidVessel.Velocity(v), up), sideAxis * Vector3.Dot(RigidVessel.AngularVelocity(v), sideAxis));
+                    lSet = Vector3.Dot(RigidVessel.AngularMomentum(v), sideAxis);
                     if (Planetarium.GetUniversalTime() - tr0 > 8)
                     {
-                        restKeel.Add(beam / 2 - FlightGlobals.getAltitudeAtPos(hull.transform.position, body));
-                        restTrim.Add(Math.Asin(Mathf.Clamp(Vector3.Dot(hull.transform.up, up), -1, 1)) * 180 / Math.PI);
-                        restBuoy.Add(Vector3.Dot((hull.partBuoyancy != null ? hull.partBuoyancy.effectiveForce : Vector3.zero) +
-                                                 (aeroModule?.Hydrodynamics?.LastHydrostaticForce ?? Vector3.zero), up));
+                        if (!double.IsNaN(measured))
+                            restMeas.Add(measured);
+                        restKeel.Add(beam / 2 - FlightGlobals.getAltitudeAtPos(hull.Position, body));
+                        restTrim.Add(Math.Asin(Mathf.Clamp(Vector3.Dot(hull.Forward, up), -1, 1)) * 180 / Math.PI);
+                        restBuoy.Add(Vector3.Dot(hull.StockBuoyancy + hull.Sum(x => x.LastHydrostaticForce), up));
+                        // the CoM along the hull, and where the water's pressure acts (its moment about the CoM over its lift)
+                        Vector3 com = RigidVessel.CoM(v), moment = Vector3.zero, lift = Vector3.zero, dyn = Vector3.zero;
+                        foreach (Part q in hull.Parts)
+                        {
+                            var hq = q.Modules.GetModule<FARAeroComponents.FARAeroPartModule>()?.Hydrodynamics;
+                            if (hq == null || q.rb == null)
+                                continue;
+                            moment += hq.LastHydrostaticTorque + Vector3.Cross(q.rb.worldCenterOfMass - com, hq.LastHydrostaticForce);
+                            lift += hq.LastHydrostaticForce;
+                            dyn += hq.LastTorque + Vector3.Cross(q.rb.worldCenterOfMass - com, hq.LastForce);
+                        }
+                        restCom.Add(hull.InverseTransformPoint(com).y);
+                        restCb.Add(-Vector3.Dot(moment, sideAxis) / Math.Max(1e-6, Vector3.Dot(lift, up)));
+                        restDyn.Add(Vector3.Dot(dyn, sideAxis));
+                        if (restPerPart.Count == 0)
+                            foreach (Part q in hull.Parts)
+                            {
+                                var hq = q.Modules.GetModule<FARAeroComponents.FARAeroPartModule>()?.Hydrodynamics;
+                                Vector3 m = hq == null ? Vector3.zero : hq.LastHydrostaticTorque + Vector3.Cross(q.rb.worldCenterOfMass - com, hq.LastHydrostaticForce);
+                                restPerPart.Add($"{q.partInfo.name} at {hull.InverseTransformPoint(q.transform.position).y:F2}: mass {q.rb.mass * 1000:F0} kg, " +
+                                                $"CoM {hull.InverseTransformPoint(q.rb.worldCenterOfMass).y:F3}, pressure up {Vector3.Dot(hq?.LastHydrostaticForce ?? Vector3.zero, up):F3} kN, " +
+                                                $"its moment about the CoM {Vector3.Dot(m, sideAxis):F3} kN m, stock buoyancy {(q.partBuoyancy != null ? Vector3.Dot(q.partBuoyancy.effectiveForce, up) : 0):F3} kN " +
+                                                $"(part.buoyancy {q.buoyancy:F2}), rb drag {q.rb.drag:F3} angular {q.rb.angularDrag:F3}, submerged {q.submergedPortion:F3}");
+                            }
                     }
                     yield return fixedWait;
                 }
-                FARAeroComponents.PartHydrodynamics hdRest = aeroModule?.Hydrodynamics;
-                bool ownsBuoyancy = Settings.FARSettings.Hydrodynamics && hdRest != null && hdRest.OwnsBuoyancy;
+                ctx.Record("rest parts", string.Join("; ", restPerPart));
+                bool ownsBuoyancy = Settings.FARSettings.Hydrodynamics && hull.OwnsBuoyancy;
+                double meshVolume = hull.MeshVolume;
                 bool defaults = Math.Abs(massT - 4.0) < 1e-6 && Math.Abs(lcg - 3.0) < 1e-6;
                 ctx.Record("rest", $"keel {restKeel.Average():F3} m deep at the middle (hand {rest.Keel:F3}), trim {restTrim.Average():F2} deg (hand {rest.Trim:F2}), " +
-                                   $"buoyancy {restBuoy.Average():F2} kN of {weightKN:F2}, " +
-                                   (ownsBuoyancy ? $"FAR's, mesh volume {hdRest.MeshVolume:F2} m3 (hand {rest.Volume:F2})" : "stock's"));
+                                   $"buoyancy {restBuoy.Average():F2} kN of {weightKN:F2}, CoM at {restCom.Average():F4} m along the hull " +
+                                   $"(set {cgLocal.y:F4}), the pressure's line {restCb.Average():F4} m ahead of it, the other water forces' " +
+                                   $"moment about it {restDyn.Average():F3} kN m (bow down +), the moment that acted {restMeas.Average():F3} kN m, " +
+                                   (ownsBuoyancy ? $"FAR's, mesh volume {meshVolume:F2} m3 (hand {rest.Volume:F2})" : "stock's"));
                 if (ownsBuoyancy)
                 {
-                    Assert.True(Math.Abs(hdRest.MeshVolume / rest.Volume - 1) < 0.01, $"mesh volume {hdRest.MeshVolume:F2} m3 within 1% of {rest.Volume:F2}");
+                    Assert.True(Math.Abs(meshVolume / rest.Volume - 1) < 0.01, $"mesh volume {meshVolume:F2} m3 within 1% of {rest.Volume:F2}");
                     if (defaults)
                     {
                         Assert.True(Math.Abs(restKeel.Average() - rest.Keel) < 0.02, $"rest keel {restKeel.Average():F3} m within 2 cm of {rest.Keel:F3}");
@@ -201,24 +293,24 @@ namespace FerramAerospaceResearch.KspTests
                     {
                         // after the physics step: what the tow line had to give back, then the tow speed restored
                         double dt = TimeWarp.fixedDeltaTime, m = v.GetTotalMass();
-                        Vector3 vel = rb.velocity;
+                        Vector3 vel = RigidVessel.Velocity(v);
                         double along = Vector3.Dot(vel, h);
                         double towKN = m * (setAlong - along) / dt;
                         Vector3 side = Vector3.Cross(up, h).normalized;
                         Vector3 vert = up * Vector3.Dot(vel, up);
-                        rb.velocity = vert + h * (float)V;
+                        Hold(v, hull.Ref);
+                        RigidVessel.Set(v, vert + h * (float)V, side * Vector3.Dot(RigidVessel.AngularVelocity(v), side));
                         setAlong = V;
-                        rb.angularVelocity = side * Vector3.Dot(rb.angularVelocity, side);
 
                         double t = Planetarium.GetUniversalTime() - t0;
-                        Vector3 fwd = hull.transform.up;
+                        Vector3 fwd = hull.Forward;
                         double trimDeg = Math.Asin(Mathf.Clamp(Vector3.Dot(fwd, up), -1, 1)) * 180 / Math.PI;
-                        double depthT = -FlightGlobals.getAltitudeAtPos(hull.transform.TransformPoint(stern), body);
-                        double depthB = -FlightGlobals.getAltitudeAtPos(hull.transform.TransformPoint(bow), body);
-                        double buoyUp = Vector3.Dot((hull.partBuoyancy != null ? hull.partBuoyancy.effectiveForce : Vector3.zero) + (hull.Modules.GetModule<FARAeroComponents.FARAeroPartModule>()?.Hydrodynamics?.LastHydrostaticForce ?? Vector3.zero), up);
-                        var aero = aeroModule;
-                        double farUpKN = aero != null ? Vector3.Dot(aero.worldSpaceAeroForce, up) : double.NaN;
-                        double farAlongKN = aero != null ? -Vector3.Dot(aero.worldSpaceAeroForce, h) : double.NaN;
+                        double depthT = -FlightGlobals.getAltitudeAtPos(hull.TransformPoint(stern), body);
+                        double depthB = -FlightGlobals.getAltitudeAtPos(hull.TransformPoint(bow), body);
+                        double buoyUp = Vector3.Dot(hull.StockBuoyancy + hull.Sum(x => x.LastHydrostaticForce), up);
+                        Vector3 aeroForce = aeroModules.Aggregate(Vector3.zero, (sum, a) => sum + a.worldSpaceAeroForce);
+                        double farUpKN = aeroModules.Length > 0 ? Vector3.Dot(aeroForce, up) : double.NaN;
+                        double farAlongKN = aeroModules.Length > 0 ? -Vector3.Dot(aeroForce, h) : double.NaN;
                         double airKN = double.NaN;
                         if (n % 10 == 0)
                         {
@@ -226,19 +318,20 @@ namespace FerramAerospaceResearch.KspTests
                             airKN = -Vector3.Dot(f, h);
                         }
 
-                        FARAeroComponents.PartHydrodynamics hd = aero?.Hydrodynamics;
-                        double hydroUp = hd != null ? Vector3.Dot(hd.LastForce, up) : 0, hydroDrag = hd != null ? -Vector3.Dot(hd.LastForce, h) : 0;
+                        Vector3 hForce = hull.Sum(x => x.LastForce), hMom = hull.Sum(x => x.LastMomentumForce);
+                        double hydroUp = Vector3.Dot(hForce, up), hydroDrag = -Vector3.Dot(hForce, h);
+                        double sub0 = hull.Submerged;
                         steps.AppendLine(string.Join(",", F(V), F(t), F(towKN), F(airKN), F(trimDeg), F(depthT), F(depthB), F(buoyUp), F(farUpKN), F(farAlongKN),
-                                                     F(rb.drag), F(hull.submergedPortion), F(hull.CoMOffset.y),
+                                                     F(rb.drag), F(sub0), F(hull.InverseTransformPoint(RigidVessel.CoM(v)).y),
                                                      F(hydroUp), F(hydroDrag),
-                                                     F(hd != null ? Vector3.Dot(hd.LastMomentumForce, up) : 0), F(hd != null ? -Vector3.Dot(hd.LastMomentumForce, h) : 0),
-                                                     F(hd != null ? Vector3.Dot(hd.LastCrossflowForce, up) : 0), F(hd != null ? -Vector3.Dot(hd.LastFrictionForce, h) : 0),
-                                                     F(hd != null ? -Vector3.Dot(hd.LastImpactForce, h) : 0), F(hd?.LastWettedLength ?? 0), F(hd?.LastPlanform ?? 0),
-                                                     F(hd?.LastLimiter ?? 1), F(hd != null ? Vector3.Dot(hd.LastHydrostaticForce, up) : 0)));
+                                                     F(Vector3.Dot(hMom, up)), F(-Vector3.Dot(hMom, h)),
+                                                     F(Vector3.Dot(hull.Sum(x => x.LastCrossflowForce), up)), F(-Vector3.Dot(hull.Sum(x => x.LastFrictionForce), h)),
+                                                     F(-Vector3.Dot(hull.Sum(x => x.LastImpactForce), h)), F(hull.WettedLength), F(hull.Planform),
+                                                     F(hull.Limiter), F(Vector3.Dot(hull.Sum(x => x.LastHydrostaticForce), up))));
                         if (t >= 8)
                         {
-                            tow.Add(towKN); trim.Add(trimDeg); dT.Add(depthT); dB.Add(depthB); buoy.Add(buoyUp); farUp.Add(farUpKN); drag.Add(rb.drag); sub.Add(hull.submergedPortion);
-                            hUp.Add(hydroUp); hDrag.Add(hydroDrag); wetL.Add(hd?.LastWettedLength ?? 0); lim.Add(hd?.LastLimiter ?? 1);
+                            tow.Add(towKN); trim.Add(trimDeg); dT.Add(depthT); dB.Add(depthB); buoy.Add(buoyUp); farUp.Add(farUpKN); drag.Add(rb.drag); sub.Add(sub0);
+                            hUp.Add(hydroUp); hDrag.Add(hydroDrag); wetL.Add(hull.WettedLength); lim.Add(hull.Limiter);
                             if (!double.IsNaN(airKN)) air.Add(airKN);
                         }
                         n++;
@@ -250,10 +343,13 @@ namespace FerramAerospaceResearch.KspTests
                     rows.AppendLine(string.Join(",", F(V), F(V / Math.Sqrt(g * beam)), F(R), F(Sd(tow)), F(airMean), F(water), F(water / weightKN), F(tr), F(Sd(trim)),
                                                 F(dT.Average()), F(dB.Average()), F(lambda), F(buoy.Average()), F(farUp.Average()), F(drag.Average()), F(sub.Average()),
                                                 F(hUp.Average()), F(hDrag.Average()), F(wetL.Average()), F(lim.Min())));
+                    ctx.Record($"V{V} aero parts", string.Join("; ", aeroModules.Select(a => $"{a.part.partInfo.name} at {hull.InverseTransformPoint(a.part.transform.position).y:F2}: along {-Vector3.Dot(a.worldSpaceAeroForce, h):F3} up {Vector3.Dot(a.worldSpaceAeroForce, up):F3} kN, submerged {a.part.submergedPortion:F3}")));
                     ctx.Record($"V{V}", $"R {R:F2} kN (sd {Sd(tow):F2}), air {airMean:F2}, water/Delta {water / weightKN:F4}, trim {tr:F2} deg (sd {Sd(trim):F2}), " +
                                         $"transom {dT.Average():F2} m deep, bow {dB.Average():F2}, buoyancy up {buoy.Average():F1} kN, FAR up {farUp.Average():F1} kN, " +
                                         $"hydro up {hUp.Average():F1} kN drag {hDrag.Average():F2} kN, wetted {wetL.Average():F2} m, of {weightKN:F1}");
                 }
+                ctx.Record("bend", $"the joints bent the hull up to {bendDeg:F3} deg, {bendM * 1000:F1} mm " +
+                                   (rigid ? "in a step (put back every step)" : "(left free)"));
                 File.WriteAllText(Path.Combine(ctx.ResultsDir, $"planing-{v.vesselName}.csv"), rows.ToString());
                 File.WriteAllText(Path.Combine(ctx.ResultsDir, $"planing-steps-{v.vesselName}.csv"), steps.ToString());
             }
@@ -263,6 +359,7 @@ namespace FerramAerospaceResearch.KspTests
                 Settings.FARSettings.Hydrodynamics = hydroWas;
                 FARAeroComponents.PartHydrodynamics.AddedMassCoefficient = kaWas;
                 FARAeroComponents.PartHydrodynamics.PlaningBuoyancy = pbWas;
+                WaterParams.Restore();
             }
         }
 
