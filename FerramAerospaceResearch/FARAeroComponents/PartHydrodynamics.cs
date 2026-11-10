@@ -16,6 +16,11 @@ namespace FerramAerospaceResearch.FARAeroComponents
     ///   (N sin tau), and damping of heave and pitch. Each strip's momentum change is spread aft over the rest of the
     ///   wetted run with the flat-plate loading sqrt((1-x)/x), so a chine-wetted plate's center of pressure is a quarter
     ///   of its wetted length behind the spray root (Savitsky's high-speed limit) instead of at it;
+    /// - the flow leaves a bottom that falls away from it going aft (a step, a transom, a rising afterbody): a section
+    ///   whose momentum m_a V is more than SeparationDrop below the run's peak (narrower, or its bottom less steep to the
+    ///   flow) is in the separated, ventilated wake. It takes no momentum (the water keeps what it was given; no
+    ///   suction) and no crossflow pull, and the run's pressure ends ahead of it. It planes again only where it meets
+    ///   the water harder than the run ahead did;
     /// - crossflow drag 1/2 Cd rho w V|V| per strip (damping when U is small);
     /// - impact pressure 1/2 Cp rho vn^2 on steep faces moving into the water (a blunt bow);
     /// - skin friction (ITTC-57) on the wetted area.
@@ -29,6 +34,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
         public static double ImpactPressureCoefficient = 1.0;
         public static double StripLength = 0.25;
         public static double PlaningBuoyancy = 0.5;   // share of the hydrostatic force kept once planing (1: all of it)
+        public static double SeparationDrop = 0.1;    // a section's m_a V this share below the run's peak: flow separated
         // a mesh whose area-weighted normals sum to more than this share of its area is not closed: its hydrostatic
         // pressure would not add up to a buoyancy, and stock's stays
         public const double ClosureTolerance = 0.02;
@@ -62,6 +68,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
             public double Load;          // the normal force it ends up carrying (N)
             public Vector3 Normal, Point;
             public double V, Width;
+            public bool Separated;       // its m_a V well below the run's peak: the flow has left the bottom
         }
 
         // the mesh is closed: its hydrostatic pressure is the part's buoyancy, which replaces stock's (part.buoyancy 0)
@@ -74,6 +81,13 @@ namespace FerramAerospaceResearch.FARAeroComponents
         public Vector3 LastForce, LastMomentumForce, LastFrictionForce, LastImpactForce, LastCrossflowForce, LastHydrostaticForce;
         public double LastWettedArea, LastPlanform, LastWettedLength, LastLimiter = 1;
         public int LastStrips;
+
+        // every strip of the last step, bow first, when RecordStrips is set (tests): its position along the flow from the
+        // wetted bow (m), wetted width (m), added mass per length (kg/m), normal velocity (m/s), momentum jump and the
+        // load it carries (N), whether separated, and the load's point (world)
+        public static bool RecordStrips;
+        public readonly List<(double x, double width, double ma, double v, double jump, double load, bool separated, Vector3 point)> LastStripData =
+            new List<(double, double, double, double, double, double, bool, Vector3)>();
 
         public PartHydrodynamics(Part part)
         {
@@ -358,7 +372,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
             }
 
             // momentum: bow (largest x) to stern; a dry strip ends a wetted run (the flow leaves the bottom)
-            double maPrevV = 0, stiffness = 0;
+            double maPrevV = 0, maVPeak = 0, stiffness = 0;
             Vector3 crossflow = Vector3.zero;
             double ka = AddedMassCoefficient * rho * Math.PI / 2;
             for (int k = nStrips - 1; k >= 0; k--)
@@ -366,7 +380,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 ref Strip s = ref strips[k];
                 if (s.Planform <= 0)
                 {
-                    maPrevV = 0;
+                    maPrevV = maVPeak = 0;
                     continue;
                 }
                 s.Normal = s.NormalSum.normalized;
@@ -377,6 +391,20 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 s.V = Vector3.Dot(rb.GetPointVelocity(s.Point) + frame, s.Normal);
                 double ma = ka * sumHalfWidth2;
                 double maV = ma * s.V;
+                maVPeak = Math.Max(maVPeak, maV);
+                s.Separated = maVPeak > 0 && maV < (1 - SeparationDrop) * maVPeak;
+                if (s.Separated)
+                {
+                    // in the wake: friction and hydrostatics only, and a push into the water
+                    if (s.V > 0)
+                    {
+                        double fin = 0.5 * CrossflowDragIn * rho * s.Width * dx * s.V * s.V;
+                        stiffness += CrossflowDragIn * rho * s.Width * dx * s.V;
+                        s.Load = fin;
+                        crossflow += -s.Normal * (float)fin;
+                    }
+                    continue;
+                }
                 s.Jump = U * (maV - maPrevV);
                 maPrevV = maV;
                 stiffness = Math.Max(stiffness, U * ma);
@@ -387,13 +415,13 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 crossflow += -s.Normal * (float)fcf;
             }
 
-            // spread each jump aft over the rest of its wetted run with the flat-plate loading
+            // spread each jump aft over the rest of its wetted run with the flat-plate loading, to where the flow leaves
             for (int k = nStrips - 1; k >= 0; k--)
             {
                 if (strips[k].Planform <= 0 || strips[k].Jump == 0)
                     continue;
                 int end = k;
-                while (end - 1 >= 0 && strips[end - 1].Planform > 0)
+                while (end - 1 >= 0 && strips[end - 1].Planform > 0 && !strips[end - 1].Separated)
                     end--;
                 int span = k - end + 1;
                 for (int j = k; j >= end; j--)
@@ -409,6 +437,16 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
             Vector3 momentum = Vector3.zero;
             int wetStrips = 0;
+            if (RecordStrips)
+            {
+                LastStripData.Clear();
+                for (int k = nStrips - 1; k >= 0; k--)
+                {
+                    Strip s = strips[k];
+                    if (s.Planform > 0)
+                        LastStripData.Add(((nStrips - 1 - k + 0.5) * dx, s.Width, ka * s.Width * s.Width / 4, s.V, s.Jump, s.Load * limiter, s.Separated, s.Point));
+                }
+            }
             for (int k = 0; k < nStrips; k++)
             {
                 ref Strip s = ref strips[k];
