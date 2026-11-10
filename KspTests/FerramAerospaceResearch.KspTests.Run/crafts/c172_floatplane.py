@@ -11,7 +11,8 @@ the 172M on EDO 89-2000 floats:
 - two floats (edo_float.py: NACA 57-B-5 lines at NACA's own size for a 2220 lb twin-float airplane, 16.05 ft x 24.6 in)
   88 in apart centre to centre, base lines level with the fuselage axis, their decks 30 in below the belly (an estimate
   from photographs), each step 0.36 beam aft of the centre of gravity as NACA set it (TN 1524), each on a front strut
-  with a rear strut beside it.
+  with a rear strut beside it;
+- the 172's wing lift struts (LIFT_STRUT), streamlined Spine parts from the lower fuselage to the wing's lower surface.
 
 The centre of gravity is the test's to set (FloatplaneTests: the fuel and the fuselage's CoM put it at the TCDS's
 mid-range, 28.4% MAC); its station here, for placing the floats, is that share of the wing's MAC as build.py lays the
@@ -21,6 +22,7 @@ wing out (the root panel's chord at its origin).
     python c172_floatplane.py AIRFRAME.craft split    writes Cessna 172M Floatplane Split.craft: each float three parts
                                                       (split_hull.py), cut at station 3 and at the step (FLOAT_CUTS)
 """
+import json
 import math
 import os
 import re
@@ -47,6 +49,14 @@ FLOAT_CUTS = ("3", "10 fwd")                  # split floats: cut at these stati
 MAC = 58.8 * IN                               # the 172's (its leading edge the wing's root leading edge)
 ENGINE_S = 0.40                               # m aft of the nose: the engine part inside the cowling
 STRUT = (0.10, 0.04)                          # m: a strut's chord and thickness
+WING_Z_MIN = -1.0                             # craft z: the wing's panels lie ahead of it, the tail's well aft
+# the wing's lift struts as the three-view draws them (planecraft specs/c172float.json): the wing end 2.29 m out (front
+# view) at station 1.98 m (side view, from the spinner), the body end on the fuselage's side (0.50 m out) at station 1.88,
+# 0.41 m below the body's axis (side view), where the drawing's strut meets the lower fuselage
+LIFT_STRUT = dict(wing_y=2.29, wing_s=1.98, body_y=0.50, body_s=1.88, body_z=-0.41)
+SPEC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "planecraft", "specs",
+                    "c172float.json")
+WING_ROOT_CHORD = 1.634                       # m: the drawing's root chord (build.py's root strip)
 # FAR weighs a wing by its area (FARWingAerodynamicModel): 1014 kg for these panels as built, where the 172's wing and
 # tail are about 115 kg (250 lb): every panel's massMultiplier scaled to that
 WING_MASS_SCALE = 115.0 / 1014.0
@@ -99,7 +109,7 @@ def wing_root_le(parts):
             continue
         pos = [float(v) for v in re.search(r"(?m)^\tpos = (.*)$", b).group(1).split(",")]
         rot = [float(v) for v in re.search(r"(?m)^\trot = (.*)$", b).group(1).split(",")]
-        if pos[1] < 7.0 or abs(rot[0]) < 0.5:          # the wing (the tail sits lower), right-hand (Q_RIGHT)
+        if pos[2] < WING_Z_MIN or abs(rot[0]) < 0.5:   # the wing (the tail lies aft), right-hand (Q_RIGHT)
             continue
         if best is None or pos[0] < best[0][0]:
             best = (pos, b)
@@ -120,6 +130,30 @@ def structural(donor, name, pid, spine, pos, rot, parent):
     b = cio.setf(b, "autostrutMode", "Root")
     b = cio.setf(b, "rigidAttachment", "True")
     return b
+
+
+def frame_q(y_axis, fwd=(0.0, 0.0, 1.0)):
+    """the rotation taking a part's local y to y_axis and its local z as near fwd as it can (x, y, z, w)"""
+    y = np.asarray(y_axis, float) / np.linalg.norm(y_axis)
+    z = np.asarray(fwd, float) - np.dot(fwd, y) * y
+    z /= np.linalg.norm(z)
+    x = np.cross(y, z)
+    m = np.column_stack([x, y, z])
+    w = math.sqrt(max(0.0, 1 + m[0, 0] + m[1, 1] + m[2, 2])) / 2
+    q = np.array([(m[2, 1] - m[1, 2]) / (4 * w), (m[0, 2] - m[2, 0]) / (4 * w), (m[1, 0] - m[0, 1]) / (4 * w), w])
+    assert np.allclose(cio.qrot(q, [0, 1, 0]), y, atol=1e-6) and np.allclose(cio.qrot(q, [0, 0, 1]), z, atol=1e-6)
+    return q
+
+
+def wing_lower(spec, y0, le_z, x, z):
+    """the wing's lower surface's height (craft y) at craft (x, z): build.py's slab (thickness_ratio of the root chord),
+    its root chord's quarter point at the spec's height, turned up by its incidence about that point and by its
+    dihedral about the centre line"""
+    h = spec["heights"]["wing"]
+    inc = math.radians(spec["incidence"]["wing"])
+    z_q = le_z - 0.25 * WING_ROOT_CHORD
+    half = 0.5 * spec["thickness_ratio"] * WING_ROOT_CHORD
+    return y0 + h["z"] + math.tan(math.radians(h["dihedral"])) * abs(x) + (z - z_q) * math.tan(inc) - half
 
 
 def strut_spine(length):
@@ -215,7 +249,7 @@ def merge_wing_controls(parts):
             continue
         a = parts[by_id[parent]]
         pos = [float(v) for v in re.search(r"(?m)^\tpos = (.*)$", a).group(1).split(",")]
-        if pos[1] < 7.0:                                      # the wing only (the tail sits lower)
+        if pos[2] < WING_Z_MIN:                               # the wing only (the tail lies aft)
             continue
         g = lambda blk, k: float(re.search(r"(?m)^\t\t%s = (.*)$" % k, blk).group(1))
         trail_r, trail_t = g(b, "sharedEdgeWidthTrailingRoot"), g(b, "sharedEdgeWidthTrailingTip")
@@ -312,7 +346,7 @@ def plain_controls(parts):
         if not pid.startswith("B9.Aero.Wing.Procedural.TypeA") or "\t\tname = FARWingAerodynamicModel\n" not in b:
             continue
         pos = [float(v) for v in re.search(r"(?m)^\tpos = (.*)$", b).group(1).split(",")]
-        if not (pos[1] >= 7.0 or (pos[2] < -2 and re.search(r"(?m)^\tsym = ", b))):     # the wing, or the tail (not the fin)
+        if not (pos[2] >= WING_Z_MIN or (pos[2] < -2 and re.search(r"(?m)^\tsym = ", b))):     # the wing, or the tail (not the fin)
             continue
         m, k = cio.module_span(b, "FARWingAerodynamicModel")
         mass = re.search(r"(?m)^\t\tmassMultiplier = (.*)$", b[m:k]).group(1)
@@ -383,6 +417,23 @@ def main():
                                    attpos=cio.fmt(cio.qrot(cio.qinv(Q_FUSE), epos - fus_pose[1])),
                                    attrot=cio.fmt(cio.qmul(cio.qinv(Q_FUSE), Q_FUSE))))
     links.append(ename)
+
+    # the wing's lift struts, from the fuselage's side to 2 cm into the wing's lower surface
+    spec = json.load(open(SPEC, encoding="utf-8"))
+    ls = LIFT_STRUT
+    for side in (1, -1):
+        top = np.array([side * ls["wing_y"], 0.0, length / 2 - ls["wing_s"]])
+        top[1] = wing_lower(spec, y0, le_z, top[0], top[2]) + 0.02
+        bot = np.array([side * ls["body_y"], y0 + ls["body_z"], length / 2 - ls["body_s"]])
+        d = top - bot
+        pid += 1
+        sname = "proceduralStructural_%d" % pid
+        new.append(structural(fus, sname, pid, strut_spine(float(np.linalg.norm(d))), (top + bot) / 2, frame_q(d),
+                              fus_pose))
+        links.append(sname)
+        if side > 0:
+            print(f"lift struts: {np.linalg.norm(d):.3f} m, wing end at x {top[0]:.2f} y {top[1]:.3f} z {top[2]:+.3f}, "
+                  f"body end at x {bot[0]:.2f} y {bot[1]:.3f} z {bot[2]:+.3f}")
 
     # the floats: the step STEP_AFT_OF_CG aft of the CG, the deck DECK_BELOW_BELLY below the belly there
     s = edo_float
