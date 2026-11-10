@@ -330,8 +330,13 @@ def plain_controls(parts):
 
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
-    split = len(sys.argv) > 2 and sys.argv[2] == "split"
-    ship = "Cessna 172M Floatplane Split" if split else "Cessna 172M Floatplane"
+    flags = set(sys.argv[2:])
+    split = "split" in flags
+    # hinged: B9's own control surfaces (no FARTest parts); noplain: the controls merged into their strips, the other
+    # panels left plain wing panels (for the Components tab's picture of the wing split at the strips)
+    hinged, noplain = "hinged" in flags, "noplain" in flags
+    ship = "Cessna 172M Floatplane" + (" Split" if split else "") + (" Hinged" if hinged else "") + (" NoPlain" if noplain else "")
+
     text = open(sys.argv[1], encoding="utf-8").read().replace("\r\n", "\n")
     head, parts = cio.split_parts(text)
     head = re.sub(r"(?m)^ship = .*$", "ship = " + ship, head)
@@ -349,9 +354,11 @@ def main():
         far = "FARWingAerodynamicModel" if "\t\tname = FARWingAerodynamicModel\n" in b else "FARControllableSurface"
         return cio.set_mod(b, far, "massMultiplier", "%.4f" % WING_MASS_SCALE)
     parts = [wing_mass(b) if cio.part_id(b).startswith("B9.Aero") else b for b in parts]
-    parts = merge_wing_controls(parts)
-    parts = merge_tail_elevator(parts)
-    parts = plain_controls(parts)
+    if not hinged:
+        parts = merge_wing_controls(parts)
+        parts = merge_tail_elevator(parts)
+        if not noplain:
+            parts = plain_controls(parts)
     parts = shrink_tail(parts, TAIL_SPAN_SCALE)
 
     fus = parts[0]

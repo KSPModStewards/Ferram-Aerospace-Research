@@ -147,10 +147,12 @@ namespace FerramAerospaceResearch.FARAeroComponents
             var verts = new List<Vector3>();
             var t = new List<int>();
             var log = new System.Text.StringBuilder();
-            if (MeshSource == MeshSourceKind.Far)
-                FarMeshes(meshes, verts, t, log);
-            else
-                OwnMeshes(MeshSource == MeshSourceKind.Colliders, verts, t, log);
+            void Sink(string name, Vector3[] mv, int[] mt, Matrix4x4 toPart)
+            {
+                log.Append($" {name}({mt.Length / 3})");
+                AddMesh(mv, mt, toPart, verts, t);
+            }
+            Pieces(part, MeshSource, Sink, log);
 
             // closed and outward: the area vectors cancel and the enclosed volume is positive
             Vector3 areaSum = Vector3.zero;
@@ -188,7 +190,25 @@ namespace FerramAerospaceResearch.FARAeroComponents
             return tris.Length > 0;
         }
 
-        private static void FarMeshes(List<GeometryMesh> meshes, List<Vector3> verts, List<int> t, System.Text.StringBuilder log)
+        /// <summary>
+        /// The meshes the water model reads for a part from a source, piece by piece: each one's name, its vertices and
+        /// triangles, and its transform into part space (what the model joins into the part's mesh).
+        /// </summary>
+        internal static void Pieces(Part part, MeshSourceKind kind, Action<string, Vector3[], int[], Matrix4x4> sink,
+                                    System.Text.StringBuilder log = null)
+        {
+            log ??= new System.Text.StringBuilder();
+            if (kind == MeshSourceKind.Far)
+            {
+                GeometryPartModule g = part.GetComponent<GeometryPartModule>();
+                if (g != null && g.meshDataList != null)
+                    FarMeshes(g.meshDataList, sink, log);
+            }
+            else
+                OwnMeshes(part, kind == MeshSourceKind.Colliders, sink, log);
+        }
+
+        private static void FarMeshes(List<GeometryMesh> meshes, Action<string, Vector3[], int[], Matrix4x4> sink, System.Text.StringBuilder log)
         {
             var seen = new List<(int verts, int tris, Bounds bounds)>();
             foreach (GeometryMesh m in meshes)
@@ -201,16 +221,18 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 bool copy = seen.Exists(s => s.verts == m.MeshLocalVerts.Length && s.tris == m.triangles.Length &&
                                              (s.bounds.center - pb.center).sqrMagnitude < 1e-6f &&
                                              (s.bounds.size - pb.size).sqrMagnitude < 1e-6f);
-                log.Append($" {m.meshTransform.name}({m.triangles.Length / 3}{(copy ? ", copy skipped" : "")})");
                 if (copy)
+                {
+                    log.Append($" {m.meshTransform.name}(copy skipped)");
                     continue;
+                }
                 seen.Add((m.MeshLocalVerts.Length, m.triangles.Length, pb));
-                AddMesh(m.MeshLocalVerts, m.triangles, toPart, verts, t);
+                sink(m.meshTransform.name, m.MeshLocalVerts, m.triangles, toPart);
             }
         }
 
         // the part's own colliders (mesh and box) or visible meshes (active, rendered, readable), in part space
-        private void OwnMeshes(bool colliders, List<Vector3> verts, List<int> t, System.Text.StringBuilder log)
+        private static void OwnMeshes(Part part, bool colliders, Action<string, Vector3[], int[], Matrix4x4> sink, System.Text.StringBuilder log)
         {
             Matrix4x4 toPart = part.partTransform.worldToLocalMatrix;
             if (colliders)
@@ -221,15 +243,11 @@ namespace FerramAerospaceResearch.FARAeroComponents
                         continue;
                     Matrix4x4 m = toPart * c.transform.localToWorldMatrix;
                     if (c is MeshCollider mc && mc.sharedMesh != null && mc.sharedMesh.isReadable)
-                    {
-                        AddMesh(mc.sharedMesh.vertices, mc.sharedMesh.triangles, m, verts, t);
-                        log.Append($" {c.name}({mc.sharedMesh.triangles.Length / 3})");
-                    }
+                        sink(c.name, mc.sharedMesh.vertices, mc.sharedMesh.triangles, m);
                     else if (c is BoxCollider bc)
                     {
                         MeshData box = GeometryPartModule.CreateBoxMeshFromBoxCollider(bc.size, bc.center);
-                        AddMesh(box.vertices, box.triangles, m, verts, t);
-                        log.Append($" {c.name}(box)");
+                        sink(c.name + " box", box.vertices, box.triangles, m);
                     }
                     else
                         log.Append($" {c.name}({c.GetType().Name} skipped)");
@@ -241,8 +259,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 MeshRenderer mr = mf.GetComponent<MeshRenderer>();
                 if (mr == null || !mr.enabled || mf.sharedMesh == null || !mf.sharedMesh.isReadable)
                     continue;
-                AddMesh(mf.sharedMesh.vertices, mf.sharedMesh.triangles, toPart * mf.transform.localToWorldMatrix, verts, t);
-                log.Append($" {mf.name}({mf.sharedMesh.triangles.Length / 3})");
+                sink(mf.name, mf.sharedMesh.vertices, mf.sharedMesh.triangles, toPart * mf.transform.localToWorldMatrix);
             }
         }
 
