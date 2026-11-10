@@ -245,6 +245,11 @@ namespace FerramAerospaceResearch.KspTests
                 Vector3 com = v.CoM;
                 var dummy = new ferram4.FARCenterQuery();
                 double wingsM = 0, wingsL = 0;
+                // inside a prediction at this airflow, as FARAPI's own: a surface hinged behind a wing reads the wing's
+                // angle of attack at it, not at the parked plane's live velocity
+                ferram4.SimThreadContext.PredictionCall call = ferram4.SimThreadContext.BeginPrediction(air);
+                try
+                {
                 foreach (Part q in v.parts)
                     foreach (var w in q.Modules.OfType<ferram4.FARWingAerodynamicModel>())
                     {
@@ -260,6 +265,11 @@ namespace FerramAerospaceResearch.KspTests
                         acc[a > 0 ? 3 : 1] += m;
                         wingsL += l; wingsM += m;
                     }
+                }
+                finally
+                {
+                    ferram4.SimThreadContext.EndPrediction(call);
+                }
                 if (!byKind.TryGetValue("bodies", out double[] bodies))
                     byKind["bodies"] = bodies = new double[4];
                 bodies[a > 0 ? 2 : 0] += np[np.Count - 1].l - wingsL;
@@ -285,6 +295,9 @@ namespace FerramAerospaceResearch.KspTests
                     Vector3 lp = p.Root.transform.InverseTransformPoint(w.part.transform.position);
                     return $"{w.part.partInfo.name.Replace("B9.Aero.Wing.Procedural.", "")}@{lp.x:F2},{lp.y:F2}";
                 }
+                ferram4.SimThreadContext.PredictionCall call = ferram4.SimThreadContext.BeginPrediction(air);
+                try
+                {
                 foreach (Part q in v.parts)
                     foreach (var w in q.Modules.OfType<ferram4.FARWingAerodynamicModel>())
                     {
@@ -301,6 +314,11 @@ namespace FerramAerospaceResearch.KspTests
                                     $"ClInc {w._scratch.ClIncrementFromRear:F3} Cl {w._scratch.Cl:F3} fwd[{Lst("nearbyWingModulesForwardList", "nearbyWingModulesForwardInfluence")}] " +
                                     $"back[{Lst("nearbyWingModulesBackwardList", "nearbyWingModulesBackwardInfluence")}]; ");
                     }
+                }
+                finally
+                {
+                    ferram4.SimThreadContext.EndPrediction(call);
+                }
                 ctx.Record("panels at 4 deg", diag.ToString());
                 // each control surface's ray geometry (FARWingInteraction's chordwise search): its start, the part's axes,
                 // span, MAC, sweep and attach side, in the root frame
