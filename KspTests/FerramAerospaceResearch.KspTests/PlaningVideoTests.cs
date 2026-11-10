@@ -198,7 +198,7 @@ namespace FerramAerospaceResearch.KspTests
 
         // the hull's keel direction in part space: of +-x and +-z, the one whose farthest vertices span the least
         // across (the V's point rather than the flat deck)
-        private static Vector3 KeelAxis(Part p)
+        internal static Vector3 KeelAxis(Part p)
         {
             MeshCollider mc = p.GetComponentsInChildren<MeshCollider>().FirstOrDefault(c => c.sharedMesh != null);
             Assert.True(mc != null, "the hull has a mesh collider");
