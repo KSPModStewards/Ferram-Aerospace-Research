@@ -62,6 +62,12 @@ WING_ROOT_CHORD = 1.634                       # m: the drawing's root chord (bui
 # full it made 1.19 t. FloatplaneTests sets the weight itself for each run
 GROSS_KG = 2220 * 0.45359237
 EMPTY_KG = 550.0
+# the fuel tank (it stands for the fuel and the load) moved forward this far (m) to put the centre of gravity at
+# CG_MAC as the craft loads: (target - as built) x the gross / the tank's 537 kg full to the gross, from
+# FloatplaneTests' "cg error" record (as built 1.488 m, hinged 1.467, split 1.514 with the plain shift, against 1.499 at
+# 28.4 % MAC; the test checks it within 1 cm). The hinged craft's control surfaces are parts of their own, behind the
+# hinges, and its CG sits further aft; the split floats' pieces carry their mass further forward
+TANK_SHIFT = {"plain": 0.021, "hinged": 0.060, "split": -0.006}
 # FAR weighs a wing by its area (FARWingAerodynamicModel): 1014 kg for these panels as built, where the 172's wing and
 # tail are about 115 kg (250 lb): every panel's massMultiplier scaled to that
 WING_MASS_SCALE = 115.0 / 1014.0
@@ -512,8 +518,16 @@ def main():
     for n, b in enumerate(parts):
         if cio.part_id(b).startswith("proceduralTankLiquid") and n > 0 and "\t\tname = LiquidFuel\n" in b:
             units = (GROSS_KG - EMPTY_KG) / 5.0
-            parts[n] = re.sub(r"(\t\tname = LiquidFuel\n\t\tamount = )[^\n]*", r"\g<1>%.3f" % units, b)
-            print(f"fuel: {units:.1f} units ({units * 5:.0f} kg) for {GROSS_KG:.0f} kg gross")
+            b = re.sub(r"(\t\tname = LiquidFuel\n\t\tamount = )[^\n]*", r"\g<1>%.3f" % units, b)
+            dz = TANK_SHIFT["hinged" if hinged else "split" if split else "plain"]
+            pos = [float(v) for v in re.search(r"(?m)^\tpos = (.*)$", b).group(1).split(",")]
+            ap = [float(v) for v in re.search(r"(?m)^\tattPos0 = (.*)$", b).group(1).split(",")]
+            assert re.search(r"(?m)^\tsrfN = srfAttach,%s," % re.escape(fus_name), b), "the tank on the fuselage"
+            b = cio.setf(b, "pos", cio.fmt([pos[0], pos[1], pos[2] + dz]))
+            b = cio.setf(b, "attPos0", cio.fmt([ap[0], ap[1] + dz, ap[2]]))      # the fuselage's local y is forward
+            parts[n] = b
+            print(f"fuel: {units:.1f} units ({units * 5:.0f} kg) for {GROSS_KG:.0f} kg gross; the tank {dz * 100:.1f} cm "
+                  f"forward for the C.G.")
 
     parts[0] = cio.add_links(parts[0], links)
     out = head + "".join(parts + new)

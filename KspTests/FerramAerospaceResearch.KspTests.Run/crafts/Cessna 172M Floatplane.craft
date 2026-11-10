@@ -5555,9 +5555,9 @@ PART
 	part = proceduralTankLiquid_4000000030
 	partName = Part
 	persistentId = 3713072918
-	pos = 0,6.099,1.51423
+	pos = 0,6.099,1.53523
 	attPos = 0,0,0
-	attPos0 = 0,1.51423,-0.0989955
+	attPos0 = 0,1.53523,-0.0989955
 	rot = 0.707107,0,0,0.707107
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1

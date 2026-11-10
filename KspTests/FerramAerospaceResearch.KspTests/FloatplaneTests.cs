@@ -797,26 +797,24 @@ namespace FerramAerospaceResearch.KspTests
                                $"({lf.maxAmount * lf.info.density * 1000:F0} kg tank). {parts}");
             Assert.True(add >= 0 && add <= lf.maxAmount, $"the gross reachable with fuel (empty {dry / Lb:F0} lb)");
             lf.amount = add;
-            yield return Wait.Frames(2);
+            // the rigidbodies' masses take the fuel at the next physics frames
+            for (int i = 0; i < 3; i++)
+                yield return new WaitForFixedUpdate();
 
-            // C.G.: the fuel tank's CoM (fuel and the load it stands for) moved along the root's local y (craft z) to put the
-            // vessel's at CgLocalY
+            // C.G.: as the craft has it (crafts/c172_floatplane.py places the fuel tank for CgLocalY at the gross); checked,
+            // not set, so a flight from the craft file flies the test's airplane
             Vector3 cg0 = p.Root.transform.InverseTransformPoint(WorldCoM(v));
             var where = new StringBuilder();
             foreach (Part q in v.parts.Where(q => q.rb != null).OrderByDescending(q => q.rb.mass).Take(8))
                 where.Append($"{q.partInfo.name} {q.rb.mass * 1000:F0} kg at y {p.Root.transform.InverseTransformPoint(q.rb.worldCenterOfMass).y:F2}; ");
             ctx.Record("cg as built", $"local y {cg0.y:F3} m: {where}");
-            for (int i = 0; i < 3; i++)
-            {
-                Vector3 com = p.Root.transform.InverseTransformPoint(WorldCoM(v));
-                double shift = (CgLocalY - com.y) * v.GetTotalMass() / (p.Fuel.mass + p.Fuel.GetResourceMass());
-                Vector3 along = p.Fuel.transform.InverseTransformDirection(p.Root.transform.up);
-                p.Fuel.CoMOffset += along * (float)shift;
-                if (p.Fuel.rb != null)
-                    p.Fuel.rb.centerOfMass = p.Fuel.CoMOffset;
-                yield return Wait.Frames(2);
-            }
-            Vector3 cg = p.Root.transform.InverseTransformPoint(WorldCoM(v));
+            // the fuel tank's move that would put it at CgLocalY (for c172_floatplane.py's TANK_SHIFT)
+            double tankShift = (CgLocalY - cg0.y) * v.GetTotalMass() / (p.Fuel.mass + p.Fuel.GetResourceMass());
+            ctx.Record("cg error", $"{(cg0.y - CgLocalY) * 100:+0.0;-0.0} cm ({(cg0.y - CgLocalY) / (58.8 * 0.0254):+0.0%;-0.0%} MAC); " +
+                                   $"the tank {tankShift * 100:+0.0;-0.0} cm to correct it");
+            Assert.True(Math.Abs(cg0.y - CgLocalY) < (Math.Abs(grossT - GrossT) < 1e-6 ? 0.01 : 0.03),
+                        $"the craft's C.G. {cg0.y:F3} m, CgLocalY {CgLocalY:F3} (crafts/c172_floatplane.py TANK_SHIFT {tankShift:+0.000;-0.000} m)");
+            Vector3 cg = cg0;
             ctx.Record("cg", $"local y {cg.y:F3} m (target {CgLocalY:F3}: 28.4% MAC), {-cg.z:F3} m above the fuselage axis; fuel tank CoM offset {p.Fuel.CoMOffset}; " +
                              "steps " + string.Join(", ", p.Floats.Select(f => $"{p.Root.transform.InverseTransformPoint(f.TransformPoint(StepKeel)).y - cg.y:F3}")) +
                              " m ahead of it (generator: -0.234), float origins " + string.Join(", ", p.Floats.Select(f => $"{p.Root.transform.InverseTransformPoint(f.Position)}")));
