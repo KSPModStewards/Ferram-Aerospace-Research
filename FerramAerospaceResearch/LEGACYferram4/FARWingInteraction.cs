@@ -1135,6 +1135,11 @@ namespace ferram4
         {
             if (!FARDebugValues.wholeWingAspectRatio || parentWingPart == null || vesselParts == null)
                 return null;
+            // a foil mostly under the water (a submarine's fin or plane, a rudder) is half a wing on its hull: its own
+            // aspect ratio. Fins round a narrow, tapering stern lift as that (DARPA SUBOFF's, Roddy 1990), not as one
+            // wing through the hull with its lift carried across it, as a wing through a fuselage does
+            if (FerramAerospaceResearch.Settings.FARSettings.Hydrodynamics && parentWingPart.submergedPortion > 0.5)
+                return null;
             // a control surface is part of the wing it is on, and takes that wing's aspect ratio
             if (parentWingModule is FARControllableSurface && FindHostWing() && AsWing(hostWing))
                 return hostWing;
