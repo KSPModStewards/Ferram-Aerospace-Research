@@ -32,6 +32,13 @@ namespace FerramAerospaceResearch.FARAeroComponents
     /// A part whose mesh is closed takes its buoyancy from the water pressure on it; others keep stock's. Faces where
     /// two parts meet inside the hull (a face whose outside lies in another wet part) are not wetted: they take no
     /// momentum, impact or friction, only their hydrostatic pressure, which the other part's face cancels.
+    /// Foils (FAR wing parts: rudders, keels, dive planes, hydrofoils) are no part of a hull: FAR's wing model gives them
+    /// their lift and drag in the water (its density on their wetted share), and they take only their buoyancy here.
+    /// A hull wholly under the water (a submarine) is no planing hull: the water is on its top as on its bottom. Its
+    /// upward-facing faces make a mirrored set of strips (the same momentum, separation and crossflow, the flow pushing
+    /// them down), and the planing-only terms (the hydrostatic fade at speed, the ventilated step) go: by how far under
+    /// it is, from the surface to SubmergedFade of the hull's height below it. A symmetric body's two sides then cancel
+    /// level (no lift from its thickness) and add up to the whole section's added mass at an angle.
     /// </summary>
     internal sealed class PartHydrodynamics
     {
@@ -46,6 +53,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
         // NACA TN 470's Model 11-A humps at 2.7 - 3.0 and TM 826's float planes clear at 4.1; on the mean wetted beam
         // (C_V = F_vol C_Delta^1/6, C_Delta 0.5 - 1.8 for floats and hulls) 3.5 to 5
         public static double VentStartCv = 3.5, VentFullCv = 5.0;
+        // a hull whose shallowest point is this share of its height below the water is wholly submerged (no free surface)
+        public static double SubmergedFade = 0.5;
         /// <summary>
         /// Stock's water drag and angular drag on the wet parts' rigidbodies (PartBuoyancy, FlightIntegrator), on top of
         /// this model's own damping: as stock applies them (Unity's rigidbody damping, which on a vessel of several parts
@@ -99,6 +108,10 @@ namespace FerramAerospaceResearch.FARAeroComponents
         internal readonly List<Vector3> HsForces = new List<Vector3>(), HsTorques = new List<Vector3>(), HsPoints = new List<Vector3>();
         internal double Gravity;
         internal Vector3 Origin;
+        // the shallowest and deepest points of the mesh this step (m below the water; out of it negative)
+        internal float TopDepth, BottomDepth;
+        // a FAR wing part: a foil, FAR's wing model gives it its water forces (its buoyancy only here)
+        internal readonly bool Foil;
 
         // the mesh is closed: its hydrostatic pressure is the part's buoyancy, which replaces stock's (part.buoyancy 0)
         public bool OwnsBuoyancy { get; private set; }
@@ -131,6 +144,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
         public PartHydrodynamics(Part part)
         {
             this.part = part;
+            foreach (PartModule m in part.Modules)
+                if (m is ferram4.FARWingAerodynamicModel)
+                    Foil = true;
         }
 
         private bool EnsureMesh()
@@ -393,6 +409,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
             Matrix4x4 l2w = tf.localToWorldMatrix;
             bool any = false;
+            float top = float.MaxValue, bottom = float.MinValue;
             for (int i = 0; i < localVerts.Length; i++)
             {
                 Vector3 w = l2w.MultiplyPoint3x4(localVerts[i]);
@@ -400,7 +417,11 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 float d = (float)(depth0 - Vector3.Dot(w - p0, up));
                 depths[i] = d;
                 any |= d > 0;
+                top = Math.Min(top, d);
+                bottom = Math.Max(bottom, d);
             }
+            TopDepth = top;
+            BottomDepth = bottom;
             if (!any)
             {
                 ProfileGatherTicks += Stopwatch.GetTimestamp() - t0;
@@ -472,7 +493,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                         HsPoints.Add((o + q1 + q2) / 3f);
                     }
                 }
-                if (anyContact && contactStamp[i / 3] == stamp)
+                if (Foil || anyContact && contactStamp[i / 3] == stamp)
                     continue;
                 PolyVerts.AddRange(scratchA);
                 PolyCounts.Add(scratchA.Count);
@@ -505,6 +526,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
     {
         public readonly List<PartHydrodynamics> Parts = new List<PartHydrodynamics>();
         public double WettedLength, Planform, Limiter = 1;
+        public double Surface = 1;   // at the water's surface (1) or wholly under it (0)
         public int Strips;
         public readonly List<(double x, double width, double ma, double v, double jump, double load, bool separated, Vector3 point)> StripData =
             new List<(double, double, double, double, double, double, bool, Vector3)>();
@@ -524,6 +546,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
         private float[] range = Array.Empty<float>();   // per wet part: x min, x max, y min, y max in the vessel's flow frame
 
         private Strip[] strips = new Strip[PartHydrodynamics.MaxStrips];
+        private Strip[] tops = new Strip[PartHydrodynamics.MaxStrips];   // under the water: the top's mirrored strips
         private readonly List<Vector3> scratchA = new List<Vector3>(8), scratchB = new List<Vector3>(8);
 
         private struct Share
@@ -682,6 +705,17 @@ namespace FerramAerospaceResearch.FARAeroComponents
             CelestialBody body = vessel.mainBody;
             double rho = body.oceanDensity * 1000;
             Vector3 p0 = first.Origin;
+            // at the surface (1: some of the hull out of the water) or under it, fading to none at SubmergedFade of the
+            // hull's height below the surface
+            float topDepth = float.MaxValue, bottomDepth = float.MinValue;
+            foreach (PartHydrodynamics hd in parts)
+            {
+                topDepth = Math.Min(topDepth, hd.TopDepth);
+                bottomDepth = Math.Max(bottomDepth, hd.BottomDepth);
+            }
+            double surface = topDepth <= 0 ? 1
+                : Math.Max(0, 1 - topDepth / (PartHydrodynamics.SubmergedFade * Math.Max(0.1, bottomDepth - topDepth)));
+            hull.Surface = surface;
             Vector3 up = (Vector3)(((Vector3d)p0 - body.position).normalized);
             Vector3 frame = Krakensbane.GetFrameVelocity();
             // the flow: the hull's own (its parts' mass-weighted velocity)
@@ -736,18 +770,17 @@ namespace FerramAerospaceResearch.FARAeroComponents
             Vector3 yHat = Vector3.Cross(up, xHat);
             for (int k = 0; k < nStrips; k++)
             {
-                List<Vector2> spans = strips[k].Spans ?? new List<Vector2>();
-                Share[] shares = strips[k].Shares ?? new Share[2];
-                spans.Clear();
-                strips[k] = default;
-                strips[k].Spans = spans;
-                strips[k].Shares = shares;
+                ResetStrip(ref strips[k]);
+                ResetStrip(ref tops[k]);
             }
 
             double re = Math.Max(1e5, U * wettedLength / KinematicViscosity);
             double lg = Math.Log10(re) - 2;
             double cf = 0.075 / (lg * lg);
 
+            // under the water the top faces are a bottom too (topShare: how far under); at the surface a top face pushed
+            // into the water takes impact pressure instead
+            double topShare = 1 - surface;
             var impactOf = new Vector3[parts.Count];
             var torqueOf = new Vector3[parts.Count];   // of LastForce, about each part's CoM (N m)
             for (int pi = 0; pi < parts.Count; pi++)
@@ -788,8 +821,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                         // skin friction against the surface's own slip through the water
                         Vector3 vt = v - n * vn;
                         float vtm = vt.magnitude;
-                        ref Strip st = ref strips[k];
-                        ref Share sh = ref ShareOf(ref st, pi);
+                        ref Share sh = ref ShareOf(ref strips[k], pi);
                         sh.WettedArea += area;
                         sh.FrictionWeight += area;
                         sh.FrictionPoint += centroid * area;
@@ -797,92 +829,31 @@ namespace FerramAerospaceResearch.FARAeroComponents
                             sh.Friction += -vt * (float)(0.5 * rho * vtm * cf * area);
 
                         if (down > 0.3f)
+                            AddPiece(ref strips[k], pi, area * down, n, centroid, v, scratchB, p0, yHat);
+                        else
                         {
-                            double planform = area * down;
-                            st.Planform += planform;
-                            st.NormalSum += n * (float)planform;
-                            st.CentroidSum += centroid * (float)planform;
-                            st.VelocitySum += v * (float)planform;
-                            sh.Planform += planform;
-                            sh.CentroidSum += centroid * (float)planform;
-                            float yLo = float.MaxValue, yHi = float.MinValue;
-                            foreach (Vector3 q in scratchB)
+                            if (topShare > 0 && down < -0.3f)
+                                AddPiece(ref tops[k], pi, area * -down, n, centroid, v, scratchB, p0, yHat);
+                            float iw = down < -0.3f ? (float)surface : 1f;
+                            if (vn > 0 && iw > 0)
                             {
-                                float y = Vector3.Dot(q - p0, yHat);
-                                yLo = Math.Min(yLo, y);
-                                yHi = Math.Max(yHi, y);
+                                // a steep face pushed into the water
+                                Vector3 f = -n * (float)(0.5 * PartHydrodynamics.ImpactPressureCoefficient * rho * vn * vn * area * iw);
+                                impactOf[pi] += f;
+                                torqueOf[pi] += Vector3.Cross(centroid - rb.worldCenterOfMass, f);
+                                hd.part.AddForceAtPosition((Vector3d)f * 0.001, (Vector3d)centroid);
                             }
-                            st.Spans.Add(new Vector2(yLo, yHi));
-                        }
-                        else if (vn > 0)
-                        {
-                            // a steep face pushed into the water
-                            Vector3 f = -n * (float)(0.5 * PartHydrodynamics.ImpactPressureCoefficient * rho * vn * vn * area);
-                            impactOf[pi] += f;
-                            torqueOf[pi] += Vector3.Cross(centroid - rb.worldCenterOfMass, f);
-                            hd.part.AddForceAtPosition((Vector3d)f * 0.001, (Vector3d)centroid);
                         }
                     }
                     at += count;
                 }
             }
 
-            // momentum: bow (largest x) to stern; a dry strip ends a wetted run (the flow leaves the bottom)
-            double maPrevV = 0, maVPeak = 0, stiffness = 0;
+            // momentum, bottom and (under the water) top
             double ka = PartHydrodynamics.AddedMassCoefficient * rho * Math.PI / 2;
-            for (int k = nStrips - 1; k >= 0; k--)
-            {
-                ref Strip s = ref strips[k];
-                if (s.Planform <= 0)
-                {
-                    maPrevV = maVPeak = 0;
-                    continue;
-                }
-                s.Normal = s.NormalSum.normalized;
-                s.Point = s.CentroidSum / (float)s.Planform;
-                // wetted widths: the merged lateral spans (copies and inner faces overlap, separate hulls don't)
-                MergeSpans(s.Spans, out double width, out double sumHalfWidth2);
-                s.Width = width;
-                s.V = Vector3.Dot(s.VelocitySum / (float)s.Planform, s.Normal);
-                double ma = ka * sumHalfWidth2;
-                double maV = ma * s.V;
-                maVPeak = Math.Max(maVPeak, maV);
-                s.Separated = maVPeak > 0 && maV < (1 - PartHydrodynamics.SeparationDrop) * maVPeak;
-                if (s.Separated)
-                {
-                    // in the wake: friction and hydrostatics only, and a push into the water
-                    if (s.V > 0)
-                    {
-                        double fin = 0.5 * PartHydrodynamics.CrossflowDragIn * rho * s.Width * dx * s.V * s.V;
-                        stiffness += PartHydrodynamics.CrossflowDragIn * rho * s.Width * dx * s.V;
-                        s.Load = s.Crossflow = fin;
-                    }
-                    continue;
-                }
-                s.Jump = U * (maV - maPrevV);
-                maPrevV = maV;
-                stiffness = Math.Max(stiffness, U * ma);
-                double cd = s.V > 0 ? PartHydrodynamics.CrossflowDragIn : PartHydrodynamics.CrossflowDragOut;
-                double fcf = 0.5 * cd * rho * s.Width * dx * s.V * Math.Abs(s.V);
-                stiffness += cd * rho * s.Width * dx * Math.Abs(s.V);
-                s.Load = s.Crossflow = fcf;
-            }
-
-            // spread each jump aft over the rest of its wetted run with the flat-plate loading, to where the flow leaves
-            for (int k = nStrips - 1; k >= 0; k--)
-            {
-                if (strips[k].Planform <= 0 || strips[k].Jump == 0)
-                    continue;
-                int end = k;
-                while (end - 1 >= 0 && strips[end - 1].Planform > 0 && !strips[end - 1].Separated)
-                    end--;
-                int span = k - end + 1;
-                for (int j = k; j >= end; j--)
-                {
-                    double x0 = (double)(k - j) / span, x1 = (double)(k - j + 1) / span;
-                    strips[j].Load += strips[k].Jump * (PlateLoad(x1) - PlateLoad(x0)) / (Math.PI / 2);
-                }
-            }
+            double stiffness = Momentum(strips, nStrips, ka, rho, U, dx);
+            if (topShare > 0)
+                stiffness += topShare * Momentum(tops, nStrips, ka, rho, U, dx);
 
             // explicit-step safety: the damping these forces put on the vessel stays well inside one step
             double mass = Math.Max(vessel.totalMass, first.part.rb.mass) * 1000;
@@ -938,6 +909,29 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 }
             }
 
+            // the top's strips, under the water: their loads on the parts (no friction: the bottom's shares carry it all)
+            if (topShare > 0)
+                for (int k = 0; k < nStrips; k++)
+                {
+                    ref Strip s = ref tops[k];
+                    if (s.Planform <= 0)
+                        continue;
+                    for (int i = 0; i < s.ShareCount; i++)
+                    {
+                        ref Share sh = ref s.Shares[i];
+                        if (sh.Planform <= 0)
+                            continue;
+                        PartHydrodynamics hd = parts[sh.Part];
+                        float w = (float)(sh.Planform / s.Planform * topShare);
+                        Vector3 f = -s.Normal * (float)(s.Load * limiter) * w;
+                        momentumOf[sh.Part] += f;
+                        crossflowOf[sh.Part] += -s.Normal * (float)(s.Crossflow * limiter) * w;
+                        Vector3 at = sh.CentroidSum / (float)sh.Planform;
+                        torqueOf[sh.Part] += Vector3.Cross(at - hd.part.rb.worldCenterOfMass, f);
+                        hd.part.AddForceAtPosition((Vector3d)f * 0.001, (Vector3d)at);
+                    }
+                }
+
             // hydrostatics at speed: once the flow leaves the transom dry, the bottom near it carries no hydrostatic
             // pressure (Savitsky's buoyancy term is about half the displacement's; Zarnick scales it by 0.5): the
             // share kept fades from all of it to PlaningBuoyancy from C_V 1 to 3 on the mean wetted beam
@@ -947,10 +941,11 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 double beam = planformTotal / wettedLength;
                 double cv = U / Math.Sqrt(first.Gravity * Math.Max(0.05, beam));
                 double x = Math.Max(0, Math.Min(1, (cv - 1) / 2));
-                take = (1 - PartHydrodynamics.PlaningBuoyancy) * x * x * (3 - 2 * x);
+                // (planing only: a hull under the water keeps all of its buoyancy, and no step of it ventilates)
+                take = (1 - PartHydrodynamics.PlaningBuoyancy) * x * x * (3 - 2 * x) * surface;
                 double xv = Math.Max(0, Math.Min(1, (cv - PartHydrodynamics.VentStartCv) /
                                                     (PartHydrodynamics.VentFullCv - PartHydrodynamics.VentStartCv)));
-                vented = xv * xv * (3 - 2 * xv);
+                vented = xv * xv * (3 - 2 * xv) * surface;
             }
             for (int pi = 0; pi < parts.Count; pi++)
             {
@@ -1040,6 +1035,100 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 hd.part.AddForce((Vector3d)(-(v * lin + Vector3.Cross(w, r) * ang) * rb.mass));
                 hd.part.AddTorque((Vector3d)(-own * ang));
             }
+        }
+
+        // bow (largest x) to stern: each strip's momentum jump U d(m_a V) and crossflow drag (its Load), a dry strip ending
+        // a wetted run (the flow leaves the bottom), a section well below the run's peak m_a V in the separated wake;
+        // then each jump spread aft over the rest of its wetted run with the flat-plate loading. Returns the damping
+        // these forces put on the vessel (N s/m), for the explicit step's limiter
+        private static double Momentum(Strip[] ss, int nStrips, double ka, double rho, double U, float dx)
+        {
+            double maPrevV = 0, maVPeak = 0, stiffness = 0;
+            for (int k = nStrips - 1; k >= 0; k--)
+            {
+                ref Strip s = ref ss[k];
+                if (s.Planform <= 0)
+                {
+                    maPrevV = maVPeak = 0;
+                    continue;
+                }
+                s.Normal = s.NormalSum.normalized;
+                s.Point = s.CentroidSum / (float)s.Planform;
+                // wetted widths: the merged lateral spans (copies and inner faces overlap, separate hulls don't)
+                MergeSpans(s.Spans, out double width, out double sumHalfWidth2);
+                s.Width = width;
+                s.V = Vector3.Dot(s.VelocitySum / (float)s.Planform, s.Normal);
+                double ma = ka * sumHalfWidth2;
+                double maV = ma * s.V;
+                maVPeak = Math.Max(maVPeak, maV);
+                s.Separated = maVPeak > 0 && maV < (1 - PartHydrodynamics.SeparationDrop) * maVPeak;
+                if (s.Separated)
+                {
+                    // in the wake: friction and hydrostatics only, and a push into the water
+                    if (s.V > 0)
+                    {
+                        double fin = 0.5 * PartHydrodynamics.CrossflowDragIn * rho * s.Width * dx * s.V * s.V;
+                        stiffness += PartHydrodynamics.CrossflowDragIn * rho * s.Width * dx * s.V;
+                        s.Load = s.Crossflow = fin;
+                    }
+                    continue;
+                }
+                s.Jump = U * (maV - maPrevV);
+                maPrevV = maV;
+                stiffness = Math.Max(stiffness, U * ma);
+                double cd = s.V > 0 ? PartHydrodynamics.CrossflowDragIn : PartHydrodynamics.CrossflowDragOut;
+                double fcf = 0.5 * cd * rho * s.Width * dx * s.V * Math.Abs(s.V);
+                stiffness += cd * rho * s.Width * dx * Math.Abs(s.V);
+                s.Load = s.Crossflow = fcf;
+            }
+
+            // spread each jump aft over the rest of its wetted run with the flat-plate loading, to where the flow leaves
+            for (int k = nStrips - 1; k >= 0; k--)
+            {
+                if (ss[k].Planform <= 0 || ss[k].Jump == 0)
+                    continue;
+                int end = k;
+                while (end - 1 >= 0 && ss[end - 1].Planform > 0 && !ss[end - 1].Separated)
+                    end--;
+                int span = k - end + 1;
+                for (int j = k; j >= end; j--)
+                {
+                    double x0 = (double)(k - j) / span, x1 = (double)(k - j + 1) / span;
+                    ss[j].Load += ss[k].Jump * (PlateLoad(x1) - PlateLoad(x0)) / (Math.PI / 2);
+                }
+            }
+            return stiffness;
+        }
+
+        private static void ResetStrip(ref Strip s)
+        {
+            List<Vector2> spans = s.Spans ?? new List<Vector2>();
+            Share[] shares = s.Shares ?? new Share[2];
+            spans.Clear();
+            s = default;
+            s.Spans = spans;
+            s.Shares = shares;
+        }
+
+        // a facing piece of a strip (planform: its area projected on the water plane), and its part's share of it
+        private static void AddPiece(ref Strip st, int part, double planform, Vector3 n, Vector3 centroid, Vector3 v, List<Vector3> piece,
+                                     Vector3 p0, Vector3 yHat)
+        {
+            st.Planform += planform;
+            st.NormalSum += n * (float)planform;
+            st.CentroidSum += centroid * (float)planform;
+            st.VelocitySum += v * (float)planform;
+            ref Share sh = ref ShareOf(ref st, part);
+            sh.Planform += planform;
+            sh.CentroidSum += centroid * (float)planform;
+            float yLo = float.MaxValue, yHi = float.MinValue;
+            foreach (Vector3 q in piece)
+            {
+                float y = Vector3.Dot(q - p0, yHat);
+                yLo = Math.Min(yLo, y);
+                yHi = Math.Max(yHi, y);
+            }
+            st.Spans.Add(new Vector2(yLo, yHi));
         }
 
         private static ref Share ShareOf(ref Strip s, int part)

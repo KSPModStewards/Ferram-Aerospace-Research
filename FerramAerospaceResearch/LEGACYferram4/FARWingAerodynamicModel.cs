@@ -979,14 +979,10 @@ namespace ferram4
 
                     double v_scalar = velocity.magnitude;
 
-                    // water's contribution to rho
+                    // water's contribution to rho: the wing is a foil in it (a rudder, keel, dive plane, hydrofoil; with
+                    // FARSettings.Hydrodynamics PartHydrodynamics gives it its buoyancy only)
                     double waterRho = 0;
-                    if (partVessel.mainBody.ocean && FARSettings.Hydrodynamics)
-                    {
-                        // the dry share; PartHydrodynamics models the water on the part
-                        rho = part.atmDensity * (1 - part.submergedPortion);
-                    }
-                    else if (partVessel.mainBody.ocean)
+                    if (partVessel.mainBody.ocean)
                     {
                         waterRho = partVessel.mainBody.oceanDensity * 1000 * part.submergedPortion;
                         rho = waterRho + part.atmDensity * (1 - part.submergedPortion);
@@ -1233,7 +1229,9 @@ namespace ferram4
             //lift and drag vectors
             Vector3d L, D;
             double submergedPortion = snapshot ? captured.CapturedSubmergedPortion : part.submergedPortion;
-            if (failureForceScaling >= 1 && submergedPortion > 0)
+            // (stock's water scalars on the legacy water model only: with FARSettings.Hydrodynamics the water's density
+            // is in q, as for any foil)
+            if (failureForceScaling >= 1 && submergedPortion > 0 && !FARSettings.Hydrodynamics)
             {
                 double submergedLiftScalar = snapshot ? captured.CapturedSubmergedLiftScalar : part.submergedLiftScalar;
                 double submergedDragScalar = snapshot ? captured.CapturedSubmergedDragScalar : part.submergedDragScalar;
