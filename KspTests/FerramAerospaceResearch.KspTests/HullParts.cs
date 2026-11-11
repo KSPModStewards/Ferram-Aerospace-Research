@@ -329,6 +329,25 @@ namespace FerramAerospaceResearch.KspTests
 namespace FerramAerospaceResearch.KspTests
 {
     /// <summary>
+    /// TimeControl's hyper-warp for a test's long runs (parameter hyperWarp, default 4; 1 for real time): more physics
+    /// steps a frame at the same step (physics accuracy 1), so the run is the same and only sooner. Needs TimeControl in
+    /// the test's mods.
+    /// </summary>
+    internal static class TestWarp
+    {
+        public static void Hyper(TestContext ctx, bool on)
+        {
+            double rate = ctx.ParamDouble("hyperWarp", 4);
+            if (!on || rate <= 1)
+            {
+                Flight.HyperWarpOff();
+                return;
+            }
+            ctx.Record("hyperWarp", Flight.HyperWarp(rate, 1.0) ? $"{rate:F0}x attempted, time scale {Time.timeScale:F1}" : "refused (real time)");
+        }
+    }
+
+    /// <summary>
     /// The water model's switches a test can set (parameter waterDamping: stock, explicit or none, the wet parts' stock
     /// water drag and angular drag: PartHydrodynamics.WaterDamping), put back after it.
     /// </summary>
@@ -336,6 +355,8 @@ namespace FerramAerospaceResearch.KspTests
     {
         private static PartHydrodynamics.WaterDampingMode? dampingWas;
         private static bool? linearFlapWas;
+        private static double? recoveryWas, crossflowWas, stripWas, fadeWas;
+        private static bool? wholeWingWas;
 
         public static void Apply(TestContext ctx)
         {
@@ -354,6 +375,33 @@ namespace FerramAerospaceResearch.KspTests
                     FARDebugValues.UpdateWingInteractions();
                 }
             ctx.Record("linearFlapLift", FARDebugValues.linearFlapLift.ToString());
+            // under the water: the afterbody's recovered share of its momentum (parameter submergedRecovery)
+            recoveryWas ??= PartHydrodynamics.SubmergedRecovery;
+            if (!double.IsNaN(ctx.ParamDouble("submergedRecovery", double.NaN)))
+                PartHydrodynamics.SubmergedRecovery = ctx.ParamDouble("submergedRecovery", PartHydrodynamics.SubmergedRecovery);
+            ctx.Record("submergedRecovery", PartHydrodynamics.SubmergedRecovery.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            crossflowWas ??= PartHydrodynamics.SubmergedCrossflowDrag;
+            if (!double.IsNaN(ctx.ParamDouble("submergedCrossflow", double.NaN)))
+                PartHydrodynamics.SubmergedCrossflowDrag = ctx.ParamDouble("submergedCrossflow", PartHydrodynamics.SubmergedCrossflowDrag);
+            ctx.Record("submergedCrossflow", PartHydrodynamics.SubmergedCrossflowDrag.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            // how far under a section's top must be to be wholly submerged (parameter waterFade: PartHydrodynamics.
+            // SubmergedFade; huge: every section at the surface, as the planing model had it)
+            fadeWas ??= PartHydrodynamics.SubmergedFade;
+            if (!double.IsNaN(ctx.ParamDouble("waterFade", double.NaN)))
+                PartHydrodynamics.SubmergedFade = ctx.ParamDouble("waterFade", PartHydrodynamics.SubmergedFade);
+            // the hull's strip length (m; parameter stripLength)
+            stripWas ??= PartHydrodynamics.StripLength;
+            if (!double.IsNaN(ctx.ParamDouble("stripLength", double.NaN)))
+                PartHydrodynamics.StripLength = ctx.ParamDouble("stripLength", PartHydrodynamics.StripLength);
+            ctx.Record("stripLength", PartHydrodynamics.StripLength.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            // FAR's whole-wing aspect ratio (FARDebugValues.wholeWingAspectRatio; parameter wholeWingAspectRatio=true/false)
+            wholeWingWas ??= FARDebugValues.wholeWingAspectRatio;
+            string ww = ctx.Param("wholeWingAspectRatio");
+            if (!string.IsNullOrEmpty(ww) && FARDebugValues.wholeWingAspectRatio != bool.Parse(ww))
+            {
+                FARDebugValues.wholeWingAspectRatio = bool.Parse(ww);
+                FARDebugValues.UpdateWingInteractions();
+            }
         }
 
         public static void Restore()
@@ -361,6 +409,24 @@ namespace FerramAerospaceResearch.KspTests
             if (dampingWas.HasValue)
                 PartHydrodynamics.WaterDamping = dampingWas.Value;
             dampingWas = null;
+            if (recoveryWas.HasValue)
+                PartHydrodynamics.SubmergedRecovery = recoveryWas.Value;
+            recoveryWas = null;
+            if (crossflowWas.HasValue)
+                PartHydrodynamics.SubmergedCrossflowDrag = crossflowWas.Value;
+            crossflowWas = null;
+            if (fadeWas.HasValue)
+                PartHydrodynamics.SubmergedFade = fadeWas.Value;
+            fadeWas = null;
+            if (stripWas.HasValue)
+                PartHydrodynamics.StripLength = stripWas.Value;
+            stripWas = null;
+            if (wholeWingWas.HasValue && FARDebugValues.wholeWingAspectRatio != wholeWingWas.Value)
+            {
+                FARDebugValues.wholeWingAspectRatio = wholeWingWas.Value;
+                FARDebugValues.UpdateWingInteractions();
+            }
+            wholeWingWas = null;
             if (linearFlapWas.HasValue)
                 if (FARDebugValues.linearFlapLift != linearFlapWas.Value)
                 {
