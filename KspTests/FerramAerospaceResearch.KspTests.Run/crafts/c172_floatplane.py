@@ -61,13 +61,93 @@ WING_ROOT_CHORD = 1.634                       # m: the drawing's root chord (bui
 # (FloatplaneTests' "mass": 550 kg, the procedural parts' own masses) and LiquidFuel at 5 kg a unit. The tank holds 636 kg;
 # full it made 1.19 t. FloatplaneTests sets the weight itself for each run
 GROSS_KG = 2220 * 0.45359237
-EMPTY_KG = 550.0
+EMPTY_KG = 560.0                              # with the drain valve's 10 kg
+# the fuselage's own contents: ProceduralParts' liquid tank has no Structural type (build.py's), so the game falls back
+# to its first, Mixed, and fills it: 180 kg of LFO in the shell (0.207 m3 at the 12 mm the game makes it). Written so
+# on purpose: the craft loads 397 lb over the 2220 lb gross with its C.G. 22 cm aft (it cannot get over the hump), and
+# the drain valve under the belly (action group 1) dumps it to the gross. FloatplaneTests empty it; the demo starts full
+FUSELAGE_TANK = dict(tankVolume=0.207292348, mass=0.0225741379, LiquidFuel=16.25, Oxidizer=19.87)
+# the FTE-1 drain valve (stock ReleaseValve, 10 kg) on the fuselage's belly at the C.G. station: it drains its parent,
+# the fuselage, at drainRate % of the full amount a second (10: the fuselage empty in 10 s)
+# the RO variant ("ro": RealismOverhaul / RP-1 installs, which have no proceduralTankLiquid or probeCoreOcto): the
+# fuselage and the fuel tank RO's procedural spaceplane tank, its Fuselage type (RealFuels): the fuselage LiquidFuel
+# (1 kg a litre in RO, drainable), the fuel tank AvGas (RO makes the engine's propellant AvGas: RO_AVGAS_KG_L), the probe core the rover body (50 kg, RP-1 avionics for 2 t); the floats and struts stay
+# proceduralStructural (RO's has the Structural type). RealFuels keeps a tank's contents in the part's RESOURCE nodes;
+# ProceduralParts sets its volume from the shape as it loads. EMPTY_RO_KG: the airframe empty as RO weighs it
+# (FloatplaneTests' "mass" record), for the fuel to the gross
+RO_TANK = "RO-ProcTankSpaceplane"
+# the probe core RP-1's procedural avionics (the user's Concorde CS donor, as planecraft's rp1 profile has it): a small
+# cylinder inside the cowling where the probe core was, its avionics for RO_AVIONICS_T of controllable mass
+RO_PROBE = "proceduralAvionics"
+RO_AVIONICS_DONOR = (os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "planecraft", "donors",
+                                  "Real Concorde CS.craft"), "proceduralAvionics_4292737802")
+RO_AVIONICS_SIZE = (0.35, 0.30)               # m: diameter, length
+RO_AVIONICS_T = 1.5
+RO_AVGAS_KG_L = 0.719
+EMPTY_RO_KG = 448.0
+# the RO parts weigh differently (lighter floats, the RealFuels tanks): the fuel tank this much further forward (m) for
+# the C.G. (FloatplaneTests "cg error"; the procedural avionics 16 kg in the nose where the probe core was 60)
+RO_TANK_SHIFT = 0.085
+RO_MFT = """	MODULE
+	{
+		name = ModuleFuelTanks
+		isEnabled = True
+		type = Fuselage
+		utilization = 100
+		volume = %(volume).3f
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+"""
+RO_RESOURCE = ("\tRESOURCE\n\t{\n\t\tname = %s\n\t\tamount = %.3f\n\t\tmaxAmount = %.3f\n\t\tflowState = True\n\t\tisTweakable = True\n"
+               "\t\thideFlow = False\n\t\tisVisible = True\n\t\tflowMode = Both\n\t}\n")
+VALVE_MODULE = """	MODULE
+	{
+		name = ModuleResourceDrain
+		isEnabled = True
+		drainRate = 10
+		isDraining = False
+		flowMode = False
+		resourcesToRelease = LiquidFuel,Oxidizer
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			ToggleResourceDrainAction
+			{
+				actionGroup = Custom01
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+"""
 # the fuel tank (it stands for the fuel and the load) moved forward this far (m) to put the centre of gravity at
 # CG_MAC as the craft loads: (target - as built) x the gross / the tank's 537 kg full to the gross, from
 # FloatplaneTests' "cg error" record (as built 1.488 m, hinged 1.467, split 1.514 with the plain shift, against 1.499 at
 # 28.4 % MAC; the test checks it within 1 cm). The hinged craft's control surfaces are parts of their own, behind the
-# hinges, and its CG sits further aft; the split floats' pieces carry their mass further forward
-TANK_SHIFT = {"plain": 0.021, "hinged": 0.060, "split": -0.006}
+# hinges, and its CG sits further aft; the split floats' pieces carry their mass further forward. Each 3.1 cm more for
+# the drain valve: physicsless, its 10 kg rides at the fuselage's CoM, 1.5 m aft of the CG (hinged: as built 1.483)
+TANK_SHIFT = {"plain": 0.052, "hinged": 0.091, "split": 0.025}
+# the fuel tank's cylinder inside the cabin (build.py sizes it 0.63 x 2.36 m, 0.1 m above the axis: its front end came
+# out through the windshield): TANK_LENGTH long, as wide as keeps its volume, its centre TANK_Y above the fuselage axis
+# (the cabin, stations 1.2 - 3.2 m, is 1.07 m wide and 1.2 m tall); its centre along the fuselage, and so the C.G., kept.
+# TANK_VOLUME (m3, stock: build.py's 0.73), TANK_Y: the RO variant's AvGas (0.719 kg/L) to the gross over RO's lighter airframe
+# (569 kg; 0.73 holds 526), the tank further forward there (RO_TANK_SHIFT): lower, clear of the windshield
+TANK_LENGTH = 1.30
+TANK_VOLUME = {"stock": 0.73, "ro": 0.82}
+TANK_Y = {"stock": 0.0, "ro": -0.02}
 # FAR weighs a wing by its area (FARWingAerodynamicModel): 1014 kg for these panels as built, where the 172's wing and
 # tail are about 115 kg (250 lb): every panel's massMultiplier scaled to that
 WING_MASS_SCALE = 115.0 / 1014.0
@@ -224,6 +304,39 @@ ENGINE_BLOCK = """PART
 	}
 }
 """
+
+
+def ro_variant(head, parts, fuel_kg, lfo_kg, fus_pose):
+    """the craft's parts as RO has them (RO_TANK, RO_PROBE): the fuselage (parts[0]) holding lfo_kg of LiquidFuel, the
+    fuel tank fuel_kg; names swapped in every reference (links, srfN)"""
+    out = []
+    for n, b in enumerate(parts):
+        pid = cio.part_id(b)
+        if pid.startswith("proceduralTankLiquid_"):
+            i, j = cio.module_span(b, "TankContentSwitcher")
+            vol = float(re.search(r"(?m)^\t\ttankVolume = (.*)$", b[i:j]).group(1)) * 1000.0   # m3 -> L
+            b = b[:i] + RO_MFT % dict(volume=vol) + b[j:]
+            b = re.sub(r"\tRESOURCE\n\t\{\n.*?\n\t\}\n", "", b, flags=re.S)
+            res, units = ("LiquidFuel", lfo_kg) if n == 0 else ("AvGas", fuel_kg / RO_AVGAS_KG_L)
+            k = b.rstrip().rindex("}")
+            b = b[:k] + RO_RESOURCE % (res, units, max(units, vol)) + b[k:]
+        elif pid.startswith("probeCoreOcto"):
+            # the probe core's pose and id on RP-1's procedural avionics
+            f, dpid = RO_AVIONICS_DONOR
+            _, donors = cio.split_parts(open(f, encoding="utf-8").read().replace("\r\n", "\n"))
+            donor = next(d for d in donors if cio.part_id(d) == dpid)
+            pos = [float(v) for v in re.search(r"(?m)^\tpos = (.*)$", b).group(1).split(",")]
+            rot = [float(v) for v in re.search(r"(?m)^\trot = (.*)$", b).group(1).split(",")]
+            pers = int(re.search(r"(?m)^\tpersistentId = (\d+)", b).group(1))
+            num = re.search(r"_(\d+)$", pid).group(1)
+            b = cio.place(donor, "%s_%s" % (RO_PROBE, num), pers, np.array(pos), np.array(rot), fus_pose)
+            b = cio.set_mod(b, "ProceduralShapeCylinder", "diameter", "%.3f" % RO_AVIONICS_SIZE[0])
+            b = cio.set_mod(b, "ProceduralShapeCylinder", "length", "%.3f" % RO_AVIONICS_SIZE[1])
+            b = cio.set_mod(b, "ModuleProceduralAvionics", "controllableMass", "%g" % RO_AVIONICS_T)
+        out.append(b)
+    text = head + "".join(out)
+    text = re.sub(r"proceduralTankLiquid_(\d+)", RO_TANK + r"_\1", text)
+    return re.sub(r"probeCoreOcto(?:\.v2)?_(\d+)", RO_PROBE + r"_\1", text)
 
 
 def panel_area(b):
@@ -408,7 +521,9 @@ def main():
     # hinged: B9's own control surfaces (no FARTest parts); noplain: the controls merged into their strips, the other
     # panels left plain wing panels (for the Components tab's picture of the wing split at the strips)
     hinged, noplain = "hinged" in flags, "noplain" in flags
-    ship = "Cessna 172M Floatplane" + (" Split" if split else "") + (" Hinged" if hinged else "") + (" NoPlain" if noplain else "")
+    ro = "ro" in flags      # RO's parts (ro_variant)
+    ship = "Cessna 172M Floatplane" + (" Split" if split else "") + (" Hinged" if hinged else "") + (" NoPlain" if noplain else "") + \
+        (" RO" if ro else "")
 
     text = open(sys.argv[1], encoding="utf-8").read().replace("\r\n", "\n")
     head, parts = cio.split_parts(text)
@@ -519,18 +634,55 @@ def main():
         if cio.part_id(b).startswith("proceduralTankLiquid") and n > 0 and "\t\tname = LiquidFuel\n" in b:
             units = (GROSS_KG - EMPTY_KG) / 5.0
             b = re.sub(r"(\t\tname = LiquidFuel\n\t\tamount = )[^\n]*", r"\g<1>%.3f" % units, b)
-            dz = TANK_SHIFT["hinged" if hinged else "split" if split else "plain"]
+            dz = TANK_SHIFT["hinged" if hinged else "split" if split else "plain"] + (RO_TANK_SHIFT if ro else 0.0)
             pos = [float(v) for v in re.search(r"(?m)^\tpos = (.*)$", b).group(1).split(",")]
             ap = [float(v) for v in re.search(r"(?m)^\tattPos0 = (.*)$", b).group(1).split(",")]
             assert re.search(r"(?m)^\tsrfN = srfAttach,%s," % re.escape(fus_name), b), "the tank on the fuselage"
-            b = cio.setf(b, "pos", cio.fmt([pos[0], pos[1], pos[2] + dz]))
-            b = cio.setf(b, "attPos0", cio.fmt([ap[0], ap[1] + dz, ap[2]]))      # the fuselage's local y is forward
+            tv, ty = TANK_VOLUME["ro" if ro else "stock"], TANK_Y["ro" if ro else "stock"]
+            b = cio.setf(b, "pos", cio.fmt([pos[0], y0 + ty, pos[2] + dz]))
+            b = cio.setf(b, "attPos0", cio.fmt([ap[0], ap[1] + dz, -ty]))     # the fuselage's local y forward, z down
+            i, j = cio.module_span(b, "ProceduralShapeCylinder")
+            d0 = float(re.search(r"(?m)^\t\tdiameter = (.*)$", b[i:j]).group(1))
+            l0 = float(re.search(r"(?m)^\t\tlength = (.*)$", b[i:j]).group(1))
+            d1 = math.sqrt(tv / TANK_LENGTH / math.pi * 4)
+            b = cio.set_mod(b, "TankContentSwitcher", "tankVolume", "%.4f" % tv)
+            b = cio.set_mod(b, "ProceduralShapeCylinder", "diameter", "%.4f" % d1)
+            b = cio.set_mod(b, "ProceduralShapeCylinder", "length", "%.4f" % TANK_LENGTH)
+            print(f"fuel tank: {d0:.3f} x {l0:.3f} m -> {d1:.3f} x {TANK_LENGTH:.3f} m, {ty:+.2f} m from the axis")
             parts[n] = b
             print(f"fuel: {units:.1f} units ({units * 5:.0f} kg) for {GROSS_KG:.0f} kg gross; the tank {dz * 100:.1f} cm "
                   f"forward for the C.G.")
 
+    # the fuselage full of LFO (FUSELAGE_TANK) and the drain valve under it
+    fus = cio.set_mod(parts[0], "TankContentSwitcher", "tankType", "Mixed")
+    for k in ("tankVolume", "mass"):
+        fus = cio.set_mod(fus, "TankContentSwitcher", k, "%.9g" % FUSELAGE_TANK[k])
+    assert "\tRESOURCE\n" not in fus, "build.py's fuselage has no resources"
+    res = "".join("\tRESOURCE\n\t{\n\t\tname = %s\n\t\tamount = %g\n\t\tmaxAmount = %g\n\t\tflowState = True\n\t\tisTweakable = True\n"
+                  "\t\thideFlow = False\n\t\tisVisible = True\n\t\tflowMode = Both\n\t}\n" % (r, FUSELAGE_TANK[r], FUSELAGE_TANK[r])
+                  for r in ("LiquidFuel", "Oxidizer"))
+    k = fus.rstrip().rindex("}")
+    parts[0] = fus[:k] + res + fus[k:]
+    belly, _ = fuselage_at(nodes, length, y0, z_cg)
+    vpos = np.array([0.0, belly + 0.01, z_cg])
+    pid += 1
+    vname = "ReleaseValve_%d" % pid
+    vb = ENGINE_BLOCK % dict(name=vname, pid=pid, pos=cio.fmt(vpos), rot=cio.fmt(Q_FUSE), parent=fus_name,
+                             attpos=cio.fmt(cio.qrot(cio.qinv(Q_FUSE), vpos - fus_pose[1])),
+                             attrot=cio.fmt(cio.qmul(cio.qinv(Q_FUSE), Q_FUSE)))
+    k = vb.rstrip().rindex("}")
+    new.append(vb[:k] + VALVE_MODULE + vb[k:])
+    links.append(vname)
+    lfo = 5.0 * (FUSELAGE_TANK["LiquidFuel"] + FUSELAGE_TANK["Oxidizer"])
+    print(f"fuselage: {lfo:.0f} kg of LFO ({(GROSS_KG + lfo) / 0.45359237:.0f} lb loaded); drain valve at y {vpos[1]:.3f} "
+          f"z {z_cg:+.3f}")
+
     parts[0] = cio.add_links(parts[0], links)
-    out = head + "".join(parts + new)
+    if ro:
+        out = ro_variant(head, parts + new, GROSS_KG - EMPTY_RO_KG, lfo, fus_pose)
+        print(f"RO: {RO_TANK} fuselage ({lfo:.0f} kg LiquidFuel) and fuel tank ({GROSS_KG - EMPTY_RO_KG:.0f} kg), {RO_PROBE}")
+    else:
+        out = head + "".join(parts + new)
     path = os.path.join(here, ship + ".craft")
     open(path, "w", encoding="utf-8", newline="\n").write(out)
     print(f"wrote {path}: {len(parts) + len(new)} parts")

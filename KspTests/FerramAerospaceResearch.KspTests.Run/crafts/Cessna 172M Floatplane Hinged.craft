@@ -55,6 +55,7 @@ PART
 	link = proceduralStructural_4100000005
 	link = proceduralStructural_4100000007
 	link = proceduralStructural_4100000008
+	link = ReleaseValve_4100000010
 	EVENTS
 	{
 	}
@@ -307,9 +308,9 @@ PART
 	{
 		name = TankContentSwitcher
 		isEnabled = True
-		tankVolume = 14.7262173
-		mass = 1.60368514
-		tankType = Structural
+		tankVolume = 0.207292348
+		mass = 0.0225741379
+		tankType = Mixed
 		stagingEnabled = True
 		EVENTS
 		{
@@ -799,6 +800,28 @@ PART
 		UPGRADESAPPLIED
 		{
 		}
+	}
+	RESOURCE
+	{
+		name = LiquidFuel
+		amount = 16.25
+		maxAmount = 16.25
+		flowState = True
+		isTweakable = True
+		hideFlow = False
+		isVisible = True
+		flowMode = Both
+	}
+	RESOURCE
+	{
+		name = Oxidizer
+		amount = 19.87
+		maxAmount = 19.87
+		flowState = True
+		isTweakable = True
+		hideFlow = False
+		isVisible = True
+		flowMode = Both
 	}
 }
 PART
@@ -6673,9 +6696,9 @@ PART
 	part = proceduralTankLiquid_4000000030
 	partName = Part
 	persistentId = 3713072918
-	pos = 0,6.099,1.57423
+	pos = 0,6,1.60523
 	attPos = 0,0,0
-	attPos0 = 0,1.57423,-0.0989955
+	attPos0 = 0,1.60523,-0
 	rot = 0.707107,0,0,0.707107
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
@@ -6775,8 +6798,8 @@ PART
 	{
 		name = ProceduralShapeCylinder
 		isEnabled = True
-		diameter = 0.628779
-		length = 2.35566
+		diameter = 0.8456
+		length = 1.3000
 		stagingEnabled = True
 		EVENTS
 		{
@@ -6947,7 +6970,7 @@ PART
 	{
 		name = TankContentSwitcher
 		isEnabled = True
-		tankVolume = 0.731474
+		tankVolume = 0.7300
 		mass = 1.60368514
 		tankType = LiquidFuel
 		stagingEnabled = True
@@ -7158,7 +7181,7 @@ PART
 	RESOURCE
 	{
 		name = LiquidFuel
-		amount = 91.395
+		amount = 89.395
 		maxAmount = 127.276
 		flowState = True
 		isTweakable = True
@@ -11963,6 +11986,65 @@ PART
 		}
 		ACTIONS
 		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+}
+PART
+{
+	part = ReleaseValve_4100000010
+	partName = Part
+	persistentId = 4100000010
+	pos = 0,5.50154,1.49922
+	attPos = 0,0,0
+	attPos0 = 0,1.49922,0.498456
+	rot = 0.707107,0,0,0.707107
+	attRot = 0,0,0,1
+	attRot0 = 0,0,0,1
+	mir = 1,1,1
+	symMethod = Mirror
+	autostrutMode = Root
+	rigidAttachment = True
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = 0
+	sqor = 0
+	sepI = 0
+	attm = 1
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,proceduralTankLiquid_4000000001
+	EVENTS
+	{
+	}
+	ACTIONS
+	{
+	}
+	PARTDATA
+	{
+	}
+	MODULE
+	{
+		name = ModuleResourceDrain
+		isEnabled = True
+		drainRate = 10
+		isDraining = False
+		flowMode = False
+		resourcesToRelease = LiquidFuel,Oxidizer
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			ToggleResourceDrainAction
+			{
+				actionGroup = Custom01
+			}
 		}
 		UPGRADESAPPLIED
 		{

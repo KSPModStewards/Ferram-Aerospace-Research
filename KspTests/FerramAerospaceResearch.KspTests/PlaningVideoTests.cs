@@ -224,7 +224,7 @@ namespace FerramAerospaceResearch.KspTests
         private static string F(double x) => x.ToString("G5", CultureInfo.InvariantCulture);
 
         /// <summary>Saves the screen at the end of every frame and draws the overlay.</summary>
-        private class Recorder : MonoBehaviour
+        internal class Recorder : MonoBehaviour
         {
             public string Dir;
             public string[] Lines = Array.Empty<string>();

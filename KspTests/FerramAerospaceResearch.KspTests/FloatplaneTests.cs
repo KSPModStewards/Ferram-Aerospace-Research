@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using KspTest;
 using UnityEngine;
@@ -24,6 +25,8 @@ namespace FerramAerospaceResearch.KspTests
         private const string SplitCraft = "Cessna 172M Floatplane Split";
         // the plane with B9's own hinged control surfaces (crafts/c172_floatplane.py hinged): no FARTest wing parts
         private const string HingedCraft = "Cessna 172M Floatplane Hinged";
+        // the hinged craft on RO's parts (crafts/c172_floatplane.py ro), for RealismOverhaul / RP-1 installs (KSPDIR)
+        private const string HingedRoCraft = "Cessna 172M Floatplane Hinged RO";
         private const string Mods = @"AdvancedJetEngine;Firespitter;TimeControl;..\..\..\CustomProceduralParts\GameData\CustomProceduralParts;" +
                                     @"..\FerramAerospaceResearch.KspTests.Run\mods\FARTestFloatplane";
 
@@ -42,6 +45,7 @@ namespace FerramAerospaceResearch.KspTests
         {
             public Vessel V;
             public Part Root, Fuel, Engine;
+            public string FuelName;
             public HullParts[] Floats;
             public PartModule Aje;
             public double Get(string field) => Convert.ToDouble(Aje.Fields[field].GetValue(Aje), CultureInfo.InvariantCulture);
@@ -107,7 +111,7 @@ namespace FerramAerospaceResearch.KspTests
                 double dt = TimeWarp.fixedDeltaTime;
                 Vector3 vel = rb.velocity;
                 double towKN = m * Vector3.Dot(vel, h) / dt;      // what holding it at rest takes out each step
-                foreach (Part q in v.parts)
+                foreach (Part q in v.parts.Where(q => q.rb != null))
                     q.rb.velocity -= h * Vector3.Dot(q.rb.velocity, h);
                 if (Planetarium.GetUniversalTime() - t0 > 8)
                 {
@@ -766,6 +770,371 @@ namespace FerramAerospaceResearch.KspTests
 
         private static string F(double x) => x.ToString("G5", CultureInfo.InvariantCulture);
 
+        /// <summary>
+        /// A video of the hinged craft as it loads (frames/NNNNN.jpg, one per 1/30 s of game time, and demo.csv): the
+        /// fuselage full of LFO (crafts/c172_floatplane.py FUSELAGE_TANK), 2618 lb, 398 over the gross and the C.G. aft.
+        /// Full throttle on the water with the stick at overStick: it cannot get over the hump. Then the drain valve
+        /// dumps the fuselage's fuel (2220 lb, C.G. 28.4% MAC) and the stick goes neutral: over the hump and onto the
+        /// step, where the water's drag holds the speed; then full aft stick lifts the bows and it flies. The flight camera
+        /// abeam (camAngle deg aft of abeam), the UI hidden, an overlay with weight, C.G., speed, thrust and drag.
+        /// Parameters: overStick (-1..1, default 0), overSec (default 30), overLb (the fuselage's fuel, default 398: the
+        /// stock craft's full fuselage), pullMph (the IAS at which the stick goes full aft, default 70; 0: at neutral
+        /// until the speed stops rising, at most neutralSec, default 60), lat and lon (the site; RSS's Earth: off Cape
+        /// Canaveral),
+        /// flaps (default 0), record (false: no frames, hyper-warped), camDistance, camPitch, camAngle, hyperWarp,
+        /// standardDay, linearFlapLift.
+        /// </summary>
+        [UITest(Kind = "Measure", Explicit = true, Mods = Mods, StartsAt = StartState.Flight, Craft = HingedCraft, CraftDir = "SPH",
+                LaunchSite = "Runway", TimeoutSec = 2400)]
+        public static IEnumerator Demo_C172FloatplaneHinged(TestContext ctx) => Demo(ctx);
+
+        /// <summary>
+        /// Demo_C172FloatplaneHinged on RO's parts, in a RealismOverhaul / RP-1 install (KSPDIR). It starts at the space
+        /// center: RP-1's KSCSwitcher binding is mended there (Rp1KscRebind) before the editor and the launch.
+        /// </summary>
+        [UITest(Kind = "Measure", Explicit = true, Mods = Mods, StartsAt = StartState.SpaceCenter, Craft = HingedRoCraft, CraftDir = "SPH",
+                LaunchSite = "Runway", TimeoutSec = 3600)]
+        public static IEnumerator Demo_C172FloatplaneHingedRO(TestContext ctx)
+        {
+            yield return Rp1KscRebind(ctx);
+            // (ctx.Craft is made only for a test that starts in the editor or flight)
+            string craft = Path.Combine(KSPUtil.ApplicationRootPath, "saves", HighLogic.SaveFolder, "Ships", "SPH", HingedRoCraft + ".craft");
+            Assert.True(File.Exists(craft), $"the craft in the save ({craft})");
+            // daylight at the site (a new game starts at night off Cape Canaveral): the clock moved on to when the sun
+            // stands highest there, tried hour by hour over a day from the space center
+            if (FlightGlobals.GetHomeBody() is CelestialBody home && home.Radius > 1e6 && ctx.Param("noon") != "false")
+            {
+                double ut0 = Planetarium.GetUniversalTime(), bestUt = ut0, bestEl = -90;
+                double lat = ctx.ParamDouble("lat", 28.45), lon = ctx.ParamDouble("lon", -80.45);
+                for (int h = 0; h < 48; h++)
+                {
+                    Planetarium.SetUniversalTime(ut0 + h * home.solarDayLength / 48);
+                    yield return Wait.Frames(2);
+                    Vector3d upAt = home.GetSurfaceNVector(lat, lon);
+                    Vector3d sun = (Planetarium.fetch.Sun.position - home.position).normalized;
+                    double el = 90 - Vector3d.Angle(upAt, sun);
+                    if (el > bestEl)
+                    {
+                        bestEl = el;
+                        bestUt = Planetarium.GetUniversalTime();
+                    }
+                }
+                Planetarium.SetUniversalTime(bestUt);
+                yield return Wait.Frames(2);
+                ctx.Record("time of day", $"UT {bestUt:F0} s: the sun {bestEl:F0} deg up at {lat:F2} N {lon:F2} E");
+            }
+            yield return Nav.EnsureState(ctx, StartState.Flight, craft, ctx.LaunchSite ?? "Runway");
+            // Scatterer's ocean pushes craft with its waves (oceanCraftWaveInteractions) where FAR's water is a flat sea:
+            // off for this flight (waves=on keeps it), its settings untouched (Scatterer saves them on a scene change)
+            ctx.Record("scatterer waves", ctx.Param("waves") == "on" ? "on" : ScattererWavesOff());
+            yield return Demo(ctx);
+        }
+
+        // Scatterer's wave interaction stopped in this scene: each ocean's GPUWaveInteractionHandler (it sets every part's
+        // PartBuoyancy.waterLevel to the wave height under it each frame) cleaned up and dropped, the parts' water levels
+        // back to the sea's
+        private static string ScattererWavesOff()
+        {
+            Type t = AssemblyLoader.loadedAssemblies.Select(a => a.assembly.GetType("Scatterer.OceanFFTgpu")).FirstOrDefault(x => x != null);
+            if (t == null)
+                return "no Scatterer";
+            FieldInfo f = t.GetField("waveInteractionHandler", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance);
+            int n = 0;
+            foreach (UnityEngine.Object o in UnityEngine.Object.FindObjectsOfType(t))
+            {
+                object h = f?.GetValue(o);
+                if (h == null)
+                    continue;
+                h.GetType().GetMethod("Cleanup", BindingFlags.Public | BindingFlags.Instance)?.Invoke(h, null);
+                f.SetValue(o, null);
+                n++;
+            }
+            foreach (Part q in FlightGlobals.ActiveVessel.parts.Where(q => q.partBuoyancy != null))
+                q.partBuoyancy.waterLevel = 0;
+            return n > 0 ? $"off for the flight ({n} wave handler(s) dropped)" : "none running";
+        }
+
+        // RP-1 with KSCSwitcher (RSS): RP-1's ScenarioHandler asks KSCSwitcher for its sites at the main menu, and in a
+        // run that comes before KSCSwitcher has loaded them (its KSCLoader logs "loaded N launch sites" after). The
+        // binding throws half made and is cached so: every later call throws, and RP-1's space center data fails to load
+        // ("Error Loading RP-1 Data", in each scene). Bound again here, the sites loaded by now; its popups closed.
+        private static IEnumerator Rp1KscRebind(TestContext ctx)
+        {
+            Type t = AssemblyLoader.loadedAssemblies.Select(a => a.assembly.GetType("RP0.KSCSwitcherInterop")).FirstOrDefault(x => x != null);
+            if (t == null)
+                yield break;
+            t.GetField("_isKSCSwitcherInstalled", BindingFlags.NonPublic | BindingFlags.Static)?.SetValue(null, null);
+            bool bound = (bool)t.GetProperty("IsKSCSwitcherInstalled", BindingFlags.Public | BindingFlags.Static).GetValue(null);
+            string site = bound ? t.GetMethod("GetActiveRSSKSC", BindingFlags.Public | BindingFlags.Static).Invoke(null, null) as string : null;
+            ctx.Record("rp1 ksc", $"RP-1's KSCSwitcher binding made again: {bound}, site {site}");
+            yield return Wait.Seconds(2);
+            foreach (PopupDialog d in Ugui.OpenPopups().ToList())
+                d.Dismiss();
+            yield return Wait.Frames(5);
+        }
+
+        private static IEnumerator Demo(TestContext ctx)
+        {
+            double overStick = ctx.ParamDouble("overStick", 0), overSec = ctx.ParamDouble("overSec", 30);
+            double neutralSec = ctx.ParamDouble("neutralSec", 60), pullMph = ctx.ParamDouble("pullMph", 70);
+            double overT = ctx.ParamDouble("overLb", 398) * Lb;
+            int flapSetting = (int)ctx.ParamDouble("flaps", 0);
+            bool record = ctx.Param("record") != "false";
+            const double Mph = 0.44704, Ft = 0.3048, Lbf = 4.448e-3, MacM = 58.8 * 0.0254;
+
+            Hyper(ctx, false);
+            StandardDay(ctx, null);
+            WaterParams.Restore();
+            yield return Wait.Seconds(5);
+            Plane p = null;
+            foreach (object o in Prepare(ctx, r => p = r))
+                yield return o;
+            Vessel v = p.V;
+            CelestialBody body = v.mainBody;
+            Part fus = p.Root;
+            // the fuselage's fuel back, as the craft loads (Prepare empties it): overLb of it, its resources filled in turn
+            double left = overT;
+            foreach (PartResource r in fus.Resources.Cast<PartResource>().Where(r => r.info.density > 0 && r.info.partResourceDrainDefinition.isDrainable))
+            {
+                r.amount = Math.Min(r.maxAmount, left / r.info.density);
+                left -= r.amount * r.info.density;
+            }
+            Assert.True(left < 1e-3, $"the fuselage holds {ctx.ParamDouble("overLb", 398):F0} lb ({left / Lb:F0} lb short)");
+            ModuleResourceDrain drain = v.parts.Select(q => q.Modules.GetModule<ModuleResourceDrain>()).FirstOrDefault(m => m != null);
+            Assert.True(drain != null && drain.part.parent == fus, "a drain valve on the fuselage");
+            for (int i = 0; i < 3; i++)
+                yield return new WaitForFixedUpdate();
+            double MacPct(Vector3 cgw) => 28.4 - (p.Root.transform.InverseTransformPoint(cgw).y - CgLocalY) / MacM * 100;
+            ctx.Record("loaded", $"{v.GetTotalMass() / Lb:F0} lb, the fuselage " +
+                                 string.Join(", ", fus.Resources.Cast<PartResource>().Select(r => $"{r.resourceName} {r.amount:F2}")) +
+                                 $"; C.G. {MacPct(WorldCoM(v)):F1}% MAC");
+
+            bool crashWas = CheatOptions.NoCrashDamage;
+            GameObject recorderGo = null;
+            try
+            {
+                CheatOptions.NoCrashDamage = true;
+                yield return Wait.GameSeconds(3);     // settle afloat
+                Vector3 up = v.upAxis;
+                Vector3 h0 = Vector3.ProjectOnPlane(p.Root.transform.up, up).normalized;
+                PlaningVideoTests.Recorder rec = null;
+                FlightCamera cam = FlightCamera.fetch;
+                float camHdg = 0, camPitch = (float)(ctx.ParamDouble("camPitch", 6) * Mathf.Deg2Rad);
+                if (record)
+                {
+                    // the camera abeam (the right side), camAngle aft of it; its heading found by trying two (camHdg's
+                    // zero and sense depend on the camera mode)
+                    cam.minPitch = -0.5f;
+                    cam.SetDistanceImmediate((float)ctx.ParamDouble("camDistance", 20));
+                    Vector3 side = Vector3.Cross(up, h0).normalized;
+                    Vector3 look = Quaternion.AngleAxis((float)ctx.ParamDouble("camAngle", 25), up) * side;
+                    float a0 = 0, a1 = 0;
+                    for (int pass = 0; pass < 2; pass++)
+                    {
+                        float hdg = pass == 0 ? 0f : 0.5f;
+                        for (int i = 0; i < 10; i++)
+                        {
+                            cam.camHdg = hdg;
+                            cam.camPitch = camPitch;
+                            yield return null;
+                        }
+                        Vector3 f = Vector3.ProjectOnPlane(cam.transform.forward, up).normalized;
+                        float a = Vector3.SignedAngle(look, f, up) * Mathf.Deg2Rad;
+                        if (pass == 0) a0 = a;
+                        else a1 = a;
+                    }
+                    float slope = Mathf.DeltaAngle(a0 * Mathf.Rad2Deg, a1 * Mathf.Rad2Deg) * Mathf.Deg2Rad / 0.5f;
+                    camHdg = Math.Abs(slope) > 0.2f ? -a0 / slope : 0;
+                    GameEvents.onHideUI.Fire();
+                    string frames = Path.Combine(ctx.ResultsDir, "frames");
+                    Directory.CreateDirectory(frames);
+                    recorderGo = new GameObject("FloatplaneDemoRecorder");
+                    rec = recorderGo.AddComponent<PlaningVideoTests.Recorder>();
+                    rec.Dir = frames;
+                    Time.captureFramerate = 30;
+                }
+                else
+                    Hyper(ctx, true);
+
+                foreach (ferram4.FARControllableSurface c in v.parts.SelectMany(q => q.Modules.OfType<ferram4.FARControllableSurface>()).Where(c => c.isFlap))
+                    c.SetDeflection(flapSetting);
+                p.Engine.Modules.GetModule<ModuleEngines>().Activate();
+                Ctrl.Attach();
+                Ctrl.SetThrottle(1f);
+                ctx.Record("start", $"flaps {flapSetting * 10}, overweight stick {overStick:F2}, {Ambient(v)}");
+
+                var csv = new StringBuilder("t,phase,lb,cg_mac,V_ms,IAS_mph,pitch_deg,elevator,keel_alt_m,wet,thrust_lbf,water_drag_lbf,air_drag_lbf\n");
+                var fixedWait = new WaitForFixedUpdate();
+                string phase = "overweight", lastPhase = phase;
+                double t0 = Planetarium.GetUniversalTime(), since = 0, lastPitch = 0, lastRoll = 0, lastHdg = 0, integral = 0;
+                double airDrag = 0, waterEma = 0, airborneSince = double.NaN, liftoffT = double.NaN, capMph = double.NaN, capT = double.NaN;
+                var speeds = new Queue<(double t, double V)>();
+                var phases = new StringBuilder();
+                int steps = 0;
+                while (true)
+                {
+                    double t = Planetarium.GetUniversalTime() - t0, dt = TimeWarp.fixedDeltaTime;
+                    if (!Finite(p.Root.rb.velocity))
+                    {
+                        ctx.Record("nan", $"t {t:F2} s");
+                        Assert.True(false, "the vessel's state is finite");
+                    }
+                    if (phase != lastPhase)
+                    {
+                        phases.Append($"{lastPhase} to {phase} at {t:F1} s, {v.indicatedAirSpeed / Mph:F1} mph IAS; ");
+                        lastPhase = phase;
+                        since = t;
+                        integral = 0;
+                    }
+                    double inPhase = t - since;
+                    up = v.upAxis;
+                    Vector3 fwd = p.Root.transform.up, right = p.Root.transform.right;
+                    double pitch = Math.Asin(Mathf.Clamp(Vector3.Dot(fwd, up), -1, 1)) * 180 / Math.PI;
+                    double roll = Math.Asin(Mathf.Clamp(Vector3.Dot(right, up), -1, 1)) * 180 / Math.PI;
+                    double hdg = Vector3.SignedAngle(Vector3.ProjectOnPlane(h0, up), Vector3.ProjectOnPlane(fwd, up), up);
+                    double q = (pitch - lastPitch) / dt, pr = (roll - lastRoll) / dt, rr = (hdg - lastHdg) / dt;
+                    lastPitch = pitch; lastRoll = roll; lastHdg = hdg;
+                    double V = v.srfSpeed, ias = v.indicatedAirSpeed;
+                    bool wet = p.Floats.Any(f => f.Parts.Any(x => x.submergedPortion > 0));
+                    double keelAlt = p.Floats.Min(f => FlightGlobals.getAltitudeAtPos(f.TransformPoint(StepKeel), body));
+                    speeds.Enqueue((t, V));
+                    while (speeds.Peek().t < t - 8)
+                        speeds.Dequeue();
+                    double gain8 = V - speeds.Peek().V;     // m/s over the last 8 s
+
+                    // the pilot
+                    double elevator;
+                    switch (phase)
+                    {
+                        case "overweight":
+                            elevator = overStick;
+                            if (inPhase > overSec)
+                            {
+                                drain.TurnOnDrain();
+                                ctx.Record("drain on", $"t {t:F1} s: draining {drain.IsDraining}, {V:F2} m/s");
+                                phase = "drain";
+                            }
+                            break;
+                        case "drain":
+                            elevator = overStick;
+                            if (fus.Resources.Cast<PartResource>().Sum(r => r.amount) < 1e-3 || (inPhase > 1 && !drain.IsDraining))
+                            {
+                                if (drain.IsDraining)
+                                    drain.TurnOffDrain();
+                                phase = "neutral";
+                            }
+                            break;
+                        case "neutral":
+                            elevator = 0;
+                            if (pullMph <= 0 && inPhase > 15 && gain8 < 0.4 && double.IsNaN(capMph))
+                            {
+                                capMph = ias / Mph;
+                                capT = t;
+                            }
+                            if (pullMph > 0 ? ias >= pullMph * Mph : t - capT > 6 || inPhase > neutralSec)
+                                phase = "pull";
+                            break;
+                        case "pull":
+                            elevator = 1;
+                            break;
+                        default:                                       // climbing: 8 deg held
+                        {
+                            double err = Math.Max(-10, Math.Min(10, 8 - pitch));
+                            elevator = 0.15 * err + 0.03 * integral - 0.06 * q;
+                            if (Math.Abs(elevator) < 1 || Math.Sign(err) != Math.Sign(elevator))
+                                integral = Math.Max(-30, Math.Min(30, integral + err * dt));
+                            break;
+                        }
+                    }
+                    elevator = Mathf.Clamp((float)elevator, -1, 1);
+                    Ctrl.Pitch = (float)elevator;
+                    Ctrl.Roll = Mathf.Clamp((float)(0.08 * roll + 0.03 * pr), -1, 1);
+                    Ctrl.Yaw = Mathf.Clamp((float)(-0.10 * hdg - 0.05 * rr), -1, 1);
+
+                    // off the water: every float clear for a second (from any phase: the record says which)
+                    if (!wet && phase != "overweight" && phase != "drain")
+                    {
+                        if (double.IsNaN(airborneSince))
+                            airborneSince = t;
+                        if (phase != "climb" && t - airborneSince > 1)
+                        {
+                            liftoffT = t;
+                            phase = "climb";
+                        }
+                    }
+                    else if (phase != "climb")
+                        airborneSince = double.NaN;
+                    if (phase == "climb" && (keelAlt > 100 * Ft || t - liftoffT > 25))
+                        break;
+                    if (t > 400)
+                        break;
+
+                    if (++steps % 10 == 0)
+                    {
+                        FARAPI.CalculateVesselAeroForces(v, out Vector3 af, out Vector3 _, (Vector3)v.srf_velocity, Math.Max(0, v.altitude));
+                        airDrag = -Vector3.Dot(af, ((Vector3)v.srf_velocity).normalized);
+                    }
+                    Vector3 water = Vector3.zero;
+                    foreach (HullParts f in p.Floats)
+                        water += f.Sum(x => x.LastForce + x.LastHydrostaticForce);
+                    Vector3 runDir = Vector3.ProjectOnPlane(v.srf_velocity, up).normalized;
+                    double waterDrag = -Vector3.Dot(water, runDir);
+                    waterEma += Math.Min(1, dt / 0.5) * (waterDrag - waterEma);
+                    double lb = v.GetTotalMass() / Lb, thrust = p.Get("propThrust");
+                    double mac = MacPct(WorldCoM(v));
+                    if (rec != null)
+                    {
+                        cam.camHdg = camHdg;
+                        cam.camPitch = camPitch;
+                        string stick = elevator > 0.98 ? "full aft" : Math.Abs(elevator) < 0.02 ? "neutral" : $"{elevator * 100:+0;-0}%";
+                        string caption = phase switch
+                        {
+                            "overweight" => inPhase < 12
+                                ? $"Fuselage tank full of fuel: {overT / Lb:F0} lb over max takeoff weight, C.G. far aft. Full power, stick neutral"
+                                : "Overweight: nose-high on the float heels, stuck behind the hump - water drag equals thrust",
+                            "drain" => "Dumping the fuselage's fuel through the drain valve...",
+                            "neutral" => double.IsNaN(capMph)
+                                ? (V < 12 ? "At max takeoff weight: over the hump and onto the step" : "On the step, stick neutral")
+                                : $"Stick neutral: too flat to lift off - water and air drag hold it at {capMph:F0} mph",
+                            "pull" => "Full aft stick: the bows come up and the floats let go",
+                            _ => "Airborne",
+                        };
+                        rec.Lines = new[]
+                        {
+                            "Cessna 172M floatplane - FAR water model",
+                            $"weight {lb:F0} lb (max 2220)   C.G. {mac:F1}% MAC",
+                            $"IAS {ias / Mph,3:F0} mph   pitch {pitch,5:F1} deg   stick {stick}",
+                            $"thrust {thrust / Lbf,4:F0} lbf   water drag {Math.Max(0, waterEma) / Lbf,4:F0} lbf   air drag {airDrag / Lbf,3:F0} lbf",
+                            caption,
+                        };
+                    }
+                    csv.AppendLine(string.Join(",", F(t), phase, F(lb), F(mac), F(V), F(ias / Mph), F(pitch), F(elevator), F(keelAlt), wet ? "1" : "0",
+                                               F(thrust / Lbf), F(waterDrag / Lbf), F(airDrag / Lbf)));
+                    yield return fixedWait;
+                }
+                File.WriteAllText(Path.Combine(ctx.ResultsDir, "demo.csv"), csv.ToString());
+                ctx.Record("phases", phases.ToString());
+                ctx.Record("neutral cap", double.IsNaN(capMph) ? "none (still gaining)" : $"{capMph:F1} mph IAS");
+                ctx.Record("liftoff", double.IsNaN(liftoffT) ? "no" : $"t {liftoffT:F1} s");
+                if (rec != null)
+                    ctx.Record("frames", rec.Frame);
+                Assert.True(!double.IsNaN(liftoffT), "it flew");
+            }
+            finally
+            {
+                Time.captureFramerate = 0;
+                if (recorderGo != null)
+                    UnityEngine.Object.Destroy(recorderGo);
+                GameEvents.onShowUI.Fire();
+                Ctrl.SetThrottle(0f);
+                Ctrl.Neutral();
+                Hyper(ctx, false);
+                StandardDay(ctx, null);
+                WaterParams.Restore();
+                CheatOptions.NoCrashDamage = crashWas;
+            }
+        }
+
         // the vessel's centre of mass from its parts' rigidbodies (their masses with resources, their CoM offsets)
         private static Vector3 WorldCoM(Vessel v)
         {
@@ -790,8 +1159,11 @@ namespace FerramAerospaceResearch.KspTests
             p.Engine = v.parts.FirstOrDefault(q => q.Modules.Contains("ModuleEnginesAJEPropeller"));
             Assert.True(p.Engine != null, "the O-320 (AJE propeller engine) is on the craft");
             p.Aje = p.Engine.Modules["ModuleEnginesAJEPropeller"];
-            // the fuel: the tank inside the fuselage (B9's wing panels hold fuel too)
-            p.Fuel = v.parts.FirstOrDefault(q => q != p.Root && q.partInfo.name == "proceduralTankLiquid" && q.Resources.Contains("LiquidFuel"));
+            // the fuel: the engine's propellant (LiquidFuel; RO's AvGas) in the tank inside the fuselage (B9's wing panels
+            // hold fuel too)
+            p.FuelName = p.Engine.Modules.GetModule<ModuleEngines>().propellants.Select(r => r.name).First(n => n != "IntakeAir" && n != "IntakeAtm");
+            p.Fuel = v.parts.FirstOrDefault(q => q != p.Root && (q.partInfo.name == "proceduralTankLiquid" || q.partInfo.name == "RO-ProcTankSpaceplane") &&
+                                                 q.Resources.Contains(p.FuelName));
             Assert.True(p.Fuel != null, "a fuel tank");
             // the floats: the structural Spines along the fuselage (the struts stand across it), one part or several end to
             // end, each as long as the float (crafts/edo_float.py: 16.05 ft)
@@ -807,7 +1179,7 @@ namespace FerramAerospaceResearch.KspTests
                     res.amount = 0;
             yield return Wait.Frames(2);
             double dry = v.GetTotalMass();
-            PartResource lf = p.Fuel.Resources.Get("LiquidFuel");
+            PartResource lf = p.Fuel.Resources.Get(p.FuelName);
             double add = (grossT - dry) / lf.info.density;
             var parts = new StringBuilder();
             foreach (var g in v.parts.GroupBy(q => q.partInfo.name))
@@ -868,7 +1240,12 @@ namespace FerramAerospaceResearch.KspTests
                 yield break;
             }
             v.ActionGroups.SetGroup(KSPActionGroup.SAS, false);
-            yield return FarFlightProbe.Place(Far.At(0, 600, 0, "float", speedMs: 0));
+            // the site: Far.At's (0 N 60 W, over Kerbin's sea); on RSS's Earth that is the Amazon, so off Cape Canaveral
+            FarFlightProbe.Condition site = Far.At(0, 600, 0, "float", speedMs: 0);
+            bool earth = v.mainBody.Radius > 1e6;
+            site.Lat = ctx.ParamDouble("lat", earth ? 28.45 : site.Lat);
+            site.Lon = ctx.ParamDouble("lon", earth ? -80.45 : site.Lon);
+            yield return FarFlightProbe.Place(site);
             v = p.V = FlightGlobals.ActiveVessel;
             Vector3 up = v.upAxis;
             Vector3 h = Vector3.ProjectOnPlane(p.Root.transform.up, up).normalized;
@@ -876,7 +1253,7 @@ namespace FerramAerospaceResearch.KspTests
             yield return new WaitForFixedUpdate();
             double keelAlt = p.Floats.Min(f => FlightGlobals.getAltitudeAtPos(f.TransformPoint(StepKeel), v.mainBody));
             v.SetPosition(v.vesselTransform.position + (Vector3d)up * (-0.30 - keelAlt));
-            foreach (Part q in v.parts)
+            foreach (Part q in v.parts.Where(q => q.rb != null))
             {
                 q.rb.velocity = Vector3.zero;
                 q.rb.angularVelocity = Vector3.zero;
