@@ -693,7 +693,7 @@ namespace FerramAerospaceResearch
             if (node.HasValue("linearFlapLift") && bool.TryParse(node.GetValue("linearFlapLift"), out tmp))
                 FARDebugValues.linearFlapLift = tmp;
             else
-                FARDebugValues.linearFlapLift = false;
+                FARDebugValues.linearFlapLift = true;
 
             FARAeroUtil.LoadAeroDataFromConfig();
             FARActionGroupConfiguration.LoadConfiguration();
@@ -756,7 +756,7 @@ namespace FerramAerospaceResearch
 
         // a control surface hinged behind a wing: its section's added lift in proportion to its deflection (FARWingInteraction
         // ClIncrementFromRear times cos AoA); off: times sin AoA, as before. Set in the model options window
-        public static bool linearFlapLift;
+        public static bool linearFlapLift = true;
 
         /// <summary>
         ///     Every wing's neighbours found again (the editor's craft, the loaded vessels'): an option that changes how

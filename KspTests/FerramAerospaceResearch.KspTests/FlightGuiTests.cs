@@ -374,7 +374,8 @@ namespace FerramAerospaceResearch.KspTests
                 Assert.Near(bank, start, 3, "the bank given");
                 Assert.Near(start, farStart, 2, "FAR's roll angle reads the bank");
                 Assert.True(maxInputOff < 0.01, $"no roll input without the leveler ({maxInputOff:F3})");
-                Assert.True(Math.Abs(inputOn) > 0.05, $"the leveler puts in roll ({inputOn:F3} along the bank)");
+                // (its ailerons' lift linear in their deflection, FARDebugValues.linearFlapLift, it needs less of them)
+                Assert.True(Math.Abs(inputOn) > 0.02, $"the leveler puts in roll ({inputOn:F3} along the bank)");
                 Assert.True(endOn < 10 && endOn < 0.5 * endOff,
                             $"the leveler brings the bank back toward level: {endOn:F1} deg with it, {endOff:F1} deg without");
             }
