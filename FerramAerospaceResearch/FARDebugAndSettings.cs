@@ -590,6 +590,10 @@ namespace FerramAerospaceResearch
                 GUILayout.Toggle(FARDebugValues.aeroFailureExplosions, "Aero Failures Create Explosions", thisStyle);
             FARDebugValues.showMomentArrows =
                 GUILayout.Toggle(FARDebugValues.showMomentArrows, "Show Torque Arrows in Aero Overlay", thisStyle);
+            FARDebugValues.DebugTools =
+                GUILayout.Toggle(FARDebugValues.DebugTools,
+                                 "Show Debug and Experimental Tools (Exposure Debug, Flight Assistance)",
+                                 thisStyle);
             if (ToolbarManager.ToolbarAvailable)
             {
                 bool tmp = FARDebugValues.useBlizzyToolbar;
@@ -695,6 +699,11 @@ namespace FerramAerospaceResearch
             else
                 FARDebugValues.linearFlapLift = true;
 
+            if (node.HasValue("debugTools") && bool.TryParse(node.GetValue("debugTools"), out tmp))
+                FARDebugValues.DebugTools = tmp;
+            else
+                FARDebugValues.DebugTools = false;
+
             FARAeroUtil.LoadAeroDataFromConfig();
             FARActionGroupConfiguration.LoadConfiguration();
 
@@ -718,6 +727,7 @@ namespace FerramAerospaceResearch
             node.AddValue("aeroFailureExplosions", FARDebugValues.aeroFailureExplosions);
             node.AddValue("wholeWingAspectRatio", FARDebugValues.wholeWingAspectRatio);
             node.AddValue("linearFlapLift", FARDebugValues.linearFlapLift);
+            node.AddValue("debugTools", FARDebugValues.DebugTools);
 
             FARActionGroupConfiguration.SaveConfiguration();
             // save in off thread so that it doesn't delay scene changes
@@ -757,6 +767,29 @@ namespace FerramAerospaceResearch
         // a control surface hinged behind a wing: its section's added lift in proportion to its deflection (FARWingInteraction
         // ClIncrementFromRear times cos AoA); off: times sin AoA, as before. Set in the model options window
         public static bool linearFlapLift = true;
+
+        private static bool debugTools;
+
+        /// <summary>
+        ///     FAR's debug and experimental tools shown: the flight window's debug window (the exposure renders) and its
+        ///     flight assistance (wing leveler, dampers, AoA limiter, dynamic pressure scaling: they act only while shown),
+        ///     and any test tools that look for it (the KspTests' put-on-water button). Off by default. Set in the debug
+        ///     options window
+        /// </summary>
+        public static bool DebugTools
+        {
+            get { return debugTools; }
+            set
+            {
+                if (debugTools == value)
+                    return;
+                debugTools = value;
+                DebugToolsChanged?.Invoke();
+            }
+        }
+
+        /// <summary>DebugTools was switched</summary>
+        public static event Action DebugToolsChanged;
 
         /// <summary>
         ///     Every wing's neighbours found again (the editor's craft, the loaded vessels'): an option that changes how

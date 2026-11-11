@@ -161,7 +161,8 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
 
         private void OnAutoPilotUpdate(FlightCtrlState state)
         {
-            if (_vessel.srfSpeed < 5)
+            // hidden with FAR's debug tools (FARDebugValues.DebugTools): a system left on does not fly the vessel unseen
+            if (!FARDebugValues.DebugTools || _vessel.srfSpeed < 5)
                 return;
 
             ControlSystem sys = systemInstances[0]; //wing leveler

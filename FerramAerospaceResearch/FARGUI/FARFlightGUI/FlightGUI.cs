@@ -42,6 +42,7 @@ Copyright 2022, Michael Ferrara, aka Ferram4
 	http://forum.kerbalspaceprogram.com/threads/60863
  */
 
+using System;
 using System.Collections.Generic;
 using System.Text;
 using ferram4;
@@ -131,14 +132,8 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
             AeroVizGUI = new AeroVisualizationGUI();
             debugGUI = new DebugGUI();
 
-            settingsWindow = new GUIDropDown<int>(new[]
-                                                  {
-                                                      LocalizerExtensions.Get("FARFlightGUIWindowSelect0"),
-                                                      LocalizerExtensions.Get("FARFlightGUIWindowSelect1"),
-                                                      LocalizerExtensions.Get("FARFlightGUIWindowSelect2"),
-                                                      LocalizerExtensions.Get("FARFlightGUIWindowSelect3")
-                                                  },
-                                                  new[] { 0, 1, 2, 3 });
+            BuildSettingsDropDown();
+            FARDebugValues.DebugToolsChanged += OnDebugToolsChanged;
 
             if (vesselFlightGUI.ContainsKey(vessel))
                 vesselFlightGUI[vessel] = this;
@@ -193,6 +188,7 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
 
             _flightStatusGUI = null;
             settingsWindow = null;
+            FARDebugValues.DebugToolsChanged -= OnDebugToolsChanged;
 
             // OnStart only runs once the vessel has been loaded
             if (started)
@@ -334,7 +330,7 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                 GUIUtils.ClampToScreen(settingsGuiRect);
             }
 
-            if (showDebugWindow)
+            if (showDebugWindow && FARDebugValues.DebugTools)
             {
                 debugGuiRect = GUILayout.Window(GetHashCode() + 3,
                                                 debugGuiRect,
@@ -396,10 +392,11 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                                                   LocalizerExtensions.Get("FARFlightGUIFltSettings"),
                                                   buttonStyle,
                                                   GUILayout.ExpandWidth(true));
-            showDebugWindow = GUILayout.Toggle(showDebugWindow,
-                                               LocalizerExtensions.Get("FARFlightGUIFltDebug"),
-                                               buttonStyle,
-                                               GUILayout.ExpandWidth(true));
+            if (FARDebugValues.DebugTools)
+                showDebugWindow = GUILayout.Toggle(showDebugWindow,
+                                                   LocalizerExtensions.Get("FARFlightGUIFltDebug"),
+                                                   buttonStyle,
+                                                   GUILayout.ExpandWidth(true));
 
             bool logging = GUILayout.Toggle(flightDataLogger.IsActive,
                                             LocalizerExtensions.Get("FARFlightGUIFltLogging"),
@@ -423,12 +420,44 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                                          flightDataLogger.FlushPeriod);
             DebugVisualizationGUI();
 
-            GUILayout.Label(LocalizerExtensions.Get("FARFlightGUIFltAssistance"));
-
-            _stabilityAugmentation.Display();
+            if (FARDebugValues.DebugTools)
+            {
+                GUILayout.Label(LocalizerExtensions.Get("FARFlightGUIFltAssistance"));
+                _stabilityAugmentation.Display();
+            }
 
             GUILayout.EndVertical();
             GUI.DragWindow();
+        }
+
+        // the settings window's groups: flight assistance's only with the debug tools (FARDebugValues.DebugTools); each
+        // group keeps its value (0 data, 1 flight assistance, 2 airspeed, 3 aero visualization), the selection kept
+        private void BuildSettingsDropDown()
+        {
+            int keep = settingsWindow?.ActiveSelection ?? 0;
+            var names = new List<string> { LocalizerExtensions.Get("FARFlightGUIWindowSelect0") };
+            var values = new List<int> { 0 };
+            if (FARDebugValues.DebugTools)
+            {
+                names.Add(LocalizerExtensions.Get("FARFlightGUIWindowSelect1"));
+                values.Add(1);
+            }
+
+            names.Add(LocalizerExtensions.Get("FARFlightGUIWindowSelect2"));
+            values.Add(2);
+            names.Add(LocalizerExtensions.Get("FARFlightGUIWindowSelect3"));
+            values.Add(3);
+            settingsWindow = new GUIDropDown<int>(names.ToArray(), values.ToArray(), Math.Max(0, values.IndexOf(keep)));
+        }
+
+        private void OnDebugToolsChanged()
+        {
+            BuildSettingsDropDown();
+            if (!FARDebugValues.DebugTools)
+                showDebugWindow = false;
+            // the main window's height again from its contents
+            mainGuiRect.height = 0;
+            settingsGuiRect.height = 0;
         }
 
         private void DebugVisualizationGUI()
@@ -464,7 +493,8 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
                         dataGuiRect.height = 0;
                     break;
                 case 1:
-                    _stabilityAugmentation.SettingsDisplay();
+                    if (FARDebugValues.DebugTools)
+                        _stabilityAugmentation.SettingsDisplay();
                     break;
                 case 2:
                     airSpeedGUI.AirSpeedSettings();

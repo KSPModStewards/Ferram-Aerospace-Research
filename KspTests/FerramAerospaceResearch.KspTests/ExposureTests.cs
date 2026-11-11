@@ -300,6 +300,7 @@ namespace FerramAerospaceResearch.KspTests
             using var log = new ExceptionLog();
             yield return x.KeepVoxel();
             x.Directions(airstream: false, sun: true, body: false);
+            using IDisposable tools = Far.DebugTools();
             FlightGUI gui = Far.FlightGui(x.Vessel);
             bool shown = Far.FlightGuiShown, debugShown = Far.SubWindowOpen(gui, "showDebugWindow");
             object deviceSelect = Refl.Get(x.X, "deviceSelect"), directionSelect = Refl.Get(x.X, "directionSelect");
