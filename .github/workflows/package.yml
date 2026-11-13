@@ -19,6 +19,16 @@ jobs:
         with:
           submodules: true
 
+      # Stable versions end in .0: the fourth number counts the testing prereleases on the last stable release
+      # (testing.yml), v0.17.0.1_testing and on. Checked on every build, so a version bump fails in its pull request
+      - name: Check the version ends in .0
+        run: |
+          revision=$(jq -r .variables.VersionRevision config.json)
+          if [ "$revision" != 0 ]; then
+            echo "::error file=config.json::VersionRevision is $revision. Stable versions end in .0, the fourth number is for testing builds (testing.yml): bump VersionBuild instead"
+            exit 1
+          fi
+
       # A release tag (see the release job) must be config.json's version, and the sources the DLLs are built from must
       # have it too: CI only regenerates FAR.version, `python -m buildtools replace` writes the rest
       - name: Check the release tag
@@ -142,5 +152,8 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" "$zip" -R "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "$zip" -R "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$TITLE"
+            # notes from the last stable release, not from a testing prerelease (testing.yml) since
+            since=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" -q .tag_name 2> /dev/null || true)
+            gh release create "$GITHUB_REF_NAME" "$zip" -R "$GITHUB_REPOSITORY" --verify-tag --generate-notes \
+              ${since:+--notes-start-tag "$since"} --title "$TITLE"
           fi
