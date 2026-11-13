@@ -72,7 +72,7 @@ Set all the other winglet/control surface values to zero
 
 ------------------------master branch---------------------  
 
-FAR no longer references TweakScale's Scale_Redist.dll, so the burst compiler can compile FAR and every other mod again with TweakScale installed; FAR follows TweakScale's rescale event instead  
+FAR no longer references TweakScale's Scale_Redist.dll, so the burst compiler can compile FAR and every other mod again with TweakScale installed; FAR follows TweakScale's rescale event instead [#190](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/190)  
 
 0.17.0.0V "Maxwell"------------------------------------  
 
