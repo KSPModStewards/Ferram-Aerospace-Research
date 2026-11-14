@@ -133,6 +133,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             Shader.PropertyToID("_Color"), Shader.PropertyToID("_MaskColor1"), Shader.PropertyToID("_MaskColor2"),
             Shader.PropertyToID("_MaskColor3")
         };
+        private static readonly int BurnColor = Shader.PropertyToID("_BurnColor");
 
         // the part picked in the table, lit by KSP's part highlighter
         private Part selected;
@@ -741,18 +742,31 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 block.SetColor(id, mixed);
             }
 
+            // a material with none of those colors (B9's procedural wings: KSP/Specular Layered, colored by its vertices)
+            // is tinted through KSP's burn color, which its shader multiplies the texture by (white unless charred)
+            Material plain = renderers.Select(r => r.sharedMaterial)
+                                      .FirstOrDefault(x => x != null && x.HasProperty(BurnColor) && !ColorProperties.Any(x.HasProperty));
+            if (plain != null)
+            {
+                Color own = plain.GetColor(BurnColor);
+                Color mixed = Color.Lerp(own, c, opacity);
+                mixed.a = own.a;
+                block.SetColor(BurnColor, mixed);
+            }
+
             foreach (Renderer r in renderers)
                 r.SetPropertyBlock(block);
             colored.Add(p);
         }
 
-        // the renderers KSP highlights (and puts the part's block on), else the model's
+        // the renderers KSP highlights (and puts the part's block on) and the model's: a procedural part's highlight list
+        // can miss a mesh it made later (B9's mirrored wing panels: their surface)
         private static List<Renderer> Renderers(Part p)
         {
-            List<Renderer> list = p.HighlightRenderer != null && p.HighlightRenderer.Count > 0
-                                      ? p.HighlightRenderer
-                                      : p.FindModelComponents<Renderer>();
-            return list.Where(r => r != null && (r is MeshRenderer || r is SkinnedMeshRenderer)).ToList();
+            IEnumerable<Renderer> list = p.FindModelComponents<Renderer>();
+            if (p.HighlightRenderer != null)
+                list = list.Concat(p.HighlightRenderer);
+            return list.Where(r => r != null && (r is MeshRenderer || r is SkinnedMeshRenderer)).Distinct().ToList();
         }
 
         // the part's block emptied (Part.ResetMPB leaves other properties in it), then the highlight switched on and off so
