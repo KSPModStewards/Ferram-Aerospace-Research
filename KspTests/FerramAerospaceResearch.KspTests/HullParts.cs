@@ -335,6 +335,26 @@ namespace FerramAerospaceResearch.KspTests
     /// </summary>
     internal static class TestWarp
     {
+        /// <summary>
+        /// The water tests' instance: AJE and Firespitter for the C172's engine and prop, TimeControl for the hyper-warp,
+        /// CustomProceduralParts for the Spine hulls, FARTestFloatplane for the test parts.
+        /// </summary>
+        public const string WaterMods = @"AdvancedJetEngine;Firespitter;TimeControl;..\..\..\CustomProceduralParts\GameData\CustomProceduralParts;" +
+                                        @"..\FerramAerospaceResearch.KspTests.Run\mods\FARTestFloatplane";
+
+        /// <summary>
+        /// The demos' and videos' instance: the water tests' and Scatterer's ocean, made calm with its waves moving craft
+        /// (mods/FARTestScatterer). Not the water tests': they run without a GPU (batch mode), and their tows compare FAR's
+        /// flat sea with tank data.
+        /// </summary>
+        public const string DemoMods = WaterMods + @";Scatterer;Scatterer-config;..\FerramAerospaceResearch.KspTests.Run\mods\FARTestScatterer";
+
+        /// <summary>
+        /// Rough water: the water tests' and Scatterer's ocean with a metre and more of waves (mods/FARTestScattererRough:
+        /// wind 5, amplitude 2), its waves moving craft. Needs a GPU (no batch mode): Scatterer reads its waves back from it.
+        /// </summary>
+        public const string RoughMods = WaterMods + @";Scatterer;Scatterer-config;..\FerramAerospaceResearch.KspTests.Run\mods\FARTestScattererRough";
+
         public static void Hyper(TestContext ctx, bool on)
         {
             double rate = ctx.ParamDouble("hyperWarp", 4);
@@ -355,8 +375,10 @@ namespace FerramAerospaceResearch.KspTests
     {
         private static PartHydrodynamics.WaterDampingMode? dampingWas;
         private static bool? linearFlapWas;
-        private static double? recoveryWas, crossflowWas, stripWas, fadeWas;
+        private static double? recoveryWas, crossflowWas, stripWas, fadeWas, faceWas;
         private static bool? wholeWingWas;
+        // any other of the model's constants (parameter hd.<name>, a public static double of PartHydrodynamics): as they were
+        private static readonly Dictionary<System.Reflection.FieldInfo, double> constantsWas = new Dictionary<System.Reflection.FieldInfo, double>();
 
         public static void Apply(TestContext ctx)
         {
@@ -389,11 +411,29 @@ namespace FerramAerospaceResearch.KspTests
             fadeWas ??= PartHydrodynamics.SubmergedFade;
             if (!double.IsNaN(ctx.ParamDouble("waterFade", double.NaN)))
                 PartHydrodynamics.SubmergedFade = ctx.ParamDouble("waterFade", PartHydrodynamics.SubmergedFade);
+            // the share of a face's normal from which it is a strip's at the surface (parameter faceThreshold:
+            // PartHydrodynamics.FaceThreshold; none under the water)
+            faceWas ??= PartHydrodynamics.FaceThreshold;
+            if (!double.IsNaN(ctx.ParamDouble("faceThreshold", double.NaN)))
+                PartHydrodynamics.FaceThreshold = ctx.ParamDouble("faceThreshold", PartHydrodynamics.FaceThreshold);
+            ctx.Record("faceThreshold", PartHydrodynamics.FaceThreshold.ToString(System.Globalization.CultureInfo.InvariantCulture));
             // the hull's strip length (m; parameter stripLength)
             stripWas ??= PartHydrodynamics.StripLength;
             if (!double.IsNaN(ctx.ParamDouble("stripLength", double.NaN)))
                 PartHydrodynamics.StripLength = ctx.ParamDouble("stripLength", PartHydrodynamics.StripLength);
             ctx.Record("stripLength", PartHydrodynamics.StripLength.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            foreach (System.Reflection.FieldInfo f in typeof(PartHydrodynamics).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static))
+            {
+                if (f.FieldType != typeof(double) || f.IsLiteral || f.IsInitOnly)
+                    continue;
+                double x = ctx.ParamDouble("hd." + f.Name, double.NaN);
+                if (double.IsNaN(x))
+                    continue;
+                if (!constantsWas.ContainsKey(f))
+                    constantsWas[f] = (double)f.GetValue(null);
+                f.SetValue(null, x);
+                ctx.Record("hd." + f.Name, x.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
             // FAR's whole-wing aspect ratio (FARDebugValues.wholeWingAspectRatio; parameter wholeWingAspectRatio=true/false)
             wholeWingWas ??= FARDebugValues.wholeWingAspectRatio;
             string ww = ctx.Param("wholeWingAspectRatio");
@@ -406,6 +446,9 @@ namespace FerramAerospaceResearch.KspTests
 
         public static void Restore()
         {
+            foreach (var kv in constantsWas)
+                kv.Key.SetValue(null, kv.Value);
+            constantsWas.Clear();
             if (dampingWas.HasValue)
                 PartHydrodynamics.WaterDamping = dampingWas.Value;
             dampingWas = null;
@@ -418,6 +461,9 @@ namespace FerramAerospaceResearch.KspTests
             if (fadeWas.HasValue)
                 PartHydrodynamics.SubmergedFade = fadeWas.Value;
             fadeWas = null;
+            if (faceWas.HasValue)
+                PartHydrodynamics.FaceThreshold = faceWas.Value;
+            faceWas = null;
             if (stripWas.HasValue)
                 PartHydrodynamics.StripLength = stripWas.Value;
             stripWas = null;

@@ -3,6 +3,8 @@
     python underwater.py body     Submerged Body.craft: Planing Box.craft's tank part with a CustomProceduralParts Spine
                                   body of revolution (Ellipse sections), 8 m long, 1.2 m across, a rounded nose and a
                                   tapered tail: a submarine's hull, held under the water
+    python underwater.py square   Square Body.craft: the same body with square sections (Rectangle, sharp corners): a
+                                  body the same rolled a quarter turn about its axis
     python underwater.py rudder   Rudder Rig.craft: a probe core with a stock tail fin (FAR's control surface: its
                                   rudder) hanging below it, its span down and its chord fore and aft: a rudder or keel,
                                   held under the water and in the air
@@ -27,21 +29,29 @@ BODY_NODES = [(0.0, 0.15), (0.1, 0.6), (0.25, 1.1), (0.35, 1.2), (0.75, 1.2), (0
 FIN_DROP = 0.25    # m: the fin's root below the probe core's center
 
 
-def body():
+def body(section="Ellipse", ship="Submerged Body",
+         what="A streamlined body of revolution for FAR's underwater tests: one ProceduralParts Spine "
+              "(CustomProceduralParts), Ellipse sections, 8 m long, 1.2 m across"):
     src = open(os.path.join(here, "Planing Box.craft"), encoding="utf-8-sig").read()
-    src = src.replace("ship = Planing Box", "ship = Submerged Body")
-    src = re.sub(r"(?m)^description = .*$", "description = A streamlined body of revolution for FAR's underwater tests: one "
-                 "ProceduralParts Spine (CustomProceduralParts), Ellipse sections, 8 m long, 1.2 m across", src)
+    src = src.replace("ship = Planing Box", "ship = " + ship)
+    src = re.sub(r"(?m)^description = .*$", lambda m: "description = " + what, src)
     src = src.replace("shapeName = Polygon", "shapeName = Spine")
-    nodes = "".join("\t\tSPINE_NODE\n\t\t{\n\t\t\tposition = %g\n\t\t\tsizeH = %g\n\t\t\tsizeV = %g\n\t\t\tsection = Ellipse\n\t\t}\n"
-                    % (p, d, d) for p, d in BODY_NODES)
+    nodes = "".join("\t\tSPINE_NODE\n\t\t{\n\t\t\tposition = %g\n\t\t\tsizeH = %g\n\t\t\tsizeV = %g\n\t\t\tsection = %s\n\t\t}\n"
+                    % (p, d, d, section) for p, d in BODY_NODES)
     spine = ("\tMODULE\n\t{\n\t\tname = ProceduralShapeSpine\n\t\tisEnabled = True\n\t\tlength = %g\n\t\thScale = 1\n"
              "\t\tvScale = 1\n\t\tstagingEnabled = True\n" % BODY_LENGTH + nodes +
              "\t\tEVENTS\n\t\t{\n\t\t}\n\t\tACTIONS\n\t\t{\n\t\t}\n\t\tUPGRADESAPPLIED\n\t\t{\n\t\t}\n\t}\n")
     start = src.index("\tMODULE\n\t{\n\t\tname = ProceduralShapePolygon")
     end = src.index("\tMODULE\n\t{\n\t\tname = TankContentSwitcher")
     src = src[:start] + spine + src[end:]
-    return "Submerged Body.craft", src
+    return ship + ".craft", src
+
+
+def square():
+    """the Submerged Body's square twin: Rectangle sections (sharp corners) the body's diameters across"""
+    return body("Rectangle", "Square Body", "A streamlined body of square sections for FAR's underwater tests: one "
+                "ProceduralParts Spine (CustomProceduralParts), Rectangle sections, 8 m long, 1.2 m across: the same "
+                "rolled a quarter turn")
 
 
 FIN_BLOCK = """PART
@@ -104,6 +114,7 @@ def rudder():
 
 if __name__ == "__main__":
     what = sys.argv[1] if len(sys.argv) > 1 else ""
-    for name, text in ([body()] if what == "body" else [rudder()] if what == "rudder" else [body(), rudder()]):
+    makers = {"body": [body], "square": [square], "rudder": [rudder]}.get(what, [body, square, rudder])
+    for name, text in (m() for m in makers):
         open(os.path.join(here, name), "w", encoding="utf-8", newline="\n").write(text)
         print("wrote " + name)

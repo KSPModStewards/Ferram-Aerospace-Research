@@ -215,7 +215,8 @@ namespace FerramAerospaceResearch.KspTests
             public static void HookPrefix(FARAeroPartModule __instance)
             {
                 Part p = __instance.part;
-                if (FARAeroPartModule.waterSlowDragNew <= 0 || !__instance.vessel || p.submergedPortion <= 0)
+                // (a FAR wing panel takes its water drag from its wing model, as a force: its rigidbody's is none)
+                if (FARAeroPartModule.waterSlowDragNew <= 0 || !__instance.vessel || p.submergedPortion <= 0 || __instance.LegacyWingModel != null)
                     return;
                 float own = Math.Max(__instance.hackWaterDragVal, 0f);
                 float vel = __instance.partLocalVel.magnitude;

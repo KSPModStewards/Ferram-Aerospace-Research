@@ -26,18 +26,18 @@ namespace FerramAerospaceResearch.KspTests
         /// the weight is carried (dynamic lift, buoyancy). Parameters: hydro (false: FAR's old water forces), mass,
         /// lcg, cgHeight, topSpeed, rampSec, camDistance (m), camPitch (deg).
         /// </summary>
-        [UITest(Kind = "Measure", Explicit = true, Mods = @"..\..\..\CustomProceduralParts\GameData\CustomProceduralParts",
+        [UITest(Kind = "Measure", Explicit = true, Mods = @"..\..\..\CustomProceduralParts\GameData\CustomProceduralParts;Scatterer;Scatterer-config;..\FerramAerospaceResearch.KspTests.Run\mods\FARTestScatterer",
                 StartsAt = StartState.Flight, Craft = VHull, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 2400)]
         public static IEnumerator Video_VHullPlaning(TestContext ctx)
         {
             const double beam = 2, length = 8, depth = 2;
             double massT = ctx.ParamDouble("mass", 4.0), lcg = ctx.ParamDouble("lcg", 3.0), cgHeight = ctx.ParamDouble("cgHeight", 0.5);
             double top = ctx.ParamDouble("topSpeed", 20), ramp = ctx.ParamDouble("rampSec", 36);
-            bool hydroWas = Settings.FARSettings.Hydrodynamics;
+            bool hydroWas = FARDebugValues.hydrodynamics;
             string hydro = ctx.Param("hydro");
             if (!string.IsNullOrEmpty(hydro))
-                Settings.FARSettings.Hydrodynamics = bool.Parse(hydro);
-            string model = Settings.FARSettings.Hydrodynamics ? "FAR PartHydrodynamics" : "FAR legacy water forces";
+                FARDebugValues.hydrodynamics = bool.Parse(hydro);
+            string model = FARDebugValues.hydrodynamics ? "FAR PartHydrodynamics" : "FAR legacy water forces";
             ctx.Record("model", model);
 
             yield return Wait.Seconds(5);
@@ -192,7 +192,7 @@ namespace FerramAerospaceResearch.KspTests
                     UnityEngine.Object.Destroy(recorderGo);
                 GameEvents.onShowUI.Fire();
                 CheatOptions.NoCrashDamage = crashWas;
-                Settings.FARSettings.Hydrodynamics = hydroWas;
+                FARDebugValues.hydrodynamics = hydroWas;
             }
         }
 

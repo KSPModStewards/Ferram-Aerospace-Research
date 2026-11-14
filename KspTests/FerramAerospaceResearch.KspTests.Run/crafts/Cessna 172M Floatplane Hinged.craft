@@ -53,9 +53,8 @@ PART
 	link = proceduralStructural_4100000003
 	link = proceduralStructural_4100000004
 	link = proceduralStructural_4100000005
-	link = proceduralStructural_4100000007
 	link = proceduralStructural_4100000008
-	link = ReleaseValve_4100000010
+	link = proceduralStructural_4100000009
 	EVENTS
 	{
 	}
@@ -804,7 +803,7 @@ PART
 	RESOURCE
 	{
 		name = LiquidFuel
-		amount = 16.25
+		amount = 0
 		maxAmount = 16.25
 		flowState = True
 		isTweakable = True
@@ -815,7 +814,7 @@ PART
 	RESOURCE
 	{
 		name = Oxidizer
-		amount = 19.87
+		amount = 0
 		maxAmount = 19.87
 		flowState = True
 		isTweakable = True
@@ -6696,9 +6695,9 @@ PART
 	part = proceduralTankLiquid_4000000030
 	partName = Part
 	persistentId = 3713072918
-	pos = 0,6,1.60523
+	pos = 0,6,1.59523
 	attPos = 0,0,0
-	attPos0 = 0,1.60523,-0
+	attPos0 = 0,1.59523,-0
 	rot = 0.707107,0,0,0.707107
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
@@ -6718,6 +6717,7 @@ PART
 	modMass = 0.603685141
 	modSize = 0,0,0
 	srfN = srfAttach,proceduralTankLiquid_4000000001,collisionMesh,0|0|0,0|1|0,0|0|0
+	link = ReleaseValve_4100000012
 	EVENTS
 	{
 	}
@@ -6799,7 +6799,7 @@ PART
 		name = ProceduralShapeCylinder
 		isEnabled = True
 		diameter = 0.8456
-		length = 1.3000
+		length = 1.3712
 		stagingEnabled = True
 		EVENTS
 		{
@@ -6970,7 +6970,7 @@ PART
 	{
 		name = TankContentSwitcher
 		isEnabled = True
-		tankVolume = 0.7300
+		tankVolume = 0.7700
 		mass = 1.60368514
 		tankType = LiquidFuel
 		stagingEnabled = True
@@ -7181,7 +7181,7 @@ PART
 	RESOURCE
 	{
 		name = LiquidFuel
-		amount = 89.395
+		amount = 125.501
 		maxAmount = 127.276
 		flowState = True
 		isTweakable = True
@@ -9070,6 +9070,7 @@ PART
 	modMass = 0.603685141
 	modSize = 0,0,0
 	srfN = srfAttach,proceduralStructural_4100000004,collisionMesh,0|0|0,0|1|0,0|0|0
+	link = B9.Aero.Wing.Procedural.TypeB_4100000007
 	EVENTS
 	{
 	}
@@ -10065,9 +10066,219 @@ PART
 }
 PART
 {
-	part = proceduralStructural_4100000007
+	part = B9.Aero.Wing.Procedural.TypeB_4100000007
 	partName = Part
 	persistentId = 4100000007
+	pos = 1.1176,4.60846,-0.874209
+	attPos = 0,0,0
+	attPos0 = 0,-2.4,-0.138005
+	rot = -0.500000119,-0.500000119,-0.500000119,-0.500000119
+	attRot = 0,-0.707106709,0,-0.707106709
+	attRot0 = 0,0.707106769,0,-0.707106769
+	mir = 1,1,1
+	symMethod = Mirror
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 110
+	modMass = -0.049642995
+	modSize = 0,0,0
+	srfN = srfAttach,proceduralStructural_4100000006,collisionMesh,0|0|0,0|1|0,0|0|0
+	EVENTS
+	{
+	}
+	ACTIONS
+	{
+		ToggleSameVesselInteraction
+		{
+			actionGroup = None
+		}
+		SetSameVesselInteraction
+		{
+			actionGroup = None
+		}
+		RemoveSameVesselInteraction
+		{
+			actionGroup = None
+		}
+		AutostrutOff
+		{
+			actionGroup = None
+		}
+		AutostrutRoot
+		{
+			actionGroup = None
+		}
+		AutostrutHeaviest
+		{
+			actionGroup = None
+		}
+		AutostrutGrandparent
+		{
+			actionGroup = None
+		}
+		ResourcesEnableFlow
+		{
+			actionGroup = None
+			active = False
+		}
+		ResourcesDisableFlow
+		{
+			actionGroup = None
+			active = False
+		}
+	}
+	PARTDATA
+	{
+	}
+	MODULE
+	{
+		name = WingProcedural
+		isEnabled = True
+		isAttached = True
+		isSetToDefaultValues = True
+		sharedBaseLength = 0.263358682
+		sharedBaseWidthRoot = 0.0332688652
+		sharedBaseWidthTip = 0.0698066652
+		sharedBaseOffsetRoot = 0.0217250586
+		sharedBaseOffsetTip = 0.0530323982
+		sharedBaseThicknessRoot = 0.0853171945
+		sharedBaseThicknessTip = 0.0726748854
+		sharedEdgeTypeLeading = 2
+		sharedEdgeWidthLeadingRoot = 0.239999995
+		sharedEdgeWidthLeadingTip = 0.239999995
+		sharedEdgeTypeTrailing = 2
+		sharedEdgeWidthTrailingRoot = 0.235779926
+		sharedEdgeWidthTrailingTip = 0.139305905
+		sharedMaterialST = 1
+		sharedColorSTOpacity = 0
+		sharedColorSTHue = 0.100000001
+		sharedColorSTSaturation = 0.75
+		sharedColorSTBrightness = 0.600000024
+		sharedMaterialSB = 4
+		sharedColorSBOpacity = 0
+		sharedColorSBHue = 0.100000001
+		sharedColorSBSaturation = 0.75
+		sharedColorSBBrightness = 0.600000024
+		sharedMaterialET = 4
+		sharedColorETOpacity = 0
+		sharedColorETHue = 0.100000001
+		sharedColorETSaturation = 0.75
+		sharedColorETBrightness = 0.600000024
+		sharedMaterialEL = 4
+		sharedColorELOpacity = 0
+		sharedColorELHue = 0.100000001
+		sharedColorELSaturation = 0.75
+		sharedColorELBrightness = 0.600000024
+		sharedSweptAngleFront = 90
+		sharedSweptAngleBack = 90
+		sharedArmorRatio = 0
+		aeroUIMass = 0
+		stockLiftCoefficient = 0
+		aeroIsLiftingSurface = True
+		aeroStatMeanAerodynamicChord = 0.23908067494630814
+		aeroStatSemispan = 0.26335868239402771
+		aeroStatMidChordSweep = 12.821221270594894
+		aeroStatTaperRatio = 1.0199144395677733
+		fuelSelectedTankSetup = 0
+		stagingEnabled = True
+		mirrorTexturing = False
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARControllableSurface
+		isEnabled = True
+		pitchaxis = 0
+		yawaxis = 100
+		rollaxis = 0
+		pitchaxisDueToAoA = 0
+		brakeRudder = 0
+		maxdeflect = 17
+		isFlap = False
+		isSpoiler = False
+		flapDeflectionLevel = 0
+		maxdeflectFlap = 15
+		isDynamicDeflection = False
+		dynamicControlStartSpeed = 200
+		exponent = 2
+		minControl = 0.100000001
+		massMultiplier = 0.113399997
+		massOverride = -3.40282347E+38
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			ActivateSpoiler
+			{
+				actionGroup = Brakes
+			}
+			IncreaseDeflect
+			{
+				actionGroup = None
+			}
+			DecreaseDeflect
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = GeometryPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARAeroPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+}
+PART
+{
+	part = proceduralStructural_4100000008
+	partName = Part
+	persistentId = 4100000008
 	pos = -0.5588,5.15516,2.97698
 	attPos = 0,0,0
 	attPos0 = -0.5588,2.97698,0.844843
@@ -10090,7 +10301,7 @@ PART
 	modMass = 0.603685141
 	modSize = 0,0,0
 	srfN = srfAttach,proceduralTankLiquid_4000000001,collisionMesh,0|0|0,0|1|0,0|0|0
-	link = proceduralStructural_4100000009
+	link = proceduralStructural_4100000010
 	EVENTS
 	{
 	}
@@ -10520,9 +10731,9 @@ PART
 }
 PART
 {
-	part = proceduralStructural_4100000008
+	part = proceduralStructural_4100000009
 	partName = Part
-	persistentId = 4100000008
+	persistentId = 4100000009
 	pos = -0.5588,5.15427,1.21572
 	attPos = 0,0,0
 	attPos0 = -0.5588,1.21572,0.845734
@@ -10974,9 +11185,9 @@ PART
 }
 PART
 {
-	part = proceduralStructural_4100000009
+	part = proceduralStructural_4100000010
 	partName = Part
-	persistentId = 4100000009
+	persistentId = 4100000010
 	pos = -1.1176,4.74646,1.52579
 	attPos = 0,0,0
 	attPos0 = -5.55112e-17,0.692311,-1.45119
@@ -10998,7 +11209,8 @@ PART
 	modCost = 4397.87012
 	modMass = 0.603685141
 	modSize = 0,0,0
-	srfN = srfAttach,proceduralStructural_4100000007,collisionMesh,0|0|0,0|1|0,0|0|0
+	srfN = srfAttach,proceduralStructural_4100000008,collisionMesh,0|0|0,0|1|0,0|0|0
+	link = B9.Aero.Wing.Procedural.TypeB_4100000011
 	EVENTS
 	{
 	}
@@ -11994,12 +12206,222 @@ PART
 }
 PART
 {
-	part = ReleaseValve_4100000010
+	part = B9.Aero.Wing.Procedural.TypeB_4100000011
 	partName = Part
-	persistentId = 4100000010
+	persistentId = 4100000011
+	pos = -1.1176,4.60846,-0.874209
+	attPos = 0,0,0
+	attPos0 = 0,-2.4,-0.138005
+	rot = 0.500000119,-0.500000119,-0.500000119,0.500000119
+	attRot = 0,-0.707106769,0,0.707106769
+	attRot0 = 0,-0.707106769,0,-0.707106769
+	mir = 1,1,1
+	symMethod = Mirror
+	autostrutMode = Off
+	rigidAttachment = False
+	istg = -1
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = -1
+	attm = 1
+	sameVesselCollision = False
+	modCost = 110
+	modMass = -0.049642995
+	modSize = 0,0,0
+	srfN = srfAttach,proceduralStructural_4100000010,collisionMesh,0|0|0,0|1|0,0|0|0
+	EVENTS
+	{
+	}
+	ACTIONS
+	{
+		ToggleSameVesselInteraction
+		{
+			actionGroup = None
+		}
+		SetSameVesselInteraction
+		{
+			actionGroup = None
+		}
+		RemoveSameVesselInteraction
+		{
+			actionGroup = None
+		}
+		AutostrutOff
+		{
+			actionGroup = None
+		}
+		AutostrutRoot
+		{
+			actionGroup = None
+		}
+		AutostrutHeaviest
+		{
+			actionGroup = None
+		}
+		AutostrutGrandparent
+		{
+			actionGroup = None
+		}
+		ResourcesEnableFlow
+		{
+			actionGroup = None
+			active = False
+		}
+		ResourcesDisableFlow
+		{
+			actionGroup = None
+			active = False
+		}
+	}
+	PARTDATA
+	{
+	}
+	MODULE
+	{
+		name = WingProcedural
+		isEnabled = True
+		isAttached = True
+		isSetToDefaultValues = True
+		sharedBaseLength = 0.263358682
+		sharedBaseWidthRoot = 0.0332688652
+		sharedBaseWidthTip = 0.0698066652
+		sharedBaseOffsetRoot = 0.0217250586
+		sharedBaseOffsetTip = 0.0530323982
+		sharedBaseThicknessRoot = 0.0853171945
+		sharedBaseThicknessTip = 0.0726748854
+		sharedEdgeTypeLeading = 2
+		sharedEdgeWidthLeadingRoot = 0.239999995
+		sharedEdgeWidthLeadingTip = 0.239999995
+		sharedEdgeTypeTrailing = 2
+		sharedEdgeWidthTrailingRoot = 0.235779926
+		sharedEdgeWidthTrailingTip = 0.139305905
+		sharedMaterialST = 1
+		sharedColorSTOpacity = 0
+		sharedColorSTHue = 0.100000001
+		sharedColorSTSaturation = 0.75
+		sharedColorSTBrightness = 0.600000024
+		sharedMaterialSB = 4
+		sharedColorSBOpacity = 0
+		sharedColorSBHue = 0.100000001
+		sharedColorSBSaturation = 0.75
+		sharedColorSBBrightness = 0.600000024
+		sharedMaterialET = 4
+		sharedColorETOpacity = 0
+		sharedColorETHue = 0.100000001
+		sharedColorETSaturation = 0.75
+		sharedColorETBrightness = 0.600000024
+		sharedMaterialEL = 4
+		sharedColorELOpacity = 0
+		sharedColorELHue = 0.100000001
+		sharedColorELSaturation = 0.75
+		sharedColorELBrightness = 0.600000024
+		sharedSweptAngleFront = 90
+		sharedSweptAngleBack = 90
+		sharedArmorRatio = 0
+		aeroUIMass = 0
+		stockLiftCoefficient = 0
+		aeroIsLiftingSurface = True
+		aeroStatMeanAerodynamicChord = 0.23908067494630814
+		aeroStatSemispan = 0.26335868239402771
+		aeroStatMidChordSweep = 12.821221270594894
+		aeroStatTaperRatio = 1.0199144395677733
+		fuelSelectedTankSetup = 0
+		stagingEnabled = True
+		mirrorTexturing = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARControllableSurface
+		isEnabled = True
+		pitchaxis = 0
+		yawaxis = 100
+		rollaxis = 0
+		pitchaxisDueToAoA = 0
+		brakeRudder = 0
+		maxdeflect = 17
+		isFlap = False
+		isSpoiler = False
+		flapDeflectionLevel = 0
+		maxdeflectFlap = 15
+		isDynamicDeflection = False
+		dynamicControlStartSpeed = 200
+		exponent = 2
+		minControl = 0.100000001
+		massMultiplier = 0.113399997
+		massOverride = -3.40282347E+38
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			ActivateSpoiler
+			{
+				actionGroup = Brakes
+			}
+			IncreaseDeflect
+			{
+				actionGroup = None
+			}
+			DecreaseDeflect
+			{
+				actionGroup = None
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = GeometryPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARAeroPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+}
+PART
+{
+	part = ReleaseValve_4100000012
+	partName = Part
+	persistentId = 4100000012
 	pos = 0,5.50154,1.49922
 	attPos = 0,0,0
-	attPos0 = 0,1.49922,0.498456
+	attPos0 = 0,-0.0960077,0.498456
 	rot = 0.707107,0,0,0.707107
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
@@ -12017,7 +12439,7 @@ PART
 	modCost = 0
 	modMass = 0
 	modSize = 0,0,0
-	srfN = srfAttach,proceduralTankLiquid_4000000001
+	srfN = srfAttach,proceduralTankLiquid_4000000030
 	EVENTS
 	{
 	}
@@ -12031,7 +12453,7 @@ PART
 	{
 		name = ModuleResourceDrain
 		isEnabled = True
-		drainRate = 10
+		drainRate = 2.69
 		isDraining = False
 		flowMode = False
 		resourcesToRelease = LiquidFuel,Oxidizer

@@ -37,7 +37,7 @@ namespace FerramAerospaceResearch.KspTests
             string[] configs = ctx.ParamList("configs", "off+far+colliders+visual").ToArray();
             double impactSec = ctx.ParamDouble("impactSec", 10), hyper = ctx.ParamDouble("hyper", 50), wallSec = ctx.ParamDouble("wallSec", 15);
             yield return Wait.Seconds(5);
-            bool hydroWas = Settings.FARSettings.Hydrodynamics;
+            bool hydroWas = FARDebugValues.hydrodynamics;
             PartHydrodynamics.MeshSourceKind sourceWas = PartHydrodynamics.MeshSource;
             bool crashWas = CheatOptions.NoCrashDamage, jointsWas = CheatOptions.UnbreakableJoints;
             var csv = new StringBuilder("config,parts,wetParts,wetTriangles,impact_steps,impact_hydro_ms_step,impact_gather_ms_step,impact_solve_ms_step," +
@@ -51,7 +51,7 @@ namespace FerramAerospaceResearch.KspTests
                 foreach (string config in configs)
                 {
                     ctx.Step(config);
-                    Settings.FARSettings.Hydrodynamics = config != "off";
+                    FARDebugValues.hydrodynamics = config != "off";
                     if (config == "colliders") PartHydrodynamics.MeshSource = PartHydrodynamics.MeshSourceKind.Colliders;
                     else if (config == "visual") PartHydrodynamics.MeshSource = PartHydrodynamics.MeshSourceKind.Visual;
                     else PartHydrodynamics.MeshSource = PartHydrodynamics.MeshSourceKind.Far;
@@ -122,7 +122,7 @@ namespace FerramAerospaceResearch.KspTests
             finally
             {
                 Flight.HyperWarpOff();
-                Settings.FARSettings.Hydrodynamics = hydroWas;
+                FARDebugValues.hydrodynamics = hydroWas;
                 PartHydrodynamics.MeshSource = sourceWas;
                 CheatOptions.NoCrashDamage = crashWas;
                 CheatOptions.UnbreakableJoints = jointsWas;

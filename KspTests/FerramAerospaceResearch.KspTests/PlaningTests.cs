@@ -30,7 +30,7 @@ namespace FerramAerospaceResearch.KspTests
         /// rigid (default true: a hull of several parts put back in its built shape every step, so its joints don't bend
         /// it; the bend they would have put in it each step is recorded).
         /// </summary>
-        [UITest(Kind = "Measure", StartsAt = StartState.Flight, Craft = Box, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 1500)]
+        [UITest(Kind = "Measure", Mods = TestWarp.WaterMods, StartsAt = StartState.Flight, Craft = Box, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 1500)]
         public static IEnumerator Tow_PlaningBox(TestContext ctx) => Tow(ctx, 2, 8, 2, new Rest(32.0, 0.250, 2.68), false);
 
         private const string Hull = "Planing Hull";
@@ -40,7 +40,7 @@ namespace FerramAerospaceResearch.KspTests
         /// long, 2 m deep to 5.6 m from the transom, 0.5 m deep at the bow: a flat bottom rising about 17 deg at the bow)
         /// towed as Tow_PlaningBox is. Explicit: CustomProceduralParts comes from its checkout beside this repository's.
         /// </summary>
-        [UITest(Kind = "Measure", Explicit = true, Mods = @"..\..\..\CustomProceduralParts\GameData\CustomProceduralParts",
+        [UITest(Kind = "Measure", Explicit = true, Mods = TestWarp.WaterMods,
                 StartsAt = StartState.Flight, Craft = Hull, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 1500)]
         public static IEnumerator Tow_PlaningHull(TestContext ctx) => Tow(ctx, 2, 8, 0.5, new Rest(28.40, 0.323, 0.33), false);
 
@@ -50,26 +50,25 @@ namespace FerramAerospaceResearch.KspTests
         /// The Planing V Hull (crafts/planing_hull.py v: Planing Hull's outline with a 20 deg V bottom, 0.6 m deep at
         /// the bow) towed as Tow_PlaningBox is, its keel turned down. Explicit, as Tow_PlaningHull.
         /// </summary>
-        [UITest(Kind = "Measure", Explicit = true, Mods = @"..\..\..\CustomProceduralParts\GameData\CustomProceduralParts",
+        [UITest(Kind = "Measure", Explicit = true, Mods = TestWarp.WaterMods,
                 StartsAt = StartState.Flight, Craft = VHull, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 1500)]
         public static IEnumerator Tow_PlaningVHull(TestContext ctx) => Tow(ctx, 2, 8, 0.6, new Rest(26.03, 0.493, 0.70), true);
 
         // the same hulls split into three parts each (crafts/split_hull.py, cut at 35% and 70% of the length from the
         // transom): towed and checked as the one-part hulls are; FAR's water should not tell them apart
-        private const string SplitMods = @"..\..\..\CustomProceduralParts\GameData\CustomProceduralParts";
 
         /// <summary>Tow_PlaningBox on Planing Box Split (three prisms end to end).</summary>
-        [UITest(Kind = "Measure", Explicit = true, StartsAt = StartState.Flight, Craft = Box + " Split", CraftDir = "SPH",
+        [UITest(Kind = "Measure", Explicit = true, Mods = TestWarp.WaterMods, StartsAt = StartState.Flight, Craft = Box + " Split", CraftDir = "SPH",
                 LaunchSite = "Runway", TimeoutSec = 1500)]
         public static IEnumerator Tow_PlaningBoxSplit(TestContext ctx) => Tow(ctx, 2, 8, 2, new Rest(32.0, 0.250, 2.68), false);
 
         /// <summary>Tow_PlaningHull on Planing Hull Split (three Spines end to end).</summary>
-        [UITest(Kind = "Measure", Explicit = true, Mods = SplitMods, StartsAt = StartState.Flight, Craft = Hull + " Split", CraftDir = "SPH",
+        [UITest(Kind = "Measure", Explicit = true, Mods = TestWarp.WaterMods, StartsAt = StartState.Flight, Craft = Hull + " Split", CraftDir = "SPH",
                 LaunchSite = "Runway", TimeoutSec = 1500)]
         public static IEnumerator Tow_PlaningHullSplit(TestContext ctx) => Tow(ctx, 2, 8, 0.5, new Rest(28.40, 0.323, 0.33), false);
 
         /// <summary>Tow_PlaningVHull on Planing V Hull Split (three Spines end to end).</summary>
-        [UITest(Kind = "Measure", Explicit = true, Mods = SplitMods, StartsAt = StartState.Flight, Craft = VHull + " Split", CraftDir = "SPH",
+        [UITest(Kind = "Measure", Explicit = true, Mods = TestWarp.WaterMods, StartsAt = StartState.Flight, Craft = VHull + " Split", CraftDir = "SPH",
                 LaunchSite = "Runway", TimeoutSec = 1500)]
         public static IEnumerator Tow_PlaningVHullSplit(TestContext ctx) => Tow(ctx, 2, 8, 0.6, new Rest(26.03, 0.493, 0.70), true);
 
@@ -100,14 +99,14 @@ namespace FerramAerospaceResearch.KspTests
                     RigidVessel.Snap(vs, reference);
             }
             double[] speeds = ctx.ParamList("speeds", "2+3+4+5+6+8+10+12+14+16+18+20").Select(s => double.Parse(s, CultureInfo.InvariantCulture)).ToArray();
-            bool hydroWas = Settings.FARSettings.Hydrodynamics;
+            bool hydroWas = FARDebugValues.hydrodynamics;
             string hydro = ctx.Param("hydro");
             if (!string.IsNullOrEmpty(hydro))
-                Settings.FARSettings.Hydrodynamics = bool.Parse(hydro);
+                FARDebugValues.hydrodynamics = bool.Parse(hydro);
             double kaWas = FARAeroComponents.PartHydrodynamics.AddedMassCoefficient, pbWas = FARAeroComponents.PartHydrodynamics.PlaningBuoyancy;
             FARAeroComponents.PartHydrodynamics.AddedMassCoefficient = ctx.ParamDouble("ka", kaWas);
             FARAeroComponents.PartHydrodynamics.PlaningBuoyancy = ctx.ParamDouble("planingBuoyancy", pbWas);
-            ctx.Record("model", Settings.FARSettings.Hydrodynamics
+            ctx.Record("model", FARDebugValues.hydrodynamics
                                     ? $"PartHydrodynamics (added mass x{FARAeroComponents.PartHydrodynamics.AddedMassCoefficient}, planing buoyancy x{FARAeroComponents.PartHydrodynamics.PlaningBuoyancy})"
                                     : "legacy water share of the aero force");
 
@@ -203,6 +202,8 @@ namespace FerramAerospaceResearch.KspTests
                 var rows = new StringBuilder("V_ms,C_V,R_kN,R_sd,air_kN,water_kN,water_over_Delta,trim_deg,trim_sd,transomDepth_m,bowDepth_m,lambda_est,buoyUp_kN,farUp_kN,rbDrag,submerged," +
                                              "hydroUp_kN,hydroDrag_kN,wetLength_m,limiter\n");
                 var fixedWait = new WaitForFixedUpdate();
+                // hyper-warped (parameter hyperWarp; the hull held every step: the same run, sooner)
+                TestWarp.Hyper(ctx, true);
                 double g = body.GeeASL * 9.80665, weightKN = v.GetTotalMass() * g;
                 var aeroModules = hull.Parts.Select(q => q.Modules.GetModule<FARAeroComponents.FARAeroPartModule>()).Where(a => a != null).ToArray();
 
@@ -260,7 +261,7 @@ namespace FerramAerospaceResearch.KspTests
                     yield return fixedWait;
                 }
                 ctx.Record("rest parts", string.Join("; ", restPerPart));
-                bool ownsBuoyancy = Settings.FARSettings.Hydrodynamics && hull.OwnsBuoyancy;
+                bool ownsBuoyancy = FARDebugValues.hydrodynamics && hull.OwnsBuoyancy;
                 double meshVolume = hull.MeshVolume;
                 bool defaults = Math.Abs(massT - 4.0) < 1e-6 && Math.Abs(lcg - 3.0) < 1e-6;
                 ctx.Record("rest", $"keel {restKeel.Average():F3} m deep at the middle (hand {rest.Keel:F3}), trim {restTrim.Average():F2} deg (hand {rest.Trim:F2}), " +
@@ -355,8 +356,9 @@ namespace FerramAerospaceResearch.KspTests
             }
             finally
             {
+                TestWarp.Hyper(ctx, false);
                 CheatOptions.NoCrashDamage = crashWas;
-                Settings.FARSettings.Hydrodynamics = hydroWas;
+                FARDebugValues.hydrodynamics = hydroWas;
                 FARAeroComponents.PartHydrodynamics.AddedMassCoefficient = kaWas;
                 FARAeroComponents.PartHydrodynamics.PlaningBuoyancy = pbWas;
                 WaterParams.Restore();

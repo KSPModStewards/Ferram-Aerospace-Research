@@ -18,8 +18,7 @@ namespace FerramAerospaceResearch.KspTests
     public static class BoatTests
     {
         // the floatplane tests' (one instance): CustomProceduralParts for the hull, FARTestFloatplane for the motor
-        private const string Mods = @"AdvancedJetEngine;Firespitter;TimeControl;..\..\..\CustomProceduralParts\GameData\CustomProceduralParts;" +
-                                    @"..\FerramAerospaceResearch.KspTests.Run\mods\FARTestFloatplane";
+        private const string Mods = TestWarp.WaterMods;   // the water tests' instance
 
         /// <summary>
         /// The Test Boat put on the water by FarWaterTools.PutOnWater (the button's own code), after the Set Position
@@ -140,6 +139,131 @@ namespace FerramAerospaceResearch.KspTests
             {
                 TestWarp.Hyper(ctx, false);
                 Ctrl.Yaw = 0;
+                CheatOptions.NoCrashDamage = crashWas;
+                WaterParams.Restore();
+            }
+        }
+
+        /// <summary>
+        /// A player's jet boat (Boaty McTestFace x4: Mk3 stock parts for its hulls, four AJE turbofans, B9 wings) put on
+        /// the water by FarWaterTools.PutOnWater and run at full throttle, the stick held at each of pitches (default
+        /// 0, -0.5, +0.5: level, nose down, nose up) for phaseSec (default 30) in turn: its speed and trim, and the
+        /// water's forces along its course (each part's: the hull model's momentum, friction, impact, crossflow and
+        /// hydrostatic forces; the foils') beside its engines' thrust, recorded at each phase's fastest. Recorded, not
+        /// asserted. Writes jetboat.csv.
+        /// </summary>
+        [UITest(Kind = "Measure", Explicit = true, Mods = Mods, StartsAt = StartState.Flight, Craft = "Boaty McTestFace x4", CraftDir = "SPH",
+                LaunchSite = "Runway", TimeoutSec = 1200)]
+        public static IEnumerator Boat_JetRun(TestContext ctx) => JetRun(ctx);
+
+        /// <summary>Boat_JetRun's run of the player's next version: one turbofan, cargo ramps at the bows.</summary>
+        [UITest(Kind = "Measure", Explicit = true, Mods = Mods, StartsAt = StartState.Flight, Craft = "Boaty McTestFace", CraftDir = "SPH",
+                LaunchSite = "Runway", TimeoutSec = 1200)]
+        public static IEnumerator Boat_JetRunSingle(TestContext ctx) => JetRun(ctx);
+
+        private static IEnumerator JetRun(TestContext ctx)
+        {
+            double phaseSec = ctx.ParamDouble("phaseSec", 30);
+            double[] pitches = ctx.ParamList("pitches", "0+-0.5+0.5").Select(s => double.Parse(s, CultureInfo.InvariantCulture)).ToArray();
+            WaterParams.Apply(ctx);
+            bool crashWas = CheatOptions.NoCrashDamage;
+            try
+            {
+                yield return Wait.Seconds(5);
+                Vessel v = FlightGlobals.ActiveVessel;
+                CheatOptions.NoCrashDamage = true;
+                string said = null;
+                yield return FarWaterTools.PutOnWater(s => said = s);
+                v = FlightGlobals.ActiveVessel;
+                yield return Wait.GameSeconds(5);
+                ctx.Record("on the water", $"{said}; {v.situation}, {v.srfSpeed:F2} m/s, mass {v.GetTotalMass():F2} t, {v.parts.Count} parts");
+
+                var engines = v.parts.SelectMany(q => q.Modules.GetModules<ModuleEngines>()).ToList();
+                foreach (ModuleEngines e in engines)
+                    e.Activate();
+                Ctrl.Attach();
+                Ctrl.SetThrottle(1);
+                var csv = new StringBuilder("t,pitch_in,V_ms,trim_deg,roll_deg,thrust_kN,water_fwd_kN,momentum_fwd_kN,friction_fwd_kN,impact_fwd_kN,crossflow_fwd_kN,hydrostatic_fwd_kN,foil_fwd_kN,water_up_kN," +
+                                            "wing_fwd_kN,voxel_fwd_kN,gravity_fwd_kN,ma_fwd_kN,residual_kN,alt_m,vs_ms\n");
+                Vector3 velWas = v.srf_velocity;
+                var fixedWait = new WaitForFixedUpdate();
+                double t0 = Planetarium.GetUniversalTime();
+                foreach (double pin in pitches)
+                {
+                    Ctrl.Pitch = (float)pin;
+                    double ts = Planetarium.GetUniversalTime(), vMax = 0;
+                    string atMax = "";
+                    while (Planetarium.GetUniversalTime() - ts < phaseSec)
+                    {
+                        yield return fixedWait;
+                        Vector3 up = v.upAxis, dir = ((Vector3)v.srf_velocity).normalized;
+                        double V = v.srfSpeed;
+                        double trim = Math.Asin(Mathf.Clamp(Vector3.Dot(v.ReferenceTransform.up, up), -1, 1)) * 180 / Math.PI;
+                        double roll = Math.Asin(Mathf.Clamp(Vector3.Dot(v.ReferenceTransform.right, up), -1, 1)) * 180 / Math.PI;
+                        double thrust = engines.Sum(e => e.finalThrust);
+                        Vector3 all = Vector3.zero, mom = Vector3.zero, fr = Vector3.zero, imp = Vector3.zero, cf = Vector3.zero, hs = Vector3.zero, foil = Vector3.zero;
+                        var parts = new List<string>();
+                        foreach (Part q in v.parts)
+                        {
+                            var hq = q.Modules.GetModule<FARAeroComponents.FARAeroPartModule>()?.Hydrodynamics;
+                            var w = q.Modules.GetModule<ferram4.FARWingAerodynamicModel>();
+                            Vector3 wf = w != null && q.submergedPortion > 0 ? w.worldSpaceForce : Vector3.zero;   // (its air and water both: FAR weights the water by its submerged share)
+                            if (hq != null)
+                            {
+                                all += hq.LastForce + hq.LastHydrostaticForce;
+                                mom += hq.LastMomentumForce; fr += hq.LastFrictionForce; imp += hq.LastImpactForce; cf += hq.LastCrossflowForce;
+                                hs += hq.LastHydrostaticForce;
+                            }
+                            foil += wf;
+                            if (hq != null && (hq.LastForce + hq.LastHydrostaticForce).sqrMagnitude > 1e-4 || wf.sqrMagnitude > 1e-4)
+                                parts.Add($"{q.partInfo.name} sub {q.submergedPortion:F2}{(hq != null ? $" owns {hq.OwnsBuoyancy} open {hq.OpenShare:F2} cap {hq.CapArea:F2} vol {hq.MeshVolume:F2}" : "")}: fwd {Vector3.Dot((hq?.LastForce ?? Vector3.zero) + (hq?.LastHydrostaticForce ?? Vector3.zero), dir):+0.0;-0.0} " +
+                                          $"(mom {Vector3.Dot(hq?.LastMomentumForce ?? Vector3.zero, dir):+0.0;-0.0}, imp {Vector3.Dot(hq?.LastImpactForce ?? Vector3.zero, dir):+0.0;-0.0}, hs {Vector3.Dot(hq?.LastHydrostaticForce ?? Vector3.zero, dir):+0.0;-0.0}" +
+                                          $"{(wf != Vector3.zero ? $", foil {Vector3.Dot(wf, dir):+0.0;-0.0}" : "")}) up {Vector3.Dot((hq?.LastForce ?? Vector3.zero) + (hq?.LastHydrostaticForce ?? Vector3.zero) + wf, up):F1}");
+                        }
+                        double t = Planetarium.GetUniversalTime() - t0;
+                        // the balance along its course: its mass times its acceleration against every force known
+                        Vector3 wing = Vector3.zero, voxel = Vector3.zero;
+                        foreach (Part q in v.parts)
+                        {
+                            var w = q.Modules.GetModule<ferram4.FARWingAerodynamicModel>();
+                            if (w != null)
+                                wing += w.worldSpaceForce;
+                            var am = q.Modules.GetModule<FARAeroComponents.FARAeroPartModule>();
+                            if (am != null)
+                                voxel += am.worldSpaceAeroForce;
+                        }
+                        Vector3 thrustV = Vector3.zero;
+                        foreach (ModuleEngines e in engines)
+                            foreach (Transform tt in e.thrustTransforms.Where(x => x))
+                                thrustV += -tt.forward * (e.finalThrust / Math.Max(1, e.thrustTransforms.Count));
+                        double dt = Math.Max(1e-3, TimeWarp.fixedDeltaTime);
+                        Vector3 acc = ((Vector3)v.srf_velocity - velWas) / (float)dt;
+                        velWas = v.srf_velocity;
+                        double mass = v.GetTotalMass();
+                        double g = Vector3.Dot((Vector3)FlightGlobals.getGeeForceAtPosition(v.CoM), dir) * mass;
+                        double ma = Vector3.Dot(acc, dir) * mass;
+                        double known = Vector3.Dot(thrustV + all + wing + voxel, dir) + g;
+                        csv.AppendLine(string.Join(",", F(t), F(pin), F(V), F(trim), F(roll), F(thrust), F(Vector3.Dot(all + foil, dir)), F(Vector3.Dot(mom, dir)),
+                                                   F(Vector3.Dot(fr, dir)), F(Vector3.Dot(imp, dir)), F(Vector3.Dot(cf, dir)), F(Vector3.Dot(hs, dir)),
+                                                   F(Vector3.Dot(foil, dir)), F(Vector3.Dot(all + foil, up)),
+                                                   F(Vector3.Dot(wing, dir)), F(Vector3.Dot(voxel, dir)), F(g), F(ma), F(ma - known), F(v.altitude), F(v.verticalSpeed)));
+                        if (V > vMax)
+                        {
+                            vMax = V;
+                            atMax = $"t {t:F1}: {V:F1} m/s, trim {trim:F1} deg, thrust {thrust:F1} kN; water along its course {Vector3.Dot(all + foil, dir):+0.0;-0.0} kN " +
+                                    $"(momentum {Vector3.Dot(mom, dir):+0.0;-0.0}, friction {Vector3.Dot(fr, dir):+0.0;-0.0}, impact {Vector3.Dot(imp, dir):+0.0;-0.0}, " +
+                                    $"crossflow {Vector3.Dot(cf, dir):+0.0;-0.0}, hydrostatic {Vector3.Dot(hs, dir):+0.0;-0.0}, foils {Vector3.Dot(foil, dir):+0.0;-0.0}), " +
+                                    $"up {Vector3.Dot(all + foil, up):F1} kN; parts: {string.Join("; ", parts)}";
+                        }
+                    }
+                    ctx.Record($"pitch {pin:+0.0;-0.0}", $"{v.srfSpeed:F1} m/s at the end; fastest {atMax}");
+                }
+                File.WriteAllText(Path.Combine(ctx.ResultsDir, "jetboat.csv"), csv.ToString());
+            }
+            finally
+            {
+                Ctrl.Pitch = 0;
+                Ctrl.SetThrottle(0);
                 CheatOptions.NoCrashDamage = crashWas;
                 WaterParams.Restore();
             }

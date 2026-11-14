@@ -30,6 +30,25 @@ RUDDER_POS = np.array([0.0, KEEL_Y - 0.02 - RUDDER_SPAN / 2, -2.7])  # its leadi
 Q_RUDDER = np.array([0.5, -0.5, -0.5, 0.5])     # local x down (its root at the hull), local y forward
 
 
+# the fuel BoatTests gives it: 4 t in all (its dry mass ~3.28 t: the hull's tank 0.1089 t a kL of its 28.4 kL (8 m by 2 by 2,
+# its bow raked), the probe core 0.1 t, the motor 0.08 t, the rudder a few kg)
+FUEL_CAPACITY = 4949.0   # its tank's, 28.4 kL
+FUEL_UNITS = 144.0
+# the hull's tank: KSP has no ballast tanks, so its fuel is the ballast. Without a RESOURCE node Procedural Parts fills
+# it, far heavier than the water it displaces; on load it keeps a saved amount as it is (TankContentSwitcher)
+RESOURCE_BLOCK = ("\tRESOURCE\n\t{\n\t\tname = LiquidFuel\n\t\tamount = %.1f\n\t\tmaxAmount = %.1f\n\t\tflowState = True\n"
+                  "\t\tisTweakable = True\n\t\thideFlow = False\n\t\tisVisible = True\n\t\tflowMode = Both\n\t}\n")
+
+
+def with_fuel(hull, units):
+    """the hull's part block with its LiquidFuel (units, 5 kg each) saved, and as its capacity Procedural Parts' own (a
+    LiquidFuel tank: 0.1089 t dry a kL, 1600 units a tonne of that: FUEL_CAPACITY), which it recomputes on load (and
+    should the two differ, scales the amount by)"""
+    assert "\tRESOURCE\n" not in hull
+    k = hull.rstrip().rindex("}")
+    return hull[:k] + RESOURCE_BLOCK % (units, FUEL_CAPACITY) + hull[k:]
+
+
 def child(name, pid, pos, rot, parent):
     return FIN_BLOCK % dict(name=name, pid=pid, pos=cio.fmt(pos), rot=cio.fmt(rot), parent=parent,
                             attpos=cio.fmt(cio.qrot(cio.qinv(Q_FUSE), pos - HULL_POS)),
@@ -84,7 +103,7 @@ def main():
     hull, n = re.subn(r"(?m)^\tMODULE$", lambda m: links + m.group(0), hull, count=1)
     assert n == 1, "the hull's first module"
     out = os.path.join(here, "Test Boat.craft")
-    open(out, "w", encoding="utf-8", newline="\n").write(head + hull + probe + motor + rudder)
+    open(out, "w", encoding="utf-8", newline="\n").write(head + with_fuel(hull, FUEL_UNITS) + probe + motor + rudder)
     print("wrote " + out)
 
 

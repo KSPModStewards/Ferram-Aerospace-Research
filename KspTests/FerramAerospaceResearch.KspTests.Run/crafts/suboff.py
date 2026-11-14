@@ -172,7 +172,9 @@ def main():
             ("SUBOFF Hull Fins", "The DARPA SUBOFF hull with its four stern appendages (Roddy's configuration 5): B9 "
              "control surfaces held at zero, for FAR's underwater tests", True, False),
             ("SUBOFF Hull Sail", "The DARPA SUBOFF hull with its sail (Roddy's configuration 4): a B9 control surface held "
-             "at zero, for FAR's underwater tests", False, True)):
+             "at zero, for FAR's underwater tests", False, True),
+            ("SUBOFF Fully Appended", "The DARPA SUBOFF hull with its sail and four stern appendages (Roddy's "
+             "configurations 1 and 2, AFF-8): B9 control surfaces held at zero, for FAR's underwater tests", True, True)):
         out = os.path.join(here, ship + ".craft")
         open(out, "w", encoding="utf-8", newline="\n").write(with_appendages(src, ship, desc, fins, with_sail))
         print("wrote " + out)

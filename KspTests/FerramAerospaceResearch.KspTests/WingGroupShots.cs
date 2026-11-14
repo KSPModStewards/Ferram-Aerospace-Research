@@ -15,19 +15,18 @@ namespace FerramAerospaceResearch.KspTests
     /// <summary>Pictures of how FAR groups a craft's wing panels into wings for their aspect ratio (Components tab).</summary>
     public static class WingGroupShots
     {
-        private const string Mods = @"AdvancedJetEngine;Firespitter;TimeControl;..\..\..\CustomProceduralParts\GameData\CustomProceduralParts;" +
-                                    @"..\FerramAerospaceResearch.KspTests.Run\mods\FARTestFloatplane";
+        private const string Mods = TestWarp.WaterMods;   // the water tests' instance
 
         /// <summary>
-        /// Each craft (parameter crafts, + separated, SPH; default the Cessna floatplane as built, with plain wing panels
-        /// beside its merged control strips, and with B9's own hinged control surfaces) in the SPH, FAR's Components tab
+        /// Each craft (parameter crafts, + separated, SPH; default the Cessna floatplane with B9's own hinged control
+        /// surfaces; crafts/stashed has the variants with FAR surfaces in B9 strips) in the SPH, FAR's Components tab
         /// colouring it by Wings (each wing a colour, grey: a panel keeping its own aspect ratio) and by Aspect Ratio, the
         /// table shown; screenshots from above at three headings, and each panel's wing and aspect ratios recorded.
         /// </summary>
-        [UITest(Kind = "Measure", Explicit = true, Mods = Mods, StartsAt = StartState.Sph, Craft = "Cessna 172M Floatplane", TimeoutSec = 900)]
+        [UITest(Kind = "Measure", Explicit = true, Mods = Mods, StartsAt = StartState.Sph, Craft = "Cessna 172M Floatplane Hinged", TimeoutSec = 900)]
         public static IEnumerator Shot_C172WingGroups(TestContext ctx)
         {
-            string[] crafts = (ctx.Param("crafts") ?? "Cessna 172M Floatplane+Cessna 172M Floatplane NoPlain+Cessna 172M Floatplane Hinged").Split('+');
+            string[] crafts = (ctx.Param("crafts") ?? "Cessna 172M Floatplane Hinged").Split('+');
             foreach (string raw in crafts)
             {
                 string craft = raw.Trim();

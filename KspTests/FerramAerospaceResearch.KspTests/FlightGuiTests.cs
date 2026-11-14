@@ -343,13 +343,16 @@ namespace FerramAerospaceResearch.KspTests
                 update.Invoke(stab, new object[] { state });
                 float rollOff = state.roll;
                 bool levelerOff = !Far.StabAugActive(gui, 0);
+                bool buttonOff = water == null || Refl.Get(water, "button") == null;
                 int groupOff = Far.SettingsGroup(gui);
                 ctx.Record("off", $"Debug button {debugButton}, Roll toggle {rollToggle}, leveler roll {rollOff:F3} " +
-                                  $"(turned {(levelerOff ? "off" : "on")}), settings group {groupOff}");
+                                  $"(turned {(levelerOff ? "off" : "on")}), " +
+                                  $"put-on-water button {(buttonOff ? "none" : "shown")}, settings group {groupOff}");
                 Assert.False(debugButton, "no Debug button with the tools off");
                 Assert.False(rollToggle, "no flight assistance with the tools off");
                 Assert.Equal(0f, rollOff, "a wing leveler left on puts in no roll with the tools off");
                 Assert.True(levelerOff, "a wing leveler left on is turned off with the tools off");
+                Assert.True(buttonOff, "no put-on-water button with the tools off");
 
                 ctx.Step("debug tools on");
                 FARDebugValues.DebugTools = true;
