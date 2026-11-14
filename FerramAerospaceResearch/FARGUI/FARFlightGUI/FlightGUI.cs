@@ -454,7 +454,10 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
         {
             BuildSettingsDropDown();
             if (!FARDebugValues.DebugTools)
+            {
                 showDebugWindow = false;
+                _stabilityAugmentation?.TurnOff();
+            }
             // the main window's height again from its contents
             mainGuiRect.height = 0;
             settingsGuiRect.height = 0;
