@@ -1,0 +1,227 @@
+name: Testing build
+
+# Publishes master with the open pull requests labelled ready-for-testing merged in, as a GitHub prerelease tagged
+# v<latest stable release, its fourth number counting the testing builds>_testing (v0.17.0.3_testing: the third on
+# 0.17.0.0), the build stamped with that version. Stable releases therefore end in .0 (package.yml checks config.json).
+# CKAN indexes a prerelease with release_status testing, which it offers to players whose stability tolerance for FAR
+# (or all mods) is Testing; the next stable release, numbered higher, replaces it.
+#
+# It runs when the label goes on or off a pull request, and when a labelled one gets commits, is reopened or is closed
+# (a merged one only loses the label: master has it). Each run takes every labelled pull request, so a newer run
+# cancels an older one, and none publishes when master and the labelled commits are what the last testing build has.
+# With no pull request labelled, a build of master alone replaces the last testing build (none after a stable release).
+# Run it by hand to rebuild (force: even unchanged).
+#
+# Who: the label counts when the last to put it on has write access. A pull request by someone without write access
+# also needs that person's review of its latest commit, as run-ingame does in tests.yml, so a push after the review
+# takes it out. Those that fail this lose the label, with a comment saying why.
+#
+# Conflicts: lower numbers merge first; one that conflicts stops the run, with a comment on it naming what it conflicts
+# with (once per conflict). A pull request whose commits are all in another labelled one is left out, the other bringing
+# them, so two conflicting ones go in together through a third that merges both with the conflict resolved.
+#
+# Jobs: collect merges, git only (.github/scripts/testing_merge.sh, from master); build compiles the merge with a
+# read-only token, like a let-in fork pull request in tests.yml, and no cache; publish runs nothing of the pull requests:
+# it pushes the tag (the merge commit) and makes the prerelease. GITHUB_TOKEN cannot push commits changing
+# .github/workflows, so a pull request that does cannot be published this way.
+
+on:
+  pull_request_target:
+    types: [labeled, unlabeled, synchronize, reopened, closed]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Publish even if nothing changed since the last testing build
+        type: boolean
+        default: false
+
+env:
+  LABEL: ready-for-testing # also in collect's if
+
+jobs:
+  collect:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event.action == 'labeled' || github.event.action == 'unlabeled') &&
+        github.event.label.name == 'ready-for-testing') ||
+      (github.event.action != 'labeled' && github.event.action != 'unlabeled' &&
+        contains(github.event.pull_request.labels.*.name, 'ready-for-testing'))
+    # one testing build at a time, the newest. Per job, so the pull request events the if drops cancel nothing
+    concurrency:
+      group: testing-build
+      cancel-in-progress: true
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      build: ${{ steps.merge.outputs.build }}
+      master: ${{ steps.merge.outputs.master }}
+      commit: ${{ steps.merge.outputs.commit }}
+      version: ${{ steps.merge.outputs.version }}
+      tag: ${{ steps.merge.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.repository.default_branch }}
+          OUT: ${{ runner.temp }}/testing
+          ACTION: ${{ github.event.action }}
+          PR: ${{ github.event.pull_request.number }}
+          MERGED: ${{ github.event.pull_request.merged }}
+          FORCE: ${{ inputs.force }}
+        run: bash .github/scripts/testing_merge.sh
+
+      - uses: actions/upload-artifact@v6
+        if: steps.merge.outputs.build == 'true'
+        with:
+          name: testing-merge
+          path: ${{ runner.temp }}/testing
+
+  build:
+    needs: collect
+    if: needs.collect.outputs.build == 'true'
+    concurrency:
+      group: testing-build
+      cancel-in-progress: true
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      KSP_ROOT: /tmp/ksp
+      # not VERSION: MSBuild takes environment variables as properties (a five-number Version failed the restore)
+      TESTING_COMMIT: ${{ needs.collect.outputs.commit }}
+      TESTING_VERSION: ${{ needs.collect.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.collect.outputs.master }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: testing-merge
+          path: ${{ runner.temp }}/testing
+
+      - name: Check out the merge
+        run: |
+          bundle="$RUNNER_TEMP/testing/merged.bundle"
+          if [ -f "$bundle" ]; then git fetch -q "$bundle" HEAD; fi
+          git checkout -q --detach "$TESTING_COMMIT"
+          git submodule update -q --init --recursive
+
+      # From here on as package.yml's build, without the CKAN download cache: this zip goes to players
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.x
+
+      - uses: KSPModdingLibs/KSPBuildTools/.github/actions/setup-ckan@1.1.1
+        with:
+          ckan-filters: ""
+
+      - uses: KSPModdingLibs/KSPBuildTools/.github/actions/install-dependencies@1.1.1
+        with:
+          dependency-identifiers: ModularFlightIntegrator KSPCommunityFixes KSPBurst ModuleManager
+
+      # The testing version into Version.cs, the AssemblyInfos and FAR.version: config.json's replacements with the
+      # version numbers overridden, all four (master's config.json is ahead of the last stable release between a release
+      # bump's merge and its tag). A config.json.user list replaces config.json's, so CI's settings come after, for the
+      # package; then GitSha, logged at startup, the merge commit's, not GITHUB_SHA (master's here)
+      - name: Stamp version and commit SHA
+        run: |
+          numbers=$(jq -Rc 'split(".") | map(tonumber) | {VersionMajor: .[0], VersionMinor: .[1], VersionBuild: .[2], VersionRevision: .[3]}' <<< "$TESTING_VERSION")
+          jq -n --argjson v "$numbers" '{variables: $v}' > config.json.user
+          python -m buildtools replace
+          jq --argjson v "$numbers" '.variables += $v | del(.replace)' .github/package.config.json > config.json.user
+          sed -i -E "s/GitSha = (null|\"[^\"]*\")/GitSha = \"$TESTING_COMMIT (testing)\"/" FerramAerospaceResearch.Base/Version.cs
+          grep -F "GitSha = \"$TESTING_COMMIT" FerramAerospaceResearch.Base/Version.cs
+          grep -F "AssemblyVersion(\"$TESTING_VERSION\")" FerramAerospaceResearch/Properties/AssemblyInfo.cs FerramAerospaceResearch.Base/Properties/AssemblyInfo.cs
+          code=$(sed -n 's/.*const byte \(Major\|Minor\|Build\|Revision\) = \([0-9]*\);.*/\2/p' FerramAerospaceResearch.Base/Version.cs | paste -sd.)
+          [ "$code" = "$TESTING_VERSION" ] || { echo "::error::Version.cs is at $code, not $TESTING_VERSION"; exit 1; }
+          jq -e --arg v "$TESTING_VERSION" '.VERSION | "\(.MAJOR).\(.MINOR).\(.PATCH).\(.BUILD)" == $v' GameData/FerramAerospaceResearch/FAR.version
+
+      - uses: KSPModdingLibs/KSPBuildTools/.github/actions/compile@1.1.1
+        with:
+          solution-file-path: FerramAerospaceResearch.sln
+
+      - name: Package
+        id: package-mod
+        run: |
+          archive=$(python -m buildtools package)
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: FerramAerospaceResearch
+          path: ${{ steps.package-mod.outputs.archive }}
+
+  publish:
+    needs: [collect, build]
+    concurrency:
+      group: testing-build
+      cancel-in-progress: true
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TESTING_COMMIT: ${{ needs.collect.outputs.commit }}
+      TESTING_VERSION: ${{ needs.collect.outputs.version }}
+      TESTING_TAG: ${{ needs.collect.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.collect.outputs.master }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: testing-merge
+          path: ${{ runner.temp }}/testing
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: FerramAerospaceResearch
+          path: dist
+
+      - name: Publish the prerelease
+        run: |
+          bundle="$RUNNER_TEMP/testing/merged.bundle"
+          if [ -f "$bundle" ]; then git fetch -q "$bundle" HEAD; fi
+          if gh release view "$TESTING_TAG" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "::notice::$TESTING_TAG is published already"
+            exit 0
+          fi
+          # left by a run cancelled between the tag and the release: this one's if it is at this commit
+          existing=$(git ls-remote --tags origin "refs/tags/$TESTING_TAG" | cut -f1)
+          if [ "$existing" = "$TESTING_COMMIT" ]; then
+            echo "$TESTING_TAG is already at ${TESTING_COMMIT::8}"
+          elif [ -n "$existing" ]; then
+            echo "::error::$TESTING_TAG already exists, at ${existing::8}, not ${TESTING_COMMIT::8}. Delete it (no release uses it?) and re-run"
+            exit 1
+          else
+            git tag "$TESTING_TAG" "$TESTING_COMMIT"
+            if ! git push -q origin "refs/tags/$TESTING_TAG"; then
+              echo "::error::could not push $TESTING_TAG. GITHUB_TOKEN cannot push commits changing .github/workflows: does a pull request?"
+              exit 1
+            fi
+          fi
+          zip="$PWD/FAR_${TESTING_VERSION}_testing.zip"
+          (cd dist && zip -qr "$zip" .)
+          if ! gh release create "$TESTING_TAG" "$zip" -R "$GITHUB_REPOSITORY" --verify-tag --prerelease --latest=false \
+              --title "Ferram Aerospace Research v$TESTING_VERSION (testing)" --notes-file "$RUNNER_TEMP/testing/notes.md"; then
+            git push -q origin ":refs/tags/$TESTING_TAG" || true
+            exit 1
+          fi
