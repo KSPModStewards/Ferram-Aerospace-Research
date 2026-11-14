@@ -416,6 +416,11 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         {
             List<Part> partsList = EditorLogic.SortedShipList;
             _wingAerodynamicModel.Clear();
+            // the wings take the editor's part list again (EditorUpdateWingInteractions): made anew from the ship as it is
+            // now, not one made while a craft was still loading, which lacks the parts attached after it and so leaves
+            // a wing's raycasts hitting parts it does not know (a root against a tank counted as exposed)
+            if (updateWingInteractions)
+                FARAeroUtil.ResetEditorParts();
             foreach (Part p in partsList)
             {
                 if (p == null)
@@ -456,6 +461,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                     _vehicleAero.UpdateSonicDragArea();
                     LEGACY_UpdateWingAeroModels(EditorLogic.SortedShipList.Count != prevPartCount || partMovement);
                     prevPartCount = EditorLogic.SortedShipList.Count;
+                    // a part moved: its voxelization has updated the wings, and the next one need not unless parts move again
+                    partMovement = false;
 
                     voxelWatch.Stop();
                     FARLogger.Info("Voxelization Time (ms): " + voxelWatch.ElapsedMilliseconds);
