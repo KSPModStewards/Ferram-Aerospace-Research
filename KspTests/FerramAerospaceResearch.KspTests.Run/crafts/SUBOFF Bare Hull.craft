@@ -1,0 +1,360 @@
+ship = SUBOFF Bare Hull
+version = 1.2.0
+description = The DARPA SUBOFF bare hull at model scale (DTRC Model 5470, 4.356 m by 0.508 m) from Groves et al.'s equations: one ProceduralParts Spine (CustomProceduralParts), Ellipse sections, for FAR's underwater tests against Roddy's captive-model derivatives
+type = SPH
+size = 2,2,8
+PART
+{
+	part = proceduralTankLiquid_4294811080
+	partName = Part
+	pos = 0,3,0
+	attPos = 0,0,0
+	attPos0 = 0,3,0
+	rot = 0.707106829,0,0,0.707106829
+	attRot = 0,0,0,1
+	attRot0 = 0.707106829,0,0,0.707106829
+	mir = 1,1,1
+	symMethod = Mirror
+	autostrutMode = Off
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = 0
+	attm = 0
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	MODULE
+	{
+		name = ProceduralPart
+		isEnabled = True
+		density = 0
+		forceLegacyTextures = False
+		textureSet = Original
+		capTextureIndex = 0
+		shapeName = Spine
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+			upgrade = ProceduralPartsTank1500L
+			upgrade = ProceduralPartsTank2500L
+			upgrade = ProceduralPartsTankAviation
+			upgrade = ProceduralPartsTank20000L
+			upgrade = ProceduralPartsTank37000L
+			upgrade = ProceduralPartsTank45000L
+			upgrade = ProceduralPartsTank85000L
+			upgrade = ProceduralPartsTankMiniaturization
+			upgrade = ProceduralPartsTankUnlimited
+		}
+	}
+	MODULE
+	{
+		name = ProceduralShapeSpine
+		isEnabled = True
+		length = 4.3561
+		hScale = 1
+		vScale = 1
+		stagingEnabled = True
+		SPINE_NODE
+		{
+			position = 0
+			sizeH = 0.01
+			sizeV = 0.01
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.002187
+			sizeH = 0.02602
+			sizeV = 0.02602
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.00656
+			sizeH = 0.04263
+			sizeV = 0.04263
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.01312
+			sizeH = 0.05471
+			sizeV = 0.05471
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.021866
+			sizeH = 0.05969
+			sizeV = 0.05969
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.02479
+			sizeH = 0.06009
+			sizeV = 0.06009
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.033415
+			sizeH = 0.06574
+			sizeV = 0.06574
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.047308
+			sizeH = 0.08623
+			sizeV = 0.08623
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.065774
+			sizeH = 0.12712
+			sizeV = 0.12712
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.087885
+			sizeH = 0.1875
+			sizeV = 0.1875
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.112534
+			sizeH = 0.2617
+			sizeV = 0.2617
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.138484
+			sizeH = 0.33961
+			sizeV = 0.33961
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.164434
+			sizeH = 0.40916
+			sizeV = 0.40916
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.189083
+			sizeH = 0.46072
+			sizeV = 0.46072
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.211194
+			sizeH = 0.49107
+			sizeV = 0.49107
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.22966
+			sizeH = 0.50411
+			sizeV = 0.50411
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.243553
+			sizeH = 0.50759
+			sizeV = 0.50759
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.252178
+			sizeH = 0.50799
+			sizeV = 0.50799
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.255102
+			sizeH = 0.508
+			sizeV = 0.508
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.766764
+			sizeH = 0.508
+			sizeV = 0.508
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.792878
+			sizeH = 0.50663
+			sizeV = 0.50663
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.818664
+			sizeH = 0.49928
+			sizeV = 0.49928
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.843797
+			sizeH = 0.48483
+			sizeV = 0.48483
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.867961
+			sizeH = 0.46509
+			sizeV = 0.46509
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.890853
+			sizeH = 0.44251
+			sizeV = 0.44251
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.912184
+			sizeH = 0.41856
+			sizeV = 0.41856
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.931687
+			sizeH = 0.39283
+			sizeV = 0.39283
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.949115
+			sizeH = 0.36324
+			sizeV = 0.36324
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.964251
+			sizeH = 0.327
+			sizeV = 0.327
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.976902
+			sizeH = 0.28164
+			sizeV = 0.28164
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.986912
+			sizeH = 0.22588
+			sizeV = 0.22588
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.994152
+			sizeH = 0.15981
+			sizeV = 0.15981
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 0.998533
+			sizeH = 0.08466
+			sizeV = 0.08466
+			section = Ellipse
+		}
+		SPINE_NODE
+		{
+			position = 1
+			sizeH = 0.01
+			sizeV = 0.01
+			section = Ellipse
+		}
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = TankContentSwitcher
+		isEnabled = True
+		tankType = LiquidFuel
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = GeometryPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARAeroPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+}

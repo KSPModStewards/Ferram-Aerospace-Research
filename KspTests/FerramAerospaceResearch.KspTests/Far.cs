@@ -217,6 +217,31 @@ namespace FerramAerospaceResearch.KspTests
 
         private static void Set(object o, string name, object value) => Refl.Set(o, name, value);
 
+        /// <summary>
+        /// FAR's debug tools (FARDebugValues.DebugTools: the flight window's debug window and flight assistance, the
+        /// put-on-water button) on or off for a test, put back as they were when disposed:
+        /// <c>using var tools = Far.DebugTools();</c>
+        /// </summary>
+        public static IDisposable DebugTools(bool on = true)
+        {
+            bool was = FARDebugValues.DebugTools;
+            FARDebugValues.DebugTools = on;
+            return new Restore(() => FARDebugValues.DebugTools = was);
+        }
+
+        private sealed class Restore : IDisposable
+        {
+            private Action undo;
+
+            public Restore(Action undo) => this.undo = undo;
+
+            public void Dispose()
+            {
+                undo?.Invoke();
+                undo = null;
+            }
+        }
+
         /// <summary>The active vessel's FAR flight GUI (a VesselModule).</summary>
         public static FlightGUI FlightGui(Vessel v = null) =>
             FARAPI.VesselFlightInfo(v ?? FlightGlobals.ActiveVessel) ?? throw new UITestFailure("the vessel has no FAR FlightGUI");
@@ -235,11 +260,24 @@ namespace FerramAerospaceResearch.KspTests
 
         /// <summary>
         /// Picks the settings window's group. Its drop-down list closes as soon as the mouse is not over it (there is
-        /// no mouse in a test), so the selection is set the way the list's button would set it.
+        /// no mouse in a test), so the selection is set the way the list's button would set it. By the group's value
+        /// (GroupFlightData, ...), not its place in the list: flight assistance is only listed with FAR's debug tools.
         /// </summary>
-        public static void SetSettingsGroup(FlightGUI gui, int group) => Set(Get(gui, "settingsWindow"), "selectedOption", group);
+        public static void SetSettingsGroup(FlightGUI gui, int group)
+        {
+            object dropdown = Get(gui, "settingsWindow");
+            int at = Array.IndexOf((int[])Get(dropdown, "typeOptions"), group);
+            if (at < 0)
+                throw new UITestFailure($"the settings window does not list group {group} (flight assistance needs Far.DebugTools())");
+            Set(dropdown, "selectedOption", at);
+        }
 
-        public static int SettingsGroup(FlightGUI gui) => (int)Get(Get(gui, "settingsWindow"), "selectedOption");
+        /// <summary>The settings window's group (GroupFlightData, ...).</summary>
+        public static int SettingsGroup(FlightGUI gui)
+        {
+            object dropdown = Get(gui, "settingsWindow");
+            return ((int[])Get(dropdown, "typeOptions"))[(int)Get(dropdown, "selectedOption")];
+        }
 
         /// <summary>The text of the flight data window's value column, as last drawn.</summary>
         public static string FlightDataText(FlightGUI gui) => ((StringBuilder)Get(Get(gui, "_flightDataGUI"), "dataStringBuilder")).ToString();

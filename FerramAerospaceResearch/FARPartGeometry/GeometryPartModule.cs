@@ -935,7 +935,7 @@ namespace FerramAerospaceResearch.FARPartGeometry
             return meshList;
         }
 
-        private static MeshData CreateBoxMeshFromBoxCollider(Vector3 size, Vector3 center)
+        internal static MeshData CreateBoxMeshFromBoxCollider(Vector3 size, Vector3 center)
         {
             var Points = new List<Vector3>();
             var Verts = new List<Vector3>();

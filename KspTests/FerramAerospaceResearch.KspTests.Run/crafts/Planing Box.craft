@@ -1,0 +1,122 @@
+ship = Planing Box
+version = 1.2.0
+description = A flat-bottomed box hull for towing on the water: one ProceduralParts square prism, 2 m beam, 8 m long
+type = SPH
+size = 2,2,8
+PART
+{
+	part = proceduralTankLiquid_4294811080
+	partName = Part
+	pos = 0,3,0
+	attPos = 0,0,0
+	attPos0 = 0,3,0
+	rot = 0.707106829,0,0,0.707106829
+	attRot = 0,0,0,1
+	attRot0 = 0.707106829,0,0,0.707106829
+	mir = 1,1,1
+	symMethod = Mirror
+	autostrutMode = Off
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = 0
+	attm = 0
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	MODULE
+	{
+		name = ProceduralPart
+		isEnabled = True
+		density = 0
+		forceLegacyTextures = False
+		textureSet = Original
+		capTextureIndex = 0
+		shapeName = Polygon
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+			upgrade = ProceduralPartsTank1500L
+			upgrade = ProceduralPartsTank2500L
+			upgrade = ProceduralPartsTankAviation
+			upgrade = ProceduralPartsTank20000L
+			upgrade = ProceduralPartsTank37000L
+			upgrade = ProceduralPartsTank45000L
+			upgrade = ProceduralPartsTank85000L
+			upgrade = ProceduralPartsTankMiniaturization
+			upgrade = ProceduralPartsTankUnlimited
+		}
+	}
+	MODULE
+	{
+		name = ProceduralShapePolygon
+		isEnabled = True
+		cornerCount = 4
+		diameter = 2
+		length = 8
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = TankContentSwitcher
+		isEnabled = True
+		tankType = LiquidFuel
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = GeometryPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARAeroPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+}
