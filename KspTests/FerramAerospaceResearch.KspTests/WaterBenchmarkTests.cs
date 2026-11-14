@@ -14,14 +14,13 @@ namespace FerramAerospaceResearch.KspTests
 {
     /// <summary>
     /// What FAR's water model (PartHydrodynamics) costs on a large craft: a ditching, run once per configuration from the
-    /// same start (FAR's water model off, then on with each mesh source: FAR's own, the parts' colliders, their visible
-    /// meshes).
+    /// same start (FAR's water model off, then on).
     /// </summary>
     public static class WaterBenchmarkTests
     {
         /// <summary>
         /// FAR SkyEye AS (155 parts) ditched at 60 m/s, 2 m/s down (crash damage off, joints unbreakable), per
-        /// configuration (parameter configs, + separated: off, far, colliders, visual):
+        /// configuration (parameter configs, + separated: off, on):
         /// - the splash: the first impactSec (default 10) game seconds in the water at real time: the water model's own time
         ///   per physics step (clipping, contact faces, strips, mesh builds), the frame time, the wet parts and their
         ///   triangles;
@@ -34,11 +33,10 @@ namespace FerramAerospaceResearch.KspTests
                 LaunchSite = "Runway", TimeoutSec = 2400)]
         public static IEnumerator Bench_WaterSplashdown(TestContext ctx)
         {
-            string[] configs = ctx.ParamList("configs", "off+far+colliders+visual").ToArray();
+            string[] configs = ctx.ParamList("configs", "off+on").ToArray();
             double impactSec = ctx.ParamDouble("impactSec", 10), hyper = ctx.ParamDouble("hyper", 50), wallSec = ctx.ParamDouble("wallSec", 15);
             yield return Wait.Seconds(5);
             bool hydroWas = FARDebugValues.hydrodynamics;
-            PartHydrodynamics.MeshSourceKind sourceWas = PartHydrodynamics.MeshSource;
             bool crashWas = CheatOptions.NoCrashDamage, jointsWas = CheatOptions.UnbreakableJoints;
             var csv = new StringBuilder("config,parts,wetParts,wetTriangles,impact_steps,impact_hydro_ms_step,impact_gather_ms_step,impact_solve_ms_step," +
                                         "contact_ms_total,contact_pairs,mesh_ms_total,impact_frame_ms,impact_polys_step,float_game_s_per_wall_s,float_hydro_ms_step," +
@@ -52,9 +50,6 @@ namespace FerramAerospaceResearch.KspTests
                 {
                     ctx.Step(config);
                     FARDebugValues.hydrodynamics = config != "off";
-                    if (config == "colliders") PartHydrodynamics.MeshSource = PartHydrodynamics.MeshSourceKind.Colliders;
-                    else if (config == "visual") PartHydrodynamics.MeshSource = PartHydrodynamics.MeshSourceKind.Visual;
-                    else PartHydrodynamics.MeshSource = PartHydrodynamics.MeshSourceKind.Far;
 
                     Flight.HyperWarpOff();
                     yield return FlightTests.Airborne(Far.At(0, 600, 2, "glide", speedMs: 60));
@@ -123,7 +118,6 @@ namespace FerramAerospaceResearch.KspTests
             {
                 Flight.HyperWarpOff();
                 FARDebugValues.hydrodynamics = hydroWas;
-                PartHydrodynamics.MeshSource = sourceWas;
                 CheatOptions.NoCrashDamage = crashWas;
                 CheatOptions.UnbreakableJoints = jointsWas;
             }

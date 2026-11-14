@@ -144,11 +144,6 @@ namespace FerramAerospaceResearch.FARAeroComponents
         // counted twice: each part's force its own volume's, straight up, not pushing on its joints
         public const float ContactTouch = 0.05f;
 
-        /// <summary>The meshes the water sees: FAR's (what its voxels are made from: colliders or visible meshes, by
-        /// FAR's own choice per part), the part's colliders, or its visible meshes.</summary>
-        public enum MeshSourceKind { Far, Colliders, Visual }
-        public static MeshSourceKind MeshSource = MeshSourceKind.Far;
-
         // time spent (Stopwatch ticks) and work done since the counters were last reset (tests, benchmarks)
         public static long ProfileGatherTicks, ProfileSolveTicks, ProfileContactTicks, ProfileMeshTicks;
         public static long ProfileSteps, ProfileTrianglesTested, ProfilePolygons, ProfileContactPairs;
@@ -161,8 +156,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                         ProfilePieceTicks = ProfileImpactTicks = 0;
 
         internal readonly Part part;
-        private object meshSource;
-        private MeshSourceKind meshKind;
+        private List<GeometryMesh> meshSource;
         private int meshVersion;
         private Vector3[] localVerts = Array.Empty<Vector3>();
         private int[] tris = Array.Empty<int>();
@@ -238,10 +232,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
         {
             GeometryPartModule g = part.GetComponent<GeometryPartModule>();
             List<GeometryMesh> meshes = g != null ? g.meshDataList : null;
-            object source = MeshSource == MeshSourceKind.Far ? (object)meshes : part.partTransform;
-            if (source == null || MeshSource == MeshSourceKind.Far && meshes.Count == 0)
+            if (meshes == null || meshes.Count == 0)
                 return false;
-            if (ReferenceEquals(source, meshSource) && meshKind == MeshSource)
+            if (ReferenceEquals(meshes, meshSource))
                 return tris.Length > 0;
 
             long t0 = Stopwatch.GetTimestamp();
@@ -255,7 +248,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 AddMesh(mv, mt, toPart, verts, t);
                 pieceCount++;
             }
-            Pieces(part, MeshSource, Sink, log);
+            FarMeshes(meshes, Sink, log);
             int unsimplified = t.Count / 3;
             if (MeshSimplifyTolerance > 0 && unsimplified >= MeshSimplifyMinTriangles && verts.Count > 0)
             {
@@ -318,7 +311,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
             OpenShare = area > 0 ? openSum.magnitude / area : 1;
             if (!OwnsBuoyancy)
                 RestoreStockBuoyancy();
-            FARLogger.Info($"Hydrodynamics of {part.partInfo?.name}: {t.Count / 3} triangles from {MeshSource} meshes{log}; " +
+            FARLogger.Info($"Hydrodynamics of {part.partInfo?.name}: {t.Count / 3} triangles from FAR's meshes{log}; " +
                            $"volume {volume:F3} m3, open {OpenShare:F4} of its area: " +
                            (OwnsBuoyancy ? "buoyancy from its pressure" : "stock buoyancy"));
             localVerts = verts.ToArray();
@@ -328,31 +321,17 @@ namespace FerramAerospaceResearch.FARAeroComponents
             contactStamp = new int[tris.Length / 3];
             dryStamp = new int[tris.Length / 3];
             contacts.Clear();
-            meshSource = source;
-            meshKind = MeshSource;
+            meshSource = meshes;
             meshVersion++;
             ProfileMeshTicks += Stopwatch.GetTimestamp() - t0;
             return tris.Length > 0;
         }
 
         /// <summary>
-        /// The meshes the water model reads for a part from a source, piece by piece: each one's name, its vertices and
-        /// triangles, and its transform into part space (what the model joins into the part's mesh).
+        /// The meshes the water model reads for a part, FAR's (what its voxels are made from: colliders or visible
+        /// meshes, by FAR's own choice per part), piece by piece: each one's name, its vertices and triangles, and its
+        /// transform into part space (what the model joins into the part's mesh).
         /// </summary>
-        internal static void Pieces(Part part, MeshSourceKind kind, Action<string, Vector3[], int[], Matrix4x4> sink,
-                                    System.Text.StringBuilder log = null)
-        {
-            log ??= new System.Text.StringBuilder();
-            if (kind == MeshSourceKind.Far)
-            {
-                GeometryPartModule g = part.GetComponent<GeometryPartModule>();
-                if (g != null && g.meshDataList != null)
-                    FarMeshes(g.meshDataList, sink, log);
-            }
-            else
-                OwnMeshes(part, kind == MeshSourceKind.Colliders, sink, log);
-        }
-
         private static void FarMeshes(List<GeometryMesh> meshes, Action<string, Vector3[], int[], Matrix4x4> sink, System.Text.StringBuilder log)
         {
             var seen = new List<(int verts, int tris, Bounds bounds, Vector3 area)>();
@@ -391,38 +370,6 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 sum += new Vector3(Math.Abs(n.x), Math.Abs(n.y), Math.Abs(n.z)) * 0.5f;
             }
             return sum;
-        }
-
-        // the part's own colliders (mesh and box) or visible meshes (active, rendered, readable), in part space
-        private static void OwnMeshes(Part part, bool colliders, Action<string, Vector3[], int[], Matrix4x4> sink, System.Text.StringBuilder log)
-        {
-            Matrix4x4 toPart = part.partTransform.worldToLocalMatrix;
-            if (colliders)
-            {
-                foreach (Collider c in part.GetComponentsInChildren<Collider>(false))
-                {
-                    if (!c.enabled || c.isTrigger || c is WheelCollider)
-                        continue;
-                    Matrix4x4 m = toPart * c.transform.localToWorldMatrix;
-                    if (c is MeshCollider mc && mc.sharedMesh != null && mc.sharedMesh.isReadable)
-                        sink(c.name, mc.sharedMesh.vertices, mc.sharedMesh.triangles, m);
-                    else if (c is BoxCollider bc)
-                    {
-                        MeshData box = GeometryPartModule.CreateBoxMeshFromBoxCollider(bc.size, bc.center);
-                        sink(c.name + " box", box.vertices, box.triangles, m);
-                    }
-                    else
-                        log.Append($" {c.name}({c.GetType().Name} skipped)");
-                }
-                return;
-            }
-            foreach (MeshFilter mf in part.GetComponentsInChildren<MeshFilter>(false))
-            {
-                MeshRenderer mr = mf.GetComponent<MeshRenderer>();
-                if (mr == null || !mr.enabled || mf.sharedMesh == null || !mf.sharedMesh.isReadable)
-                    continue;
-                sink(mf.name, mf.sharedMesh.vertices, mf.sharedMesh.triangles, toPart * mf.transform.localToWorldMatrix);
-            }
         }
 
         // vertices this close (m, part space) are one where the mesh's pieces meet
