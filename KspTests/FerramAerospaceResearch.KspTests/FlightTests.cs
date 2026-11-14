@@ -1,7 +1,11 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Text;
+using System.Threading;
 using ferram4;
 using FerramAerospaceResearch.FARAeroComponents;
 using FerramAerospaceResearch.FARGUI.FARFlightGUI;
@@ -62,21 +66,13 @@ namespace FerramAerospaceResearch.KspTests
 
         /// <summary>
         /// FAR's vessel snapshot (FARAPI.CaptureVesselSnapshot, CalculateSnapshotAeroForcesAt: a prediction at a place and
-        /// time, from a copy of the vessel's aero model) at the state the vessel flies in: the same answer on a worker
-        /// thread as on the main thread, and full pitch input changes the pitching moment.
+        /// time, from a copy of the vessel's aero model) at the state the vessel flies in is the force FAR applies there,
+        /// and full pitch input changes the pitching moment. Before predictions took the game atmosphere, ram drag and
+        /// settled wings, the Aeris 4A at Mach 0.5, 3 km, 4 deg was predicted with 8.6 kN of drag against 14.2 kN applied
+        /// and 138.0 kN of total force against 128.1 (measured). Off the main thread: Flight_SnapshotIsExactOnManyThreads.
         /// </summary>
         [UITest(Kind = "Check", StartsAt = StartState.Flight, Craft = Far.Plane, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 900)]
-        public static IEnumerator Flight_SnapshotIsThreadSafeAndTakesControls(TestContext ctx) => Snapshot(ctx, againstApplied: false);
-
-        /// <summary>
-        /// The snapshot's prediction at the state the vessel flies in is the force FAR applies there. Explicit: on master the
-        /// snapshot path predicts like the altitude-only API, the Aeris 4A at Mach 0.5, 3 km, 4 deg with 8.6 kN of drag against
-        /// 14.2 kN applied and 138.0 kN of total force against 128.1 (measured).
-        /// </summary>
-        [UITest(Kind = "Check", Explicit = true, StartsAt = StartState.Flight, Craft = Far.Plane, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 900)]
-        public static IEnumerator Flight_SnapshotPredictsTheAppliedForce(TestContext ctx) => Snapshot(ctx, againstApplied: true);
-
-        private static IEnumerator Snapshot(TestContext ctx, bool againstApplied)
+        public static IEnumerator Flight_SnapshotPredictsTheAppliedForce(TestContext ctx)
         {
             yield return Wait.Seconds(5);
             FarFlightProbe.Condition c = Cruise(4);
@@ -96,23 +92,8 @@ namespace FerramAerospaceResearch.KspTests
             double predTotal = f.magnitude, total = Math.Sqrt(drag * drag + lift * lift);
             ctx.Record("drag", $"applied {drag:F2} kN, snapshot {predDrag:F2}");
             ctx.Record("force", $"applied |F| {total:F2} kN, snapshot {predTotal:F2}");
-            if (againstApplied)
-            {
-                Assert.Near(drag, predDrag, 0.03 * drag + 0.05, "the snapshot's drag against the drag FAR applies");
-                Assert.Near(total, predTotal, 0.03 * total + 0.05, "the snapshot's total force against the one FAR applies");
-            }
-
-            // the snapshot reads no live game state: a worker thread gets the same answer
-            var worker = System.Threading.Tasks.Task.Run(() =>
-            {
-                bool ok = FARAPI.CalculateSnapshotAeroForcesAt(snap, out Vector3 wf, out Vector3 wt, vel, where, ut);
-                return (ok, wf, wt);
-            });
-            (bool wok, Vector3 wf2, Vector3 wt2) = worker.Result;
-            ctx.Record("worker", $"{wf2} against {f}");
-            Assert.True(wok, "the snapshot prediction ran on a worker thread");
-            Assert.Near(0, (wf2 - f).magnitude, 1e-4 * f.magnitude + 1e-6, "the worker thread's force against the main thread's");
-            Assert.Near(0, (wt2 - tq).magnitude, 1e-4 * tq.magnitude + 1e-6, "the worker thread's torque against the main thread's");
+            Assert.Near(drag, predDrag, 0.03 * drag + 0.05, "the snapshot's drag against the drag FAR applies");
+            Assert.Near(total, predTotal, 0.03 * total + 0.05, "the snapshot's total force against the one FAR applies");
 
             // full nose-up and nose-down input: the control surfaces move, and so does the pitching moment
             Vector3 pitchAxis = Flight.PitchUpAxis(v);
@@ -121,6 +102,329 @@ namespace FerramAerospaceResearch.KspTests
             double mUp = Vector3.Dot(tUp, pitchAxis), mDown = Vector3.Dot(tDown, pitchAxis), m0 = Vector3.Dot(tq, pitchAxis);
             ctx.Record("pitchMoment", $"input -1 {mDown:F2}, 0 {m0:F2}, +1 {mUp:F2} kN m");
             Assert.True(mUp > m0 && m0 > mDown, $"pitching moment rises with pitch input ({mDown:F2} < {m0:F2} < {mUp:F2} kN m)");
+        }
+
+        /// <summary>
+        /// FAR's prediction API (FARAPI.CalculateVesselAeroForcesAt) at the state the vessel flies in gives the force FAR
+        /// applies there. The altitude-only API it replaced predicted the Aeris 4A at Mach 0.5, 3 km, 4 deg with 40% too
+        /// little drag and 8% too much lift (8.5 against 14.1 kN, 137.9 against 127.3 kN).
+        /// </summary>
+        [UITest(Kind = "Check", StartsAt = StartState.Flight, Craft = Far.Plane, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 900)]
+        public static IEnumerator Flight_PredictionIsTheAppliedForce(TestContext ctx)
+        {
+            yield return Wait.Seconds(5);
+            FarFlightProbe.Condition c = Far.At(0.5, 3000, 4, "cruise 4");
+            yield return Airborne(c);
+            Assert.True(FarApi.HasPredictAt, "FAR has FARAPI.CalculateVesselAeroForcesAt");
+            var samples = new List<FarFlightProbe.Sample>();
+            yield return FarFlightProbe.Hold(c, 25, 50, samples);
+            double drag = samples.Average(s => s.Flight[0]), lift = samples.Average(s => s.Flight[1]);
+            double predDrag = samples.Average(s => s.Predicted[0]), predLift = samples.Average(s => s.Predicted[1]);
+            ctx.Record("drag", $"applied {drag:F2} kN, predicted {predDrag:F2}");
+            ctx.Record("lift", $"applied {lift:F2} kN, predicted {predLift:F2}");
+            Assert.Near(drag, predDrag, 0.03 * drag + 0.05, "FAR's prediction of the drag it applies");
+            Assert.Near(lift, predLift, 0.03 * lift + 0.05, "FAR's prediction of the lift it applies");
+        }
+
+        // Exact equality of two force/torque pairs (Unity's == is equality within about 1e-5).
+        private static bool Same(Vector3 f1, Vector3 t1, Vector3 f2, Vector3 t2) =>
+            f1.x.Equals(f2.x) && f1.y.Equals(f2.y) && f1.z.Equals(f2.z) && t1.x.Equals(t2.x) && t1.y.Equals(t2.y) && t1.z.Equals(t2.z);
+
+        private static string Exact(Vector3 x) =>
+            $"({x.x.ToString("R", CultureInfo.InvariantCulture)}, {x.y.ToString("R", CultureInfo.InvariantCulture)}, {x.z.ToString("R", CultureInfo.InvariantCulture)})";
+
+        /// <summary>
+        /// Flying at 5 deg with the control surfaces locked (so the control inputs cannot move them between predictions)
+        /// and settled; the number of surfaces locked goes in locked[0].
+        /// </summary>
+        private static IEnumerator SettledWithSurfacesLocked(FarFlightProbe.Condition c, int[] locked)
+        {
+            yield return Wait.Seconds(5);
+            locked[0] = FarApi.SetMaxDeflect(FlightGlobals.ActiveVessel, 0);
+            yield return Airborne(c);
+            yield return FarFlightProbe.Hold(c, 25, 1, new List<FarFlightProbe.Sample>(), predict: false);
+        }
+
+        // Unrelated conditions to predict between: Mach 0.3-8, AoA -10 to 45 deg (plus 2 deg a repeat), 1-50 km, each at
+        // its own place and time.
+        private static List<(Vector3 Vel, Vector3d LatLonAlt, double UT)> OtherConditions(Vessel v, double ut, int repeats)
+        {
+            CelestialBody body = v.mainBody;
+            Vector3 nose = v.ReferenceTransform.up, roof = -v.ReferenceTransform.forward;
+            var list = new List<(Vector3, Vector3d, double)>();
+            for (int rep = 0; rep < repeats; ++rep)
+                foreach (double mach in new[] { 0.3, 0.9, 2.0, 5.0, 8.0 })
+                    foreach (double aoa in new[] { -10.0, 0.0, 10.0, 25.0, 45.0 })
+                        foreach (double altM in new[] { 1000.0, 20000.0, 50000.0 })
+                        {
+                            int n = list.Count + 1;
+                            double p = body.GetPressure(altM);
+                            double speed = mach * body.GetSpeedOfSound(p, body.GetDensity(p, body.GetTemperature(altM)));
+                            double a = (aoa + 2 * rep) * Math.PI / 180;
+                            list.Add(((float)speed * ((float)Math.Cos(a) * nose - (float)Math.Sin(a) * roof),
+                                      new Vector3d(60 - 7 * n % 120, 180 - 13 * n % 360, altM), ut + 900 * n));
+                        }
+            return list;
+        }
+
+        /// <summary>
+        /// A prediction leaves nothing behind: FAR's prediction API is called by other mods (Trajectories over a whole
+        /// grid of conditions, MechJeb's VesselState) while the vessel flies, so a prediction must neither change the
+        /// state the flight reads nor depend on the predictions before it. In one frame: every value field of FAR's
+        /// per-part state (FarStateSnapshot) taken, the vessel's own condition predicted, 75 unrelated conditions
+        /// predicted, the own condition predicted again, the state taken again. No field may change and the two
+        /// predictions of the own condition must be exactly equal. Writes isolation.md (the fields that changed).
+        /// </summary>
+        [UITest(Kind = "Check", StartsAt = StartState.Flight, Craft = Far.Plane, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 900)]
+        public static IEnumerator Flight_PredictionsLeaveFarAsItWas(TestContext ctx)
+        {
+            FarFlightProbe.Condition c = Cruise(5);
+            var locked = new int[1];
+            yield return SettledWithSurfacesLocked(c, locked);
+            ctx.Record("surfacesLocked", locked[0]);
+
+            ctx.Step("State, predictions, state (one frame)");
+            Vessel v = FlightGlobals.ActiveVessel;
+            double ut = Planetarium.GetUniversalTime();
+            Vector3 velA = v.srf_velocity;
+            var whereA = new Vector3d(v.latitude, v.longitude, v.altitude);
+            var others = OtherConditions(v, ut, 1);
+
+            Dictionary<string, string> before = FarStateSnapshot.Take(v);
+            FarApi.ClearMemo(v);
+            FARAPI.CalculateVesselAeroForcesAt(v, out Vector3 fA0, out Vector3 tA0, velA, whereA, ut);
+            foreach (var o in others)
+            {
+                FarApi.ClearMemo(v);
+                FARAPI.CalculateVesselAeroForcesAt(v, out _, out _, o.Vel, o.LatLonAlt, o.UT);
+            }
+            FarApi.ClearMemo(v);
+            FARAPI.CalculateVesselAeroForcesAt(v, out Vector3 fA1, out Vector3 tA1, velA, whereA, ut);
+            Dictionary<string, string> after = FarStateSnapshot.Take(v);
+
+            List<string> changed = FarStateSnapshot.Diff(before, after);
+            bool sameA = Same(fA0, tA0, fA1, tA1);
+            int parts = changed.Select(FarStateSnapshot.PartOf).Distinct().Count();
+            ctx.Record("fieldsWatched", before.Count);
+            ctx.Record("fieldsChanged", changed.Count);
+            ctx.Record("partsChanged", parts);
+            ctx.Record("sameAnswerForA", sameA);
+            if (!sameA)
+                ctx.Record("answerForA", $"force {Exact(fA0)} then {Exact(fA1)}; torque {Exact(tA0)} then {Exact(tA1)}");
+
+            var md = new StringBuilder("# FAR prediction isolation\n\n");
+            md.Append($"{v.vesselName} flying at {c}, control surfaces locked. In one frame: {before.Count} value fields of FAR's per-part state ");
+            md.Append($"taken, the own condition predicted, {others.Count} unrelated conditions predicted, the own condition predicted again, the state taken again.\n\n");
+            md.Append($"- fields changed: **{changed.Count}** on {parts} parts\n");
+            md.Append($"- same answer for the own condition before and after: **{(sameA ? "yes" : "no")}**\n");
+            md.Append("\n## Changed fields, by name\n\n");
+            foreach (var g in changed.Select(FarStateSnapshot.FieldOf).GroupBy(f => f).OrderByDescending(g => g.Count()))
+                md.Append($"- {g.Key}: {g.Count()} parts\n");
+            md.Append("\n## Every change\n\n```\n").Append(string.Join("\n", changed.Take(2000))).Append("\n```\n");
+            File.WriteAllText(Path.Combine(ctx.ResultsDir, "isolation.md"), md.ToString());
+
+            Assert.True(changed.Count == 0, $"predictions left FAR's flight state as it was ({changed.Count} fields changed: {FarStateSnapshot.Summarize(changed, 8)})");
+            Assert.True(sameA, "the own condition predicted the same before and after the others");
+        }
+
+        /// <summary>
+        /// FAR's snapshot predictions off the main thread, flying with the surfaces locked: (1) in the capture frame, the
+        /// snapshot's answer for the vessel's own condition against the live API's, to 1e-6 relative (the same inputs by
+        /// different float arithmetic; everything else here is exact); (2) every input (the own condition and 300
+        /// unrelated conditions and places) on one worker thread exactly as on the main thread; (3) 8 workers at once,
+        /// each in its own order, the main thread waiting inside one frame: every answer exact and FAR's state
+        /// (FarStateSnapshot) unchanged; (4) 8 workers for 100 frames while the vessel flies, the main thread predicting
+        /// live and capturing new snapshots meanwhile: every answer still exact; (5) the live-vessel API refuses a worker
+        /// thread (zero); (6) after the gear comes down and FAR re-voxelizes, the old snapshot is refused and a new one
+        /// works. Writes threads.md.
+        /// </summary>
+        [UITest(Kind = "Check", StartsAt = StartState.Flight, Craft = Far.Plane, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 900)]
+        public static IEnumerator Flight_SnapshotIsExactOnManyThreads(TestContext ctx)
+        {
+            const int threads = 8, repeats = 3, flyFrames = 100;
+            FarFlightProbe.Condition c = Cruise(5);
+            yield return SettledWithSurfacesLocked(c, new int[1]);
+
+            // ---- the capture frame: everything up to the 8-thread batch happens with no physics step in between
+            ctx.Step("Capture frame: snapshot vs live, main thread vs one worker, 8 workers");
+            Vessel v = FlightGlobals.ActiveVessel;
+            double ut = Planetarium.GetUniversalTime();
+            var inputs = new List<(Vector3 Vel, Vector3d LatLonAlt, double UT)> { (v.srf_velocity, new Vector3d(v.latitude, v.longitude, v.altitude), ut) };
+            inputs.AddRange(OtherConditions(v, ut, 4));
+            int count = inputs.Count;
+
+            FARVesselSnapshot snap = FARAPI.CaptureVesselSnapshot(v);
+            Assert.NotNull(snap, "a snapshot of the flying vessel");
+            FarApi.ClearMemo(v);
+            FARAPI.CalculateVesselAeroForcesAt(v, out Vector3 fLive, out Vector3 tLive, inputs[0].Vel, inputs[0].LatLonAlt, inputs[0].UT);
+
+            var main = new Vector3[count, 2];
+            var ok = new bool[count];
+            for (int i = 0; i < count; ++i)
+                ok[i] = FARAPI.CalculateSnapshotAeroForcesAt(snap, out main[i, 0], out main[i, 1], inputs[i].Vel, inputs[i].LatLonAlt, inputs[i].UT);
+            int refused = ok.Count(b => !b);
+            // The live API reads Unity's transforms and KSP's atmosphere functions, the snapshot its copies of them: the
+            // same inputs by different arithmetic, so they agree to float rounding, not bit for bit.
+            const double LiveTolerance = 1e-6;
+            double relForce = (main[0, 0] - fLive).magnitude / Math.Max(1e-9f, fLive.magnitude);
+            // A trimmed vessel's torque is near zero, so its rounding is scaled by what it is made of: the force times
+            // the vessel's size (a float's rounding in a lever arm shows as force x that rounding).
+            double torqueScale = Math.Max(tLive.magnitude, fLive.magnitude * v.vesselSize.magnitude);
+            double relTorque = (main[0, 1] - tLive).magnitude / Math.Max(1e-9, torqueScale);
+            bool snapMatchesLive = relForce <= LiveTolerance && relTorque <= LiveTolerance;
+            ctx.Record("snapshotVsLiveRel", $"force {relForce:E2}, torque {relTorque:E2} (tolerance {LiveTolerance:E0})");
+
+            var errors = new System.Collections.Concurrent.ConcurrentQueue<string>();
+            var mismatches = new int[1];
+            // Runs every input in the given order `times` times, counting answers that differ from the main thread's.
+            void Work(int[] order, int times)
+            {
+                try
+                {
+                    for (int r = 0; r < times; ++r)
+                        foreach (int i in order)
+                        {
+                            bool good = FARAPI.CalculateSnapshotAeroForcesAt(snap, out Vector3 f, out Vector3 t, inputs[i].Vel, inputs[i].LatLonAlt, inputs[i].UT);
+                            if (good != ok[i] || !Same(f, t, main[i, 0], main[i, 1]))
+                                Interlocked.Increment(ref mismatches[0]);
+                        }
+                }
+                catch (Exception e) { errors.Enqueue(e.ToString()); }
+            }
+
+            int[] identity = Enumerable.Range(0, count).ToArray();
+            var one = new Thread(() => Work(identity, 1));
+            one.Start();
+            one.Join();
+            int oneWorkerMismatches = mismatches[0];
+
+            Dictionary<string, string> before = FarStateSnapshot.Take(v);
+            mismatches[0] = 0;
+            var rng = new System.Random(4242);
+            var workers = new List<Thread>();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            for (int k = 0; k < threads; ++k)
+            {
+                int[] order = identity.OrderBy(_ => rng.Next()).ToArray();
+                workers.Add(new Thread(() => Work(order, repeats)));
+            }
+            foreach (var w in workers) w.Start();
+            foreach (var w in workers) w.Join();
+            double frozenBatchMs = sw.Elapsed.TotalMilliseconds;
+            List<string> changed = FarStateSnapshot.Diff(before, FarStateSnapshot.Take(v));
+            int frozenMismatches = mismatches[0];
+            ctx.Record("frozenBatch", $"{threads} threads x {repeats} x {count} in {frozenBatchMs:F0} ms");
+
+            // ---- flying: workers keep predicting across frames while the main thread flies and predicts live
+            ctx.Step($"{threads} workers for {flyFrames} frames while flying");
+            mismatches[0] = 0;
+            var stop = new bool[1];
+            int calls = 0;
+            workers.Clear();
+            for (int k = 0; k < threads; ++k)
+            {
+                int[] order = identity.OrderBy(_ => rng.Next()).ToArray();
+                workers.Add(new Thread(() =>
+                {
+                    while (!Volatile.Read(ref stop[0]))
+                    {
+                        Work(order, 1);
+                        Interlocked.Add(ref calls, order.Length);
+                    }
+                }));
+            }
+            foreach (var w in workers) w.Start();
+            double maxLiveMs = 0, maxCaptureMs = 0;
+            int captures = 0, capturesRefused = 0;
+            var fixedWait = new WaitForFixedUpdate();
+            try
+            {
+                for (int frame = 0; frame < flyFrames; ++frame)
+                {
+                    Flight.PointAtAoA(c.AoADeg);
+                    foreach (Part part in FlightGlobals.ActiveVessel.parts)
+                        if (part.Rigidbody != null) part.Rigidbody.angularVelocity = Vector3.zero;
+                    yield return fixedWait;
+                    v = FlightGlobals.ActiveVessel;
+                    var where = new Vector3d(v.latitude, v.longitude, v.altitude);
+                    double now = Planetarium.GetUniversalTime();
+                    var t0 = System.Diagnostics.Stopwatch.StartNew();
+                    FarApi.ClearMemo(v);
+                    FARAPI.CalculateVesselAeroForcesAt(v, out _, out _, v.srf_velocity, where, now);
+                    maxLiveMs = Math.Max(maxLiveMs, t0.Elapsed.TotalMilliseconds);
+                    if (frame % 10 != 0)
+                        continue;
+                    t0 = System.Diagnostics.Stopwatch.StartNew();
+                    FARVesselSnapshot s2 = FARAPI.CaptureVesselSnapshot(v);
+                    maxCaptureMs = Math.Max(maxCaptureMs, t0.Elapsed.TotalMilliseconds);
+                    ++captures;
+                    if (s2 == null || !FARAPI.CalculateSnapshotAeroForcesAt(s2, out _, out _, v.srf_velocity, where, now))
+                        ++capturesRefused;
+                }
+            }
+            finally
+            {
+                Volatile.Write(ref stop[0], true);
+                foreach (var w in workers) w.Join();
+            }
+            int flyingMismatches = mismatches[0];
+            ctx.Record("mainThreadMaxMs", $"live prediction {maxLiveMs:F2}, capture {maxCaptureMs:F2}");
+
+            // ---- the live API from a worker must refuse
+            ctx.Step("Live API from a worker, stale snapshot");
+            Vector3 fOff = Vector3.one, tOff = Vector3.one;
+            Vessel vw = FlightGlobals.ActiveVessel;
+            Vector3 velW = vw.srf_velocity;
+            var lla = new Vector3d(vw.latitude, vw.longitude, vw.altitude);
+            double utW = Planetarium.GetUniversalTime();
+            var off = new Thread(() =>
+            {
+                try { FARAPI.CalculateVesselAeroForcesAt(vw, out fOff, out tOff, velW, lla, utW); }
+                catch (Exception e) { errors.Enqueue("live API off-thread: " + e.Message); }
+            });
+            off.Start();
+            off.Join();
+            bool liveRefusedOffThread = fOff == Vector3.zero && tOff == Vector3.zero;
+
+            // ---- stale: the gear changes the shape, FAR re-voxelizes, the old snapshot must be refused
+            Ctrl.Gear(true);
+            yield return Wait.Seconds(6);
+            v = FlightGlobals.ActiveVessel;
+            bool staleRefused = !FARAPI.CalculateSnapshotAeroForcesAt(snap, out _, out _, inputs[0].Vel, inputs[0].LatLonAlt, inputs[0].UT);
+            FARVesselSnapshot fresh = FARAPI.CaptureVesselSnapshot(v);
+            bool freshWorks = fresh != null && FARAPI.CalculateSnapshotAeroForcesAt(fresh, out _, out _, v.srf_velocity,
+                new Vector3d(v.latitude, v.longitude, v.altitude), Planetarium.GetUniversalTime());
+
+            var md = new StringBuilder("# FAR predictions off the main thread\n\n");
+            md.Append($"{v.vesselName} flying at {c}, surfaces locked; {count} inputs (the own condition and unrelated conditions, places and times).\n\n");
+            md.Append("| check | result |\n|---|---|\n");
+            md.Append($"| snapshot answer = live answer to {LiveTolerance:E0} relative, own condition, capture frame | {snapMatchesLive} (force {relForce:E2}, torque {relTorque:E2}) |\n");
+            md.Append($"| fresh snapshot refused | {refused} of {count} |\n");
+            md.Append($"| one worker = main thread | {count - oneWorkerMismatches} of {count} exact |\n");
+            md.Append($"| {threads} workers x {repeats}, main thread waiting in one frame | {frozenMismatches} mismatches in {threads * repeats * count}, {frozenBatchMs:F0} ms |\n");
+            md.Append($"| FAR flight state changed by that batch | {changed.Count} fields |\n");
+            md.Append($"| {threads} workers for {flyFrames} frames while flying | {flyingMismatches} mismatches in {calls} calls |\n");
+            md.Append($"| main thread meanwhile: live prediction / capture, max ms | {maxLiveMs:F2} / {maxCaptureMs:F2} |\n");
+            md.Append($"| snapshots captured while flying (refused) | {captures} ({capturesRefused}) |\n");
+            md.Append($"| live-vessel API from a worker refused | {liveRefusedOffThread} |\n");
+            md.Append($"| old snapshot refused after re-voxelization / new one works | {staleRefused} / {freshWorks} |\n");
+            md.Append($"| exceptions on workers | {errors.Count} |\n");
+            if (errors.Count > 0)
+                md.Append("\n## Exceptions\n\n```\n").Append(string.Join("\n---\n", errors.Take(5))).Append("\n```\n");
+            if (changed.Count > 0)
+                md.Append("\n## Changed fields\n\n```\n").Append(string.Join("\n", changed.Take(500))).Append("\n```\n");
+            File.WriteAllText(Path.Combine(ctx.ResultsDir, "threads.md"), md.ToString());
+
+            Assert.True(errors.Count == 0, $"no exceptions on worker threads ({errors.Count}; first: {errors.FirstOrDefault()})");
+            Assert.True(snapMatchesLive, $"the snapshot's answer for the own condition is the live API's to {LiveTolerance:E0} (force {relForce:E2}, torque {relTorque:E2})");
+            Assert.True(refused == 0, $"a fresh snapshot is not refused ({refused} of {count})");
+            Assert.True(oneWorkerMismatches == 0, $"one worker thread gives the main thread's answers ({oneWorkerMismatches} differ)");
+            Assert.True(frozenMismatches == 0, $"{threads} concurrent workers give the main thread's answers ({frozenMismatches} differ)");
+            Assert.True(changed.Count == 0, $"concurrent predictions leave FAR's flight state as it was ({changed.Count} fields: {FarStateSnapshot.Summarize(changed, 8)})");
+            Assert.True(flyingMismatches == 0, $"workers predicting while the vessel flies give the main thread's answers ({flyingMismatches} of {calls} differ)");
+            Assert.True(capturesRefused == 0, $"snapshots captured while flying work ({capturesRefused} of {captures} refused)");
+            Assert.True(liveRefusedOffThread, "the live-vessel API refuses a worker thread");
+            Assert.True(staleRefused && freshWorks, $"a snapshot taken before re-voxelization is refused ({staleRefused}) and a new one works ({freshWorks})");
         }
 
         /// <summary>FARAPI's flight numbers: dynamic pressure from the air and speed, the angle of attack held, Cl and Cd signs.</summary>
@@ -340,7 +644,7 @@ namespace FerramAerospaceResearch.KspTests
 
                 yield return Wait.Frames(3);
                 ctx.Record("offThreadWarnings", string.Join(" | ", logged.Select(l => $"{l.Type} main={l.MainThread}: {l.Text}")));
-                Assert.Equal(warnedBefore ? 0 : 1, Logged("CalculateVesselAeroForces called off the main thread"),
+                Assert.Equal(warnedBefore ? 0 : 1, Logged("CalculateVesselAeroForces(At) called off the main thread"),
                              "the prediction's warning, once (if not already given this session)");
                 Assert.Equal(directWarnedBefore ? 0 : 1, Logged("FARVesselAero.SimulateAeroProperties called off the main thread"),
                              "FARVesselAero's prediction warning, once a session");
@@ -645,7 +949,8 @@ namespace FerramAerospaceResearch.KspTests
                 Assert.Near(0, (back.Force - p0.Force).magnitude, 1e-3 * p0.Force.magnitude, "the default prediction again");
 
                 ctx.Step("a hotter atmosphere, and a lighter gas, of the same density and speed of sound");
-                FARAtmosphere.SetTemperatureFunction((b, lla, ut) => 1.21 * b.GetTemperature(lla.z));
+                // hotter than the game's temperature at the point, which a prediction takes by default
+                FARAtmosphere.SetTemperatureFunction((b, lla, ut) => 1.21 * FARAtmosphere.GameTemperature(b, lla, ut));
                 var hot = Predict();
                 FARAtmosphere.SetTemperatureFunctionThreadSafe(null);
                 FARAtmosphere.SetGasConstantFunction((b, lla, ut) => 1.21 * PhysicsGlobals.IdealGasConstant / b.atmosphereMolarMass);

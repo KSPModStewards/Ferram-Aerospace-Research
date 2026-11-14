@@ -167,7 +167,7 @@ namespace ferram4
             new WingInteractionScratch[SimThreadContext.MaxSlots];
 
         /// <summary>
-        /// Starts the calling thread's slot (a prediction's) from the flight's, slot 0's. The wing's lift slope reads
+        /// Puts the calling thread's slot (a prediction's) back to the fixed starting state. The wing's lift slope reads
         /// ARFactor before the orientation update refreshes it, so a stale slot would carry the last call into this one.
         /// </summary>
         internal void BeginPredictionState()
@@ -175,26 +175,9 @@ namespace ferram4
             int s = SimThreadContext.Slot;
             WingInteractionScratch sc = _scratchSlots[s];
             if (sc == null)
-                _scratchSlots[s] = sc = new WingInteractionScratch();
-            sc.CopyFrom(_scratchSlots[0] ?? new WingInteractionScratch());
-        }
-
-        /// <summary>A copy of the flight's state (slot 0's), for a vessel snapshot. Main thread.</summary>
-        internal WingInteractionScratch CaptureSeed()
-        {
-            var seed = new WingInteractionScratch();
-            seed.CopyFrom(_scratchSlots[0] ?? new WingInteractionScratch());
-            return seed;
-        }
-
-        /// <summary>Starts the calling thread's slot (a snapshot prediction's) from the captured flight state.</summary>
-        internal void InstallSeed(WingInteractionScratch seed)
-        {
-            int s = SimThreadContext.Slot;
-            WingInteractionScratch sc = _scratchSlots[s];
-            if (sc == null)
-                _scratchSlots[s] = sc = new WingInteractionScratch();
-            sc.CopyFrom(seed ?? new WingInteractionScratch());
+                _scratchSlots[s] = new WingInteractionScratch();
+            else
+                sc.Reset();
         }
 
         internal WingInteractionScratch _scratch

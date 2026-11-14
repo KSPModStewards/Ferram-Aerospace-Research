@@ -347,10 +347,8 @@ namespace ferram4
         }
 
         /// <summary>
-        /// Starts this wing's scratch on the calling thread's slot (a prediction's) from the flight's, slot 0's, as
-        /// the prediction found it when it ran on the flight's state; nothing a previous prediction left is carried
-        /// into this one. A snapshot prediction installs the flight's state as it was captured instead
-        /// (<see cref="InstallSnapshotState" />): the flight's slot is not read then.
+        /// Puts this wing's scratch on the calling thread's slot (a prediction's) back to the fixed starting state, so
+        /// nothing a previous prediction or the flight left is carried into this one.
         /// </summary>
         internal virtual void BeginPredictionState()
         {
@@ -358,16 +356,8 @@ namespace ferram4
             WingScratch sc = _scratchSlots[s];
             if (sc == null)
                 _scratchSlots[s] = sc = new WingScratch();
-            if (SimThreadContext.SnapshotStamp != 0)
-                return;
-            sc.CopyFrom(_scratchSlots[0] ?? NewScratch());
+            sc.Reset(b_2_actual / MAC_actual);
             wingInteraction?.BeginPredictionState();
-        }
-
-        /// <summary>A scratch as a slot's first is made, for a wing the flight has not evaluated yet.</summary>
-        private WingScratch NewScratch()
-        {
-            return new WingScratch {rawAoAmax = rawAoAmax, transformed_AR = b_2_actual / MAC_actual};
         }
 
         /// <summary>
@@ -383,22 +373,14 @@ namespace ferram4
             public double SubmergedPortion;
             public double SubmergedLiftScalar;
             public double SubmergedDragScalar;
-            public Vector3d Velocity;
-            public WingScratch Seed;
-            public WingInteractionScratch InteractionSeed;
             public ControlSurfaceScratch Control;
         }
 
-        /// <summary>
-        /// Captures what the solve reads live from this wing's part, and the flight's state a prediction starts from.
-        /// Main thread.
-        /// </summary>
+        /// <summary>Captures what the solve reads live from this wing's part. Main thread.</summary>
         internal virtual SnapshotState CaptureSnapshotState()
         {
             // the wing group a prediction off the main thread takes its aspect ratio from
             wingInteraction?.ResolveWingGroup();
-            var seed = new WingScratch();
-            seed.CopyFrom(_scratchSlots[0] ?? NewScratch());
             return new SnapshotState
             {
                 Geom = new FrozenPartTransform(part_transform),
@@ -407,11 +389,7 @@ namespace ferram4
                 Shielded = isShielded,
                 SubmergedPortion = part.submergedPortion,
                 SubmergedLiftScalar = part.submergedLiftScalar,
-                SubmergedDragScalar = part.submergedDragScalar,
-                // A packed vessel's parts have no rigidbody (GetVelocity reads it); they move with the vessel.
-                Velocity = part.Rigidbody != null ? GetVelocity() : vessel.srf_velocity,
-                Seed = seed,
-                InteractionSeed = wingInteraction?.CaptureSeed()
+                SubmergedDragScalar = part.submergedDragScalar
             };
         }
 
@@ -422,8 +400,6 @@ namespace ferram4
         internal virtual void InstallSnapshotState(in SnapshotState state, long stamp)
         {
             WingScratch sc = _scratch;
-            sc.CopyFrom(state.Seed);
-            wingInteraction?.InstallSeed(state.InteractionSeed);
             sc.CapturedGeom = state.Geom;
             sc.CapturedRbMass = state.RbMass;
             sc.CapturedFixedDeltaTime = state.FixedDeltaTime;
@@ -431,7 +407,6 @@ namespace ferram4
             sc.CapturedSubmergedPortion = state.SubmergedPortion;
             sc.CapturedSubmergedLiftScalar = state.SubmergedLiftScalar;
             sc.CapturedSubmergedDragScalar = state.SubmergedDragScalar;
-            sc.CapturedVelocity = state.Velocity;
             sc.CaptureStamp = stamp;
         }
 
@@ -484,6 +459,15 @@ namespace ferram4
             get { return SnapshotInstalled(out WingScratch _); }
         }
 
+        /// <summary>This slot's lift and drag coefficients and stall, for a prediction's convergence check.</summary>
+        internal void GetPredictionState(out double cl, out double cd, out double stallFraction)
+        {
+            WingScratch sc = _scratch;
+            cl = sc.Cl;
+            cd = sc.Cd;
+            stallFraction = sc.stall;
+        }
+
         /// <summary>
         /// Shielded state as the solve should see it. Plain wings use the (sweep-invariant) instance
         /// field; control surfaces override this to read the per-thread value, since they rewrite
@@ -516,10 +500,6 @@ namespace ferram4
         {
             if (!HighLogic.LoadedSceneIsFlight)
                 return _scratch.velocityEditor;
-            // A snapshot prediction reads the part's velocity as captured (a neighbour reads it for its angle of
-            // attack): the live one is the rigidbody's, which only the main thread may read.
-            if (SnapshotInstalled(out WingScratch sc))
-                return sc.CapturedVelocity;
             return base.GetVelocity();
         }
 
@@ -675,7 +655,9 @@ namespace ferram4
                 double AoA = CalculateAoA(velocity);
 
                 Vector3d force = CalculateForces(velocity, MachNumber, AoA, density, double.PositiveInfinity, false);
-                center.AddForce(AerodynamicCenter, force);
+                // The slot's own aerodynamic center: the instance field is the flight's (slot 0) and a prediction
+                // does not write it.
+                center.AddForce(_scratch.AerodynamicCenter, force);
 
                 return force;
             }
@@ -1207,6 +1189,8 @@ namespace ferram4
             // coefficients, which makes v_scalar useless for this. The 0.005 fallback is roughly
             // double the true coefficient at sea-level Reynolds numbers and below it at low ones,
             // so callers that know the real condition being simulated can pass it in instead.
+            // A prediction takes the external temperature of the simulated condition, not the vessel's: in vacuum that
+            // is ~4 K and at 7 km/s a shock temperature of thousands of K.
             double skinFrictionDrag = skinFrictionOverride ??
                                       (HighLogic.LoadedSceneIsFlight
                                            ? FARAeroUtil.SkinFrictionDrag(density,
@@ -1438,6 +1422,12 @@ namespace ferram4
             double lastStall = _scratch.stall;
             double effectiveUpstreamStall = wingInteraction.EffectiveUpstreamStall;
 
+            if (SimThreadContext.Prediction != null)
+            {
+                _scratch.stall = SteadyStall(Math.Abs(AoA), effectiveUpstreamStall);
+                return;
+            }
+
             _scratch.stall = 0;
             double absAoA = Math.Abs(AoA);
 
@@ -1463,6 +1453,27 @@ namespace ferram4
                 _scratch.stall = 0;
         }
 
+
+        /// <summary>
+        ///     The stall a wing settles to when this condition is held, flown into from unstalled flight: the value the
+        ///     update below converges to, applied each physics frame from 0 with the upstream stall held. Above the stall
+        ///     angle it grows by the upstream stall every frame, so any upstream stall ends fully stalled; without it, it
+        ///     is the stall for this angle. Below the stall angle it takes the upstream stall on top of the residual
+        ///     stall near the stall angle, or stays 0. A prediction has no history to latch, so this replaces it.
+        /// </summary>
+        private double SteadyStall(double absAoA, double upstreamStall)
+        {
+            double s;
+            if (absAoA > _scratch.AoAmax)
+                s = upstreamStall > 0 ? 1 : ((absAoA - _scratch.AoAmax) * 10).Clamp(0, 1);
+            else if (absAoA < _scratch.AoAmax)
+                s = upstreamStall > 0 ? 1 - ((_scratch.AoAmax - absAoA) * 25).Clamp(0, 1) + upstreamStall : 0;
+            else
+                s = 0;
+
+            s = s.Clamp(0, 1);
+            return s < 1e-5 ? 0 : s;
+        }
 
         /// <summary>
         ///     This calculates the lift and drag coefficients
