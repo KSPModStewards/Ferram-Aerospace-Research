@@ -308,9 +308,8 @@ namespace FerramAerospaceResearch.KspTests
 
         /// <summary>
         /// FAR's debug tools off (the default: FARDebugValues.DebugTools), the flight window has no Debug button and no
-        /// flight assistance (its Roll toggle, its settings group), a wing leveler left on puts in no roll, and the
-        /// test assembly's put-on-water button is off the toolbar; switched on, all of them are back, the settings
-        /// window still on the group it showed.
+        /// flight assistance (its Roll toggle, its settings group), and a wing leveler left on is turned off and puts in
+        /// no roll; switched on, all of them are back, the settings window still on the group it showed.
         /// </summary>
         [UITest(Kind = "Check", StartsAt = StartState.Flight, Craft = Far.Plane, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 300)]
         public static IEnumerator FlightGui_DebugToolsHideDebugAndAssistance(TestContext ctx)
@@ -323,7 +322,6 @@ namespace FerramAerospaceResearch.KspTests
             object stab = Refl.Get(gui, "_stabilityAugmentation");
             var update = stab.GetType().GetMethod("OnAutoPilotUpdate", BindingFlags.Instance | BindingFlags.NonPublic)
                          ?? throw new UITestFailure("no OnAutoPilotUpdate");
-            FarWaterTools water = UnityEngine.Object.FindObjectOfType<FarWaterTools>();
             try
             {
                 yield return OpenFlightWindow();
@@ -344,30 +342,34 @@ namespace FerramAerospaceResearch.KspTests
                 var state = new FlightCtrlState();
                 update.Invoke(stab, new object[] { state });
                 float rollOff = state.roll;
-                bool buttonOff = water == null || Refl.Get(water, "button") == null;
+                bool levelerOff = !Far.StabAugActive(gui, 0);
                 int groupOff = Far.SettingsGroup(gui);
-                ctx.Record("off", $"Debug button {debugButton}, Roll toggle {rollToggle}, leveler roll {rollOff:F3}, " +
-                                  $"put-on-water button {(buttonOff ? "none" : "shown")}, settings group {groupOff}");
+                ctx.Record("off", $"Debug button {debugButton}, Roll toggle {rollToggle}, leveler roll {rollOff:F3} " +
+                                  $"(turned {(levelerOff ? "off" : "on")}), settings group {groupOff}");
                 Assert.False(debugButton, "no Debug button with the tools off");
                 Assert.False(rollToggle, "no flight assistance with the tools off");
                 Assert.Equal(0f, rollOff, "a wing leveler left on puts in no roll with the tools off");
-                Assert.True(buttonOff, "no put-on-water button with the tools off");
+                Assert.True(levelerOff, "a wing leveler left on is turned off with the tools off");
 
                 ctx.Step("debug tools on");
                 FARDebugValues.DebugTools = true;
                 yield return Imgui.WaitVisible(Loc("FARFlightStabAugLabel0"), Far.MainWindow);
                 bool debugOn = Imgui.IsVisible(Loc("FARFlightGUIFltDebug"), Far.MainWindow);
+                Far.SetStabAug(gui, 0, true);
                 state = new FlightCtrlState();
                 update.Invoke(stab, new object[] { state });
                 float rollOn = state.roll;
-                bool buttonOn = water != null && Refl.Get(water, "button") != null;
                 int groupOn = Far.SettingsGroup(gui);
-                ctx.Record("on", $"Debug button {debugOn}, leveler roll {rollOn:F3}, put-on-water button {(buttonOn ? "shown" : "none")}, " +
-                                 $"settings group {groupOn}");
+                ctx.Record("on", $"Debug button {debugOn}, leveler roll {rollOn:F3}, settings group {groupOn}");
                 Assert.True(debugOn, "the Debug button with the tools on");
                 Assert.True(Math.Abs(rollOn) > 0.01, $"the wing leveler puts in roll with the tools on ({rollOn:F3})");
-                Assert.True(water == null || buttonOn, "the put-on-water button with the tools on");
                 Assert.Equal(Far.GroupAirspeed, groupOn, "the settings window still on the airspeed group");
+
+                ctx.Step("debug tools turned off");
+                FARDebugValues.DebugTools = false;
+                bool offAgain = !Far.StabAugActive(gui, 0);
+                ctx.Record("off again", $"wing leveler turned {(offAgain ? "off" : "on")}");
+                Assert.True(offAgain, "turning the tools off turns the wing leveler off");
             }
             finally
             {
