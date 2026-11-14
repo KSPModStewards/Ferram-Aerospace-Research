@@ -132,10 +132,38 @@ jobs:
           fi
           run=$(gh run list -R "$GITHUB_REPOSITORY" -w tests.yml -e push -c "$GITHUB_SHA" -L 1 --json conclusion,url \
             -q '.[] | "\(.conclusion) \(.url)"')
-          if [ "${run%% *}" != success ]; then
-            echo "::error::$GITHUB_SHA has no passed Tests run (${run:-none}). Once it passes, re-run this job"
+          if [ "${run%% *}" = success ]; then
+            exit 0
+          elif [ -n "$run" ]; then
+            echo "::error::$GITHUB_SHA has no passed Tests run ($run). Once it passes, re-run this job"
             exit 1
           fi
+
+          # No run: Tests skips commits changing only what skippable() matches (tests.yml's paths, keep in step). Then
+          # the last master commit that passed them will do, if all changed since is that
+          skippable() {
+            case "$1" in
+              .github/workflows/tests.yml) return 1 ;;
+              .github/workflows/*|.github/scripts/testing_*) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+          for tested in $(gh run list -R "$GITHUB_REPOSITORY" -w tests.yml -e push -b master -s success -L 20 \
+                            --json headSha -q '.[].headSha'); do
+            status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$tested...$GITHUB_SHA" -q .status)
+            [ "$status" = ahead ] || continue
+            # the compare lists at most 300 files: that many is no workflow-only change anyway
+            files=$(gh api "repos/$GITHUB_REPOSITORY/compare/$tested...$GITHUB_SHA" -q '.files | if length < 300 then .[].filename else "too many" end')
+            untested=""
+            while read -r f; do skippable "$f" || untested="$untested $f"; done <<< "$files"
+            if [ -z "$untested" ]; then
+              echo "$GITHUB_SHA changes only workflows since ${tested::8}, whose Tests passed"
+              exit 0
+            fi
+            break
+          done
+          echo "::error::$GITHUB_SHA has no Tests run, and changes more than workflows since the last master commit that passed them"
+          exit 1
 
       - uses: actions/download-artifact@v8
         with:

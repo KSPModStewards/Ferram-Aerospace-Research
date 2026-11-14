@@ -25,13 +25,25 @@ name: Tests
 # on the game repo alone), the variable KSP_GAME_REPO (owner/name of the game repo). Label run-ingame. See
 # KspTests/README.md.
 
+# Not for changes to other workflows alone (nor testing.yml's scripts): any other file changed runs everything. The
+# release job in package.yml accepts a master commit untested for this reason; keep its skippable() in step
 on:
   # branches only: a release tag's commit was tested on its way to master
   push:
     branches: ["**"]
+    paths:
+      - "**"
+      - "!.github/workflows/**"
+      - "!.github/scripts/testing_*"
+      - ".github/workflows/tests.yml"
   # a fork's pull request, behind the gate job (see above): labeled for the run-ingame label
   pull_request_target:
     types: [opened, synchronize, reopened, labeled]
+    paths:
+      - "**"
+      - "!.github/workflows/**"
+      - "!.github/scripts/testing_*"
+      - ".github/workflows/tests.yml"
   workflow_dispatch:
     inputs:
       filter:
