@@ -52,6 +52,7 @@ namespace FerramAerospaceResearch.KspTests
         public static IEnumerator FlightGui_DampersLimiterAndQScaling(TestContext ctx)
         {
             yield return Wait.Seconds(5);
+            using IDisposable tools = Far.DebugTools();
             FlightGUI gui = Far.FlightGui();
             object stab = Get(gui, "_stabilityAugmentation");
             Type type = stab.GetType();

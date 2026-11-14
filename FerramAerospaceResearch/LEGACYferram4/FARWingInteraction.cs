@@ -66,8 +66,10 @@ namespace ferram4
         private static volatile ExactCurve wingCamberMomentExact;
         private static readonly object camberLock = new object();
 
-        private readonly Vector3 rootChordMidLocal;
-        private readonly short srfAttachFlipped;
+        // the root mid-chord (part space) and side the rays start from: a procedural wing (B9) sets them as it builds
+        // and edits its shape, after this was made, so they are taken again on every update
+        private Vector3 rootChordMidLocal;
+        private short srfAttachFlipped;
 
         private FARWingAerodynamicModel parentWingModule;
         private Part parentWingPart;
@@ -279,6 +281,8 @@ namespace ferram4
             if (parentWingPart == null)
                 return;
 
+            rootChordMidLocal = parentWingModule.rootMidChordOffsetFromOrig;
+            srfAttachFlipped = parentWingModule.srfAttachNegative;
             rootChordMidPt = parentWingPart.partTransform.position +
                              parentWingPart.partTransform.TransformDirection(rootChordMidLocal);
 
@@ -286,10 +290,20 @@ namespace ferram4
             Vector3 right = parentWingPart.partTransform.right;
             if (isSmallSrf)
             {
-                forwardExposure = ExposureSmallSrf(out nearbyWingModulesForward, up, VesselPartList, flt_MAC, flt_MAC);
+                // a surface attached by its hinge (a control surface), with linear flap lift: rays along its span, so one
+                // hung behind several wing panels finds all of them; else one ray from its middle, as before
+                if (FARDebugValues.linearFlapLift)
+                {
+                    forwardExposure = ExposureSmallSrfAlongSpan(out nearbyWingModulesForward, up, VesselPartList, flt_MAC, flt_b_2);
+                    backwardExposure = ExposureSmallSrfAlongSpan(out nearbyWingModulesBackward, -up, VesselPartList, flt_MAC, flt_b_2);
+                }
+                else
+                {
+                    forwardExposure = ExposureSmallSrf(out nearbyWingModulesForward, up, VesselPartList, flt_MAC, flt_MAC);
 
-                backwardExposure =
-                    ExposureSmallSrf(out nearbyWingModulesBackward, -up, VesselPartList, flt_MAC, flt_MAC);
+                    backwardExposure =
+                        ExposureSmallSrf(out nearbyWingModulesBackward, -up, VesselPartList, flt_MAC, flt_MAC);
+                }
 
                 leftwardExposure =
                     ExposureSmallSrf(out nearbyWingModulesLeftward, -right, VesselPartList, flt_b_2, flt_MAC);
@@ -644,6 +658,29 @@ namespace ferram4
             return exposure;
         }
 
+        // ExposureSmallSrf's ray from five points along the surface's span (its middle at the part's origin): each a fifth
+        private double ExposureSmallSrfAlongSpan(
+            out FARWingAerodynamicModel[] nearbyWings,
+            Vector3 rayDirection,
+            List<Part> vesselPartList,
+            float MAC,
+            float b_2
+        )
+        {
+            nearbyWings = new FARWingAerodynamicModel[5];
+            double exposure = 1;
+            Vector3 right = parentWingPart.partTransform.right;
+            Vector3 start = rootChordMidPt - MAC * 0.7f * parentWingPart.partTransform.up;
+            for (int i = 0; i < 5; i++)
+            {
+                Vector3 origin = start + right * (b_2 * (i * 0.2f - 0.4f));
+                RaycastHit[] hits = Physics.RaycastAll(origin, rayDirection, MAC, FARAeroUtil.RaycastMask);
+                nearbyWings[i] = ExposureHitDetectionAndWingDetection(hits, vesselPartList, ref exposure, 0.2);
+            }
+
+            return exposure;
+        }
+
         private FARWingAerodynamicModel ExposureHitDetectionAndWingDetection(
             RaycastHit[] hits,
             List<Part> vesselPartList,
@@ -766,6 +803,10 @@ namespace ferram4
         /// <param name="ACweight">Weighting value for applying ACshift</param>
         /// <param name="ACshift">Value used to shift the wing AC due to interactive effects</param>
         /// <param name="ClIncrementFromRear">Increase in Cl due to this</param>
+        /// <param name="ACshiftAoA">
+        ///     With linear flap lift, the forward shift of the lift this surface makes at its own angle of attack (as
+        ///     opposed to its deflection): the AC of a section a flap is part of is a quarter of the whole chord back
+        /// </param>
         /// <returns></returns>
         public void CalculateEffectsOfUpstreamWing(
             double thisWingAoA,
@@ -773,7 +814,8 @@ namespace ferram4
             Vector3d parallelInPlaneLocal,
             ref double ACweight,
             ref double ACshift,
-            ref double ClIncrementFromRear
+            ref double ClIncrementFromRear,
+            ref double ACshiftAoA
         )
         {
             double thisWingMAC = parentWingModule.GetMAC();
@@ -782,6 +824,8 @@ namespace ferram4
             _scratch.EffectiveUpstreamMAC = 0;
             _scratch.EffectiveUpstreamb_2 = 0;
             _scratch.EffectiveUpstreamArea = 0;
+            _scratch.CoveredUpstreamb_2 = 0;
+            _scratch.CoveredUpstreamArea = 0;
 
             _scratch.EffectiveUpstreamLiftSlope = 0;
             _scratch.EffectiveUpstreamStall = 0;
@@ -839,25 +883,41 @@ namespace ferram4
             //Change in moment due to change in lift from flap
             double dCm_dCl = wingCamberMomentExact.Evaluate(flt_flapRatio);
 
+            // with linear flap lift, the wings ahead as this surface covers them, summed (it may lie behind several
+            // panels); else their influence-weighted average, as before
+            bool covered = FARDebugValues.linearFlapLift && _scratch.CoveredUpstreamb_2 > 0;
+            double upstreamB2 = covered ? _scratch.CoveredUpstreamb_2 : EffectiveUpstreamb_2;
+            double upstreamArea = covered ? _scratch.CoveredUpstreamArea : EffectiveUpstreamArea;
             //This accounts for the wing possibly having a longer span than the flap
-            double WingFraction = (thisWingb_2 / EffectiveUpstreamb_2).Clamp(0, 1);
+            double WingFraction = covered ? 1 : (thisWingb_2 / upstreamB2).Clamp(0, 1);
             //This accounts for the flap possibly having a longer span than the wing it's attached to
-            double FlapFraction = (EffectiveUpstreamb_2 / thisWingb_2).Clamp(0, 1);
+            double FlapFraction = (upstreamB2 / thisWingb_2).Clamp(0, 1);
 
+            // the deflection relative to the wing ahead; with linear flap lift its sine, as the lift of the flap's own
+            // angle is (the increment is no longer scaled by sin AoA)
+            double deflection = FARDebugValues.linearFlapLift ? Math.Sin(EffectiveUpstreamAoA) : EffectiveUpstreamAoA;
             //Lift created by the flap interaction
-            double ClIncrement = flapFactor * EffectiveUpstreamLiftSlope * EffectiveUpstreamAoA;
+            double ClIncrement = flapFactor * EffectiveUpstreamLiftSlope * deflection;
             //Increase the Cl so that even though we're working with the flap's area, it accounts for the added lift across the entire object
-            ClIncrement *= (parentWingModule.S * FlapFraction + EffectiveUpstreamArea * WingFraction) /
+            ClIncrement *= (parentWingModule.S * FlapFraction + upstreamArea * WingFraction) /
                            parentWingModule.S;
 
             // Total flap Cl for the purpose of applying ACshift, including the bit subtracted below
             ACweight = ClIncrement * MachCoeff;
 
             //Removing additional angle so that lift of the flap is calculated as lift at wing angle + lift due to flap interaction rather than being greater
-            ClIncrement -= FlapFraction * EffectiveUpstreamLiftSlope * EffectiveUpstreamAoA;
+            ClIncrement -= FlapFraction * EffectiveUpstreamLiftSlope * deflection;
 
             //Change in Cm with change in Cl
             ACshift = (dCm_dCl + 0.75 * (1 - flapRatio)) * (thisWingMAC + EffectiveUpstreamMAC);
+
+            // a flap of chord c_f behind a wing of chord c_w is one section of chord c = c_w + c_f, its lift at angle of
+            // attack at c / 4 from the leading edge. FAR gives each its share of that lift (c_w / c, c_f / c), the wing's
+            // at its own quarter chord, c_w / 4; for the whole to act at c / 4 the flap's must act at (c + c_w) / 4: half
+            // c_w ahead of the flap's own quarter chord, c_w + c_f / 4. Over the share of the flap that lies behind a
+            // wing (EffectiveUpstreamMAC is the wings' chords times that share)
+            if (FARDebugValues.linearFlapLift)
+                ACshiftAoA = 0.5 * EffectiveUpstreamMAC;
 
             ClIncrementFromRear = ClIncrement * MachCoeff;
         }
@@ -928,6 +988,13 @@ namespace ferram4
                 _scratch.EffectiveUpstreamMAC += neighbour.effective_MAC * wingInfluenceFactor;
                 _scratch.EffectiveUpstreamb_2 += neighbour.effective_b_2 * wingInfluenceFactor;
                 _scratch.EffectiveUpstreamArea += wingModule.S * wingInfluenceFactor;
+                // the part of this neighbour's span (and so its area) this surface lies behind: the share of this
+                // surface's span whose rays hit it, no more than the neighbour's own span
+                double neighbourB2 = wingModule.b_2_actual;
+                double covered = Math.Min(neighbourB2, wingInfluenceFactor * parentWingModule.b_2_actual);
+                _scratch.CoveredUpstreamb_2 += covered;
+                if (neighbourB2 > 0)
+                    _scratch.CoveredUpstreamArea += wingModule.S * covered / neighbourB2;
 
                 _scratch.EffectiveUpstreamLiftSlope += neighbour.rawLiftSlope * wingInfluenceFactor;
                 _scratch.EffectiveUpstreamStall += neighbour.stall * wingInfluenceFactor;
