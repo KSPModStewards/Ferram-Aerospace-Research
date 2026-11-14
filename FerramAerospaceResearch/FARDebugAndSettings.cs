@@ -285,6 +285,17 @@ namespace FerramAerospaceResearch
                 FARDebugValues.OnModelChanged();
             }
 
+            bool linear = OptionToggle(FARDebugValues.linearFlapLift,
+                                       "Linear flap lift",
+                                       "A control surface hinged behind a wing adds the lift of the whole section it cambers, in proportion to its deflection.",
+                                       "A hinged control surface's added lift is scaled by its angle of attack again (old behavior: weak, and weaker trailing edge up).");
+            if (linear != FARDebugValues.linearFlapLift)
+            {
+                FARDebugValues.linearFlapLift = linear;
+                FARDebugValues.UpdateWingInteractions();
+                FARDebugValues.OnModelChanged();
+            }
+
             if (GUILayout.Button("Close"))
                 modelOptions = false;
             GUI.DragWindow();
@@ -679,6 +690,11 @@ namespace FerramAerospaceResearch
             else
                 FARDebugValues.wholeWingAspectRatio = true;
 
+            if (node.HasValue("linearFlapLift") && bool.TryParse(node.GetValue("linearFlapLift"), out tmp))
+                FARDebugValues.linearFlapLift = tmp;
+            else
+                FARDebugValues.linearFlapLift = false;
+
             FARAeroUtil.LoadAeroDataFromConfig();
             FARActionGroupConfiguration.LoadConfiguration();
 
@@ -701,6 +717,7 @@ namespace FerramAerospaceResearch
             node.AddValue("useBlizzyToolbar", FARDebugValues.useBlizzyToolbar & ToolbarManager.ToolbarAvailable);
             node.AddValue("aeroFailureExplosions", FARDebugValues.aeroFailureExplosions);
             node.AddValue("wholeWingAspectRatio", FARDebugValues.wholeWingAspectRatio);
+            node.AddValue("linearFlapLift", FARDebugValues.linearFlapLift);
 
             FARActionGroupConfiguration.SaveConfiguration();
             // save in off thread so that it doesn't delay scene changes
@@ -736,6 +753,30 @@ namespace FerramAerospaceResearch
         // the aspect ratio of the whole wing a panel is part of (and that wing's sweep and the lift of the body between
         // its roots); off: each panel's own, as before. Set in the model options window
         public static bool wholeWingAspectRatio = true;
+
+        // a control surface hinged behind a wing: its section's added lift in proportion to its deflection (FARWingInteraction
+        // ClIncrementFromRear times cos AoA); off: times sin AoA, as before. Set in the model options window
+        public static bool linearFlapLift;
+
+        /// <summary>
+        ///     Every wing's neighbours found again (the editor's craft, the loaded vessels'): an option that changes how
+        ///     they are found was changed
+        /// </summary>
+        public static void UpdateWingInteractions()
+        {
+            var parts = new List<Part>();
+            if (HighLogic.LoadedSceneIsEditor && EditorLogic.fetch != null && EditorLogic.fetch.ship != null)
+                parts.AddRange(EditorLogic.fetch.ship.parts);
+            if (HighLogic.LoadedSceneIsFlight && FlightGlobals.Vessels != null)
+                foreach (Vessel v in FlightGlobals.Vessels)
+                    if (v != null && v.loaded)
+                        parts.AddRange(v.parts);
+            foreach (Part p in parts)
+                if (p != null)
+                    foreach (PartModule m in p.Modules)
+                        if (m is ferram4.FARWingAerodynamicModel w)
+                            w.UpdateThisWingInteractions();
+        }
 
         /// <summary>A model option changed: the editor's analyses go stale</summary>
         public static event Action ModelChanged;

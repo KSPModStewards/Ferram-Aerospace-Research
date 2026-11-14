@@ -1501,8 +1501,18 @@ namespace ferram4
                 double sinAoA = Math.Sqrt((1 - CosAoA * CosAoA).Clamp(0, 1));
                 _scratch.Cl = Cn * CosAoA * Math.Sign(AoA);
 
-                _scratch.Cl += _scratch.ClIncrementFromRear;
-                _scratch.Cl *= sinAoA;
+                if (FARDebugValues.linearFlapLift)
+                {
+                    // the increment from a surface hinged behind this one is a normal-force increment already (lift
+                    // slope times the deflection): its lift is that times cos AoA, not times sin AoA again
+                    _scratch.Cl *= sinAoA;
+                    _scratch.Cl += _scratch.ClIncrementFromRear * CosAoA;
+                }
+                else
+                {
+                    _scratch.Cl += _scratch.ClIncrementFromRear;
+                    _scratch.Cl *= sinAoA;
+                }
 
                 if (Math.Abs(_scratch.Cl) > Math.Abs(ACweight))
                     ACshift *= Math.Abs(ACweight / _scratch.Cl).Clamp(0, 1);
@@ -1550,7 +1560,7 @@ namespace ferram4
 
                 if (MachNumber <= 1)
                 {
-                    _scratch.Cl += _scratch.ClIncrementFromRear * sinAoA;
+                    _scratch.Cl += _scratch.ClIncrementFromRear * (FARDebugValues.linearFlapLift ? CosAoA : sinAoA);
                     if (Math.Abs(_scratch.Cl) > Math.Abs(ACweight))
                         ACshift *= Math.Abs(ACweight / _scratch.Cl).Clamp(0, 1);
                 }
