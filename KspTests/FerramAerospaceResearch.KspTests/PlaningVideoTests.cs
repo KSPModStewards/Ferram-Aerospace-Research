@@ -26,7 +26,7 @@ namespace FerramAerospaceResearch.KspTests
         /// the weight is carried (dynamic lift, buoyancy). Parameters: hydro (false: FAR's old water forces), mass,
         /// lcg, cgHeight, topSpeed, rampSec, camDistance (m), camPitch (deg).
         /// </summary>
-        [UITest(Kind = "Measure", Explicit = true, Mods = @"..\..\..\CustomProceduralParts\GameData\CustomProceduralParts;Scatterer;Scatterer-config;..\FerramAerospaceResearch.KspTests.Run\mods\FARTestScatterer",
+        [UITest(Kind = "Measure", Explicit = true, Mods = TestWarp.DemoMods,
                 StartsAt = StartState.Flight, Craft = VHull, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 2400)]
         public static IEnumerator Video_VHullPlaning(TestContext ctx)
         {

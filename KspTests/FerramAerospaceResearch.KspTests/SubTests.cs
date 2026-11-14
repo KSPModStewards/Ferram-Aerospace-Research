@@ -447,7 +447,7 @@ namespace FerramAerospaceResearch.KspTests
         /// hover ~0.01, blowTrim ~1, blowDelay ~10, breachDepth ~3; and waterDamping none (stock's water drag below
         /// 0.4 m/s, 2/s whatever its mass, holds a real boat's 0.2 m/s2 still).
         /// </summary>
-        [UITest(Kind = "Measure", Explicit = true, Mods = TestWarp.DemoMods + @";..\FerramAerospaceResearch.KspTests.Run\mods\FARTestSubMotor", StartsAt = StartState.Flight, Craft = "Test Submarine Big", CraftDir = "SPH",
+        [UITest(Kind = "Measure", Explicit = true, Mods = TestWarp.DemoMods, StartsAt = StartState.Flight, Craft = "Test Submarine Big", CraftDir = "SPH",
                 LaunchSite = "Runway", TimeoutSec = 3600)]
         public static IEnumerator Demo_SubmarineBig(TestContext ctx) => SubDemo(ctx);
 

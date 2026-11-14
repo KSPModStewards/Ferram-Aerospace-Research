@@ -30,7 +30,7 @@ namespace FerramAerospaceResearch.KspTests
         ///   and the water model's time per step there.
         /// Writes water-bench.csv (a row a configuration). Parameters: configs, impactSec, hyper, wallSec.
         /// </summary>
-        [UITest(Kind = "Measure", Explicit = true, Mods = "TimeControl", StartsAt = StartState.Flight, Craft = "FAR SkyEye AS", CraftDir = "SPH",
+        [UITest(Kind = "Measure", Explicit = true, Mods = TestWarp.WaterMods, StartsAt = StartState.Flight, Craft = "FAR SkyEye AS", CraftDir = "SPH",
                 LaunchSite = "Runway", TimeoutSec = 2400)]
         public static IEnumerator Bench_WaterSplashdown(TestContext ctx)
         {

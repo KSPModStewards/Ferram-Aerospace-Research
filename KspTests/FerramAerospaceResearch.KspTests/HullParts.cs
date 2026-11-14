@@ -337,17 +337,23 @@ namespace FerramAerospaceResearch.KspTests
     {
         /// <summary>
         /// The water tests' instance: AJE and Firespitter for the C172's engine and prop, TimeControl for the hyper-warp,
-        /// CustomProceduralParts for the Spine hulls, FARTestFloatplane for the test parts.
+        /// CustomProceduralParts for the Spine hulls (built from its repository at the commit with the Spine collider
+        /// fixes the hulls' statics were checked with), FARTestFloatplane for the test parts.
         /// </summary>
-        public const string WaterMods = @"AdvancedJetEngine;Firespitter;TimeControl;..\..\..\CustomProceduralParts\GameData\CustomProceduralParts;" +
+        public const string WaterMods = @"AdvancedJetEngine;Firespitter;TimeControl;" + CustomProceduralParts + ";" +
                                         @"..\FerramAerospaceResearch.KspTests.Run\mods\FARTestFloatplane";
+
+        public const string CustomProceduralParts =
+            "https://github.com/chambem42/CustomProceduralParts@891b6adba8f80a0238a5ba8c3b0cfcfe668a3248/GameData/CustomProceduralParts" +
+            "?build=Source/CustomProceduralParts.csproj";
 
         /// <summary>
         /// The demos' and videos' instance: the water tests' and Scatterer's ocean, made calm with its waves moving craft
-        /// (mods/FARTestScatterer). Not the water tests': they run without a GPU (batch mode), and their tows compare FAR's
-        /// flat sea with tank data.
+        /// (mods/FARTestScatterer), and the 40 m submarine's motor (mods/FARTestSubMotor). Not the water tests': they run
+        /// without a GPU (batch mode), and their tows compare FAR's flat sea with tank data.
         /// </summary>
-        public const string DemoMods = WaterMods + @";Scatterer;Scatterer-config;..\FerramAerospaceResearch.KspTests.Run\mods\FARTestScatterer";
+        public const string DemoMods = WaterMods + @";Scatterer;Scatterer-config;..\FerramAerospaceResearch.KspTests.Run\mods\FARTestScatterer;" +
+                                       @"..\FerramAerospaceResearch.KspTests.Run\mods\FARTestSubMotor";
 
         /// <summary>
         /// Rough water: the water tests' and Scatterer's ocean with a metre and more of waves (mods/FARTestScattererRough:
