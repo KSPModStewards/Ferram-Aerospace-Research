@@ -179,7 +179,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 p.rb.angularDrag = (float)(p.angularDrag * tmp * PhysicsGlobals.AngularDragMultiplier);
 
             tmp = Math.Max(fi.pseudoReDragMult, 1);
-            if (FARSettings.Hydrodynamics)
+            if (FARDebugValues.hydrodynamics)
             {
                 // the aero force on the part's dry share only; PartHydrodynamics models the water
                 p.dragScalar = (float)(p.dynamicPressurekPa * (1.0 - p.submergedPortion) * tmp);

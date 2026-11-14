@@ -312,7 +312,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
             // the water: the wet parts' hulls, once all of them are in
             _hydrodynamics.Solve(vessel);
             foreach (FARAeroPartModule m in _currentAeroModules)
-                if (m.part.submergedPortion > 0 && m.Hydrodynamics != null)
+                if (FARDebugValues.hydrodynamics && m.part.submergedPortion > 0 && m.Hydrodynamics != null)
                     m.worldSpaceHydroForce = m.Hydrodynamics.LastForce;
         }
 

@@ -973,14 +973,23 @@ namespace ferram4
                 {
                     _scratch.CurWingCentroid = CurWingCentroid = WingCentroid();
 
-                    Vector3d velocity = rb.GetPointVelocity(CurWingCentroid) +
+                    // a foil under the water on a hull: its force on the hull (WaterHost), its velocity the hull's
+                    // there (the force and the motion it acts on one body's: a light foil's own rigidbody shaking on
+                    // its joint, its lift pushing the hull and not it, nothing damped it: a jet boat's hydrofoil drove
+                    // its hull's roll and pitch from it, MN of lift tilted into thrust), the hull's upwash added
+                    Part host = WaterHost();
+                    waterHostMass = host != null ? host.rb.mass : 0;
+                    Rigidbody moving = host != null ? host.rb : rb;
+                    Vector3d velocity = moving.GetPointVelocity(CurWingCentroid) +
                                         Krakensbane.GetFrameVelocity() -
                                         FARAtmosphere.GetWind(FlightGlobals.currentMainBody, part, rb.position);
+                    if (host != null && HostHull(host) != null)
+                        velocity += HullUpwash(host);
 
                     double v_scalar = velocity.magnitude;
 
                     // water's contribution to rho: the wing is a foil in it (a rudder, keel, dive plane, hydrofoil; with
-                    // FARSettings.Hydrodynamics PartHydrodynamics gives it its buoyancy only)
+                    // FARDebugValues.hydrodynamics PartHydrodynamics gives it its buoyancy only)
                     double waterRho = 0;
                     if (partVessel.mainBody.ocean)
                     {
@@ -992,6 +1001,15 @@ namespace ferram4
                         rho = part.atmDensity;
                     }
 
+                    // (a foil in the water on a hull: the flow across it relaxed, RelaxedWaterFlow)
+                    if (host != null)
+                    {
+                        velocity = RelaxedWaterFlow(velocity, host, rho);
+                        v_scalar = velocity.magnitude;
+                    }
+                    else
+                        waterCrossWas = null;
+
                     double machNumber = partVessel.mach;
                     if (rho > 0 && v_scalar > 0.1)
                     {
@@ -1001,7 +1019,7 @@ namespace ferram4
 
                         worldSpaceForce = force;
 
-                        if (part.submergedPortion > 0 && !FARSettings.Hydrodynamics)
+                        if (part.submergedPortion > 0 && !FARDebugValues.hydrodynamics)
                         {
                             Vector3 velNorm = velocity / v_scalar;
                             Vector3 worldSpaceDragForce = Vector3.Dot(velNorm, force) * velNorm;
@@ -1029,9 +1047,14 @@ namespace ferram4
                                 worldSpaceDragForce = worldSpaceLiftForce = Vector3.zero;
                             }
 
-                            //extra water drag factor for wings
-                            aeroModule.hackWaterDragVal +=
-                                Math.Abs(waterDragForce.magnitude / (rb.mass * rb.velocity.magnitude)) * 5;
+                            // the water's drag as a force along the flow, at most half of what stops the body's motion
+                            // through the water in a step (the body: WaterHost's, the panel's own without one). It was
+                            // five times this as the rigidbody's drag (hackWaterDragVal): Unity's linear drag damps the
+                            // panel's whole velocity, not its motion through the water, and a light panel's to a standstill
+                            // in a step, its joint snapping it back: a B9 wing dipped in a wave bounced off like rubber
+                            double dragMax = 0.5 * (rb.mass + waterHostMass) * v_scalar / TimeWarp.fixedDeltaTime;
+                            if (waterDragForce.magnitude > dragMax)
+                                waterDragForce *= (float)(dragMax / waterDragForce.magnitude);
 
                             waterLiftForce *= (float)PhysicsGlobals.BuoyancyWaterLiftScalarEnd;
                             if (part.partBuoyancy.splashedCounter < PhysicsGlobals.BuoyancyWaterDragTimer)
@@ -1062,8 +1085,8 @@ namespace ferram4
                             waterLiftForce *= (float)waterLiftScalar;
                             worldSpaceLiftForce *= (float)waterLiftScalar;
 
-                            force = worldSpaceDragForce + worldSpaceLiftForce + waterLiftForce;
-                            worldSpaceForce = force + waterDragForce;
+                            force = worldSpaceDragForce + worldSpaceLiftForce + waterLiftForce + waterDragForce;
+                            worldSpaceForce = force;
                         }
 
                         Vector3d scaledForce = worldSpaceForce;
@@ -1088,9 +1111,11 @@ namespace ferram4
                                 part.decouple(25);
                                 if (FARDebugValues.aeroFailureExplosions)
                                     FXMonger.Explode(part, AerodynamicCenter, 1);
+                                // (broken off: its force on itself, not the hull it left)
+                                host = null;
                             }
 
-                        part.AddForceAtPosition(force, AerodynamicCenter);
+                        (host != null ? host : part).AddForceAtPosition(force, AerodynamicCenter);
                     }
                     else
                     {
@@ -1229,9 +1254,9 @@ namespace ferram4
             //lift and drag vectors
             Vector3d L, D;
             double submergedPortion = snapshot ? captured.CapturedSubmergedPortion : part.submergedPortion;
-            // (stock's water scalars on the legacy water model only: with FARSettings.Hydrodynamics the water's density
+            // (stock's water scalars on the legacy water model only: with FARDebugValues.hydrodynamics the water's density
             // is in q, as for any foil)
-            if (failureForceScaling >= 1 && submergedPortion > 0 && !FARSettings.Hydrodynamics)
+            if (failureForceScaling >= 1 && submergedPortion > 0 && !FARDebugValues.hydrodynamics)
             {
                 double submergedLiftScalar = snapshot ? captured.CapturedSubmergedLiftScalar : part.submergedLiftScalar;
                 double submergedDragScalar = snapshot ? captured.CapturedSubmergedDragScalar : part.submergedDragScalar;
@@ -1284,7 +1309,8 @@ namespace ferram4
             }
 
             bool sweep = !snapshot && SweepGeom.HasValue;
-            double rbMass = snapshot ? captured.CapturedRbMass : sweep ? simRbMass : part.rb.mass;
+            // (a foil under the water on a hull: the force is the hull's, the hull's mass with its own)
+            double rbMass = snapshot ? captured.CapturedRbMass : sweep ? simRbMass : part.rb.mass + waterHostMass;
             double fixedDt = snapshot ? captured.CapturedFixedDeltaTime : sweep ? simFixedDeltaTime : TimeWarp.fixedDeltaTime;
             double numericalControlFactor = rbMass * v_scalar * 0.67 / (force.magnitude * fixedDt);
             force *= Math.Min(numericalControlFactor, 1);
@@ -1374,6 +1400,103 @@ namespace ferram4
                 return;
             parentWing.GetRefAreaChildren();
             parentWing.UpdateMassToAccountForArea();
+        }
+
+        // the last step's water host's mass (t; 0: none): the numerical limiter's mass with the part's own
+        private double waterHostMass;
+        // the flow across the water foil last step, as relaxed (m/s; null: none)
+        private double? waterCrossWas;
+
+        /// <summary>
+        /// A foil's flow in the water with its part across the foil (along its normal) relaxed toward this step's from
+        /// last step's by 1/(1 + k): k the step's stiffness, c dt / m, c the force's change with that flow (q S its lift
+        /// slope / U) and m the host's mass where the foil acts (its rotation about its CoM with it). A water foil is
+        /// stiff: a jet boat's 8 m2 hydrofoils at 31 m/s, c about 450 kN per m/s on a cargo bay of a few tonnes (k near
+        /// 2; on a step's time scale the joints hold it no closer to the rest of the boat), their angle of attack's sign
+        /// flipping every step and growing to MN either way. Relaxed (an implicit step's) it settles for any k, and
+        /// its steady value is this step's: nothing changes for a foil the step is long enough for (k small: a sub's
+        /// fins). The flow, not the force: the force follows the water at once (a foil out of it loses its lift then).
+        /// </summary>
+        private Vector3d RelaxedWaterFlow(Vector3d velocity, Part host, double rho)
+        {
+            Vector3d n = part_transform.forward;
+            double cross = Vector3d.Dot(velocity, n), v = velocity.magnitude;
+            Rigidbody hrb = host.rb;
+            double c = 0.5 * rho * v * 0.001 * S * Math.Max(_scratch.liftslope, 0);   // kN per m/s across
+            Vector3 r = (Vector3)AerodynamicCenter - hrb.worldCenterOfMass;
+            Vector3 it = hrb.inertiaTensor;
+            double iMin = Math.Max(1e-6, Math.Min(it.x, Math.Min(it.y, it.z)));
+            double mEff = 1 / (1 / Math.Max(1e-6, hrb.mass) + r.sqrMagnitude / iMin);
+            double k = c * TimeWarp.fixedDeltaTime / mEff;
+            double relaxed = waterCrossWas.HasValue ? waterCrossWas.Value + (cross - waterCrossWas.Value) / (1 + k) : cross;
+            waterCrossWas = relaxed;
+            return velocity + n * (relaxed - cross);
+        }
+
+        /// <summary>
+        /// A foil in the water on another part (PartHydrodynamics' water: a submarine's fins, a float's water rudder, a
+        /// wing's tip caught in a wave): the part that takes its force (null: none), the first of its parents that is not
+        /// a foil itself (a rudder on a keel fin, a B9 wing's outer panel look past the panels to the body they are on). A
+        /// foil is light (a B9 fin: 2 kg) and the water 800 times the air's density: on its own part its force went
+        /// through its joint, and FAR's numerical limiter (a step's force under 67% of the part's own momentum) held it
+        /// to under a kN at submarine speeds, its fins no use at speed; a floatplane's wing panel dipped in a wave shook
+        /// on its joint, its own motion driving its lift, until the wings came off. On the body, its force moves the
+        /// vessel as before; the limiter counts the body's mass. HostHull: the body's hull in the water, if it is one.
+        /// </summary>
+        private Part WaterHost()
+        {
+            // (with FAR's hydrodynamics or without: its water as thick air on a wing panel the same light part)
+            if (part.submergedPortion <= 0)
+                return null;
+            Part p = part.parent;
+            for (int hop = 0; hop < 32 && p != null && p.Modules.Contains<FARWingAerodynamicModel>(); hop++)
+                p = p.parent;
+            if (p == null || p.rb == null || p.Modules.Contains<FARWingAerodynamicModel>())
+                return null;
+            return PartHydrodynamics.FoilHostAnyBody || HostHull(p) != null ? p : null;
+        }
+
+        // the host's hull in the water (this step's or last: the results are pooled, another hull's once it is dry)
+        private static HullResult HostHull(Part host)
+        {
+            PartHydrodynamics hd = host.Modules.GetModule<FARAeroPartModule>()?.Hydrodynamics;
+            HullResult hull = hd?.LastHull;
+            return hull != null && hull.Parts.Contains(hd) ? hull : null;
+        }
+
+        /// <summary>
+        /// A foil standing out of a hull under the water (a submarine's fins, planes, rudders; its parent a hull part of
+        /// PartHydrodynamics'): the crossflow the hull's turning sweeps it through (the hull's angular velocity about
+        /// the vessel's CoM, normal to the foil) amplified by the body (slender-body theory's K_W(B): the body's upwash
+        /// at the foil, Pitts, Nielsen and Kaattari, NACA Report 1307), its velocity's added part. In a steady drift
+        /// the body's own lift's vortices wash the amplification out at its stern (the foils' side force on a drifting
+        /// SUBOFF meets Roddy's captive tests without it); turning, the body carries little lift and the foils feel it
+        /// all (his rotary tests: the fins' Y'r about twice their own strip theory's). Faded out as the hull comes to
+        /// the surface (a float's rudder). PartHydrodynamics.FoilHullUpwash its share.
+        /// </summary>
+        private Vector3d HullUpwash(Part hullPart)
+        {
+            double share = PartHydrodynamics.FoilHullUpwash;
+            HullResult hull = HostHull(hullPart);
+            if (share <= 0 || hull == null || hull.Surface >= 1)
+                return Vector3d.zero;
+            // the foil's root and tip radii off the hull's axis (its part's long axis through its origin)
+            Vector3 axis = hullPart.partTransform.up;
+            Vector3 off = Vector3.ProjectOnPlane(CurWingCentroid - hullPart.partTransform.position, axis);
+            double d = off.magnitude, half = 0.5 * b_2_actual;
+            double tip = d + half, root = Math.Max(0, d - half);
+            if (tip <= 1e-3)
+                return Vector3d.zero;
+            double tau = Math.Min(root / tip, 0.999);
+            // K_W(B) (NACA Rep. 1307, eq. 39): 1 with no body, 2 with no exposed span
+            double k = (1 + tau * tau * tau * tau) * (0.5 * Math.Atan(0.5 * (1 / Math.Max(tau, 1e-6) - tau)) + Math.PI / 4) -
+                       tau * tau * ((1 / Math.Max(tau, 1e-6) - tau) + 2 * Math.Atan(tau));
+            k *= 2 / (Math.PI * (1 - tau) * (1 - tau));
+            // the turning's crossflow at the foil, normal to it
+            Vector3 n = part_transform.forward;
+            Vector3 r = CurWingCentroid - (Vector3)part.vessel.CoMD;
+            double un = Vector3.Dot(Vector3.Cross(hullPart.rb.angularVelocity, r), n);
+            return (Vector3d)n * ((k - 1) * un * share * (1 - hull.Surface));
         }
 
         public virtual double CalculateAoA(Vector3d velocity)

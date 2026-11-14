@@ -296,6 +296,13 @@ namespace FerramAerospaceResearch
                 FARDebugValues.OnModelChanged();
             }
 
+            bool hydro = OptionToggle(FARDebugValues.hydrodynamics,
+                                      "Hydrodynamics",
+                                      "Water forces from each part's shape in the water: buoyancy from its pressure, planing, a submerged hull's flow; foils in the water's density.",
+                                      "The water as thick air: the aero forces scaled by the submerged drag and lift multipliers, stock buoyancy (old behavior).");
+            if (hydro != FARDebugValues.hydrodynamics)
+                FARDebugValues.hydrodynamics = hydro;
+
             if (GUILayout.Button("Close"))
                 modelOptions = false;
             GUI.DragWindow();
@@ -699,6 +706,12 @@ namespace FerramAerospaceResearch
             else
                 FARDebugValues.linearFlapLift = true;
 
+            // (a save without it: FARConfig's, the default for new saves)
+            if (node.HasValue("hydrodynamics") && bool.TryParse(node.GetValue("hydrodynamics"), out tmp))
+                FARDebugValues.hydrodynamics = tmp;
+            else
+                FARDebugValues.hydrodynamics = FARSettings.Hydrodynamics;
+
             if (node.HasValue("debugTools") && bool.TryParse(node.GetValue("debugTools"), out tmp))
                 FARDebugValues.DebugTools = tmp;
             else
@@ -727,6 +740,7 @@ namespace FerramAerospaceResearch
             node.AddValue("aeroFailureExplosions", FARDebugValues.aeroFailureExplosions);
             node.AddValue("wholeWingAspectRatio", FARDebugValues.wholeWingAspectRatio);
             node.AddValue("linearFlapLift", FARDebugValues.linearFlapLift);
+            node.AddValue("hydrodynamics", FARDebugValues.hydrodynamics);
             node.AddValue("debugTools", FARDebugValues.DebugTools);
 
             FARActionGroupConfiguration.SaveConfiguration();
@@ -767,6 +781,25 @@ namespace FerramAerospaceResearch
         // a control surface hinged behind a wing: its section's added lift in proportion to its deflection (FARWingInteraction
         // ClIncrementFromRear times cos AoA); off: times sin AoA, as before. Set in the model options window
         public static bool linearFlapLift = true;
+
+        // water forces from each part's geometry (PartHydrodynamics); off: the water share of the aero force, scaled by
+        // stock's submerged drag and lift scalars, as before. Set in the model options window, kept per save; a save
+        // without it takes FARConfig's (FARSettings.Hydrodynamics, never written in game). Changing it finds the wing
+        // groups again (a submerged foil's aspect ratio is grouped by it) and tells the model's listeners
+        public static bool hydrodynamics
+        {
+            get => hydrodynamicsOn;
+            set
+            {
+                if (value == hydrodynamicsOn)
+                    return;
+                hydrodynamicsOn = value;
+                FARWingInteraction.InvalidateWingGroups();
+                OnModelChanged();
+            }
+        }
+
+        private static bool hydrodynamicsOn = true;
 
         private static bool debugTools;
 
