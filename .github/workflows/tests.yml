@@ -34,7 +34,7 @@ on:
     paths:
       - "**"
       - "!.github/workflows/**"
-      - "!.github/scripts/testing_*"
+      - "!.github/scripts/testing_**"
       - ".github/workflows/tests.yml"
   # a fork's pull request, behind the gate job (see above): labeled for the run-ingame label
   pull_request_target:
@@ -42,7 +42,7 @@ on:
     paths:
       - "**"
       - "!.github/workflows/**"
-      - "!.github/scripts/testing_*"
+      - "!.github/scripts/testing_**"
       - ".github/workflows/tests.yml"
   workflow_dispatch:
     inputs:
@@ -108,7 +108,7 @@ jobs:
               refuse "@$SENDER labelled it run-ingame, but only someone with write access starts the tests."
             # the labeller's own review of this very commit: what they read is what runs (a review records its commit)
             elif [ -z "$(gh api --paginate "repos/$REPO/pulls/$PR/reviews" \
-                        --jq '.[] | select(.user.login == env.SENDER and .commit_id == env.SHA and .state != "PENDING") | .id')" ]; then
+                        --jq '.[] | select(.user.login == env.SENDER and .commit_id == env.SHA and .state != "PENDING" and .state != "DISMISSED") | .id')" ]; then
               refuse "no review by @$SENDER of the latest commit ${SHA::7}. Submit a review of it (a comment is enough), then label it run-ingame again."
             else
               run=true; echo "reviewed and labelled by $SENDER: running $SHA"

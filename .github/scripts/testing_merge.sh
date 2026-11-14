@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # testing.yml's collect job: merges the open pull requests labelled $LABEL onto the checked-out master, lower numbers
 # first, and writes what the build and publish jobs need to $OUT: merged.bundle (the merge commits; none without pull
-# requests) and notes.md (the release notes). Outputs: build (false: nothing to publish), master, commit, version,
-# revision (its fourth number), tag.
+# requests) and notes.md (the release notes). Outputs: build (false: nothing to publish), master, commit, version, tag.
 # Nothing of the pull requests runs here: git merges them, that is all.
 #
 # Env: REPO (owner/name), LABEL, BASE (the default branch), OUT; from the event ACTION, PR, MERGED (all optional);
@@ -21,10 +20,16 @@ write() { if [ -n "${DRY_RUN:-}" ]; then echo "(dry run) gh $*" >&2; else gh "$@
 unlabel() { write api -X DELETE "repos/$REPO/issues/$1/labels/$LABEL" --silent || echo "::warning::could not take $LABEL off #$1"; }
 comment() { write api "repos/$REPO/issues/$1/comments" -f body="$2" --silent || echo "::warning::could not comment on #$1"; }
 
+# Lookups that fail end the run (explicit exits: set -e does not reach into functions called from an if). Read as "no",
+# they would take a maintainer's label off
+fail() { echo "::error::$1"; exit 1; }
+
 declare -A permission
 writer() {
-  [ -n "${permission[$1]+set}" ] ||
-    permission[$1]=$(gh api "repos/$REPO/collaborators/$1/permission" --jq .permission 2>/dev/null || echo none)
+  if [ -z "${permission[$1]+set}" ]; then
+    permission[$1]=$(gh api "repos/$REPO/collaborators/$1/permission" --jq .permission) ||
+      fail "could not look up @$1's permission on $REPO"
+  fi
   case "${permission[$1]}" in
     admin|maintain|write) return 0 ;;
     *) return 1 ;;
@@ -45,6 +50,12 @@ output master "$master"
 
 # --- the labelled pull requests, those that count ---------------------------------------------------------------------
 
+# into a variable first: from a process substitution its failure would read as no pull requests, and publish master
+listing=$(gh pr list -R "$REPO" --base "$BASE" --state open --label "$LABEL" --limit 100 \
+            --json number,headRefOid,author,title \
+            --jq 'sort_by(.number)[] | [.number, .headRefOid, .author.login, .title] | @tsv') ||
+  fail "could not list the pull requests labelled $LABEL"
+
 nums=() shas=() authors=() titles=()
 while IFS=$'\t' read -r n sha author title; do
   [ -n "$n" ] || continue
@@ -54,10 +65,13 @@ while IFS=$'\t' read -r n sha author title; do
   reason=""
   if [ -z "$labeller" ] || ! writer "$labeller"; then
     reason="@$labeller labelled it $LABEL, but only someone with write access puts a pull request in the testing build."
-  # as run-ingame in tests.yml: what the labeller read is what goes in (a review records its commit)
-  elif ! writer "$author" && [ -z "$(L=$labeller S=$sha gh api --paginate "repos/$REPO/pulls/$n/reviews" \
-        --jq '.[] | select(.user.login == env.L and .commit_id == env.S and .state != "PENDING") | .id')" ]; then
-    reason="no review by @$labeller of the latest commit ${sha::7}. Submit a review of it (a comment is enough), then label it $LABEL again."
+  # as run-ingame in tests.yml: what the labeller read is what goes in (a review records its commit), not dismissed
+  elif ! writer "$author"; then
+    reviewed=$(L=$labeller S=$sha gh api --paginate "repos/$REPO/pulls/$n/reviews" \
+      --jq '.[] | select(.user.login == env.L and .commit_id == env.S and .state != "PENDING" and .state != "DISMISSED") | .id') ||
+      fail "could not read the reviews of #$n"
+    [ -n "$reviewed" ] ||
+      reason="no review by @$labeller of the latest commit ${sha::7}. Submit a review of it (a comment is enough), then label it $LABEL again."
   fi
   if [ -n "$reason" ]; then
     echo "::warning::#$n left out: $reason"
@@ -66,9 +80,7 @@ while IFS=$'\t' read -r n sha author title; do
     continue
   fi
   nums+=("$n") shas+=("$sha") authors+=("$author") titles+=("$title")
-done < <(gh pr list -R "$REPO" --base "$BASE" --state open --label "$LABEL" --limit 100 \
-           --json number,headRefOid,author,title \
-           --jq 'sort_by(.number)[] | [.number, .headRefOid, .author.login, .title] | @tsv')
+done <<< "$listing"
 
 if [ ${#nums[@]} -gt 0 ]; then
   git fetch -q --no-tags origin $(printf 'refs/pull/%s/head ' "${nums[@]}")
@@ -162,9 +174,11 @@ for i in "${merged[@]}"; do set_line="$set_line #${nums[i]}=${shas[i]}"; done
 set_marker="<!-- testing-set: $set_line -->"
 
 # the last published: GitHub lists releases by their commit's date, and a master-only build tags an older commit
-read -r latest_pre latest_same < <(M=$set_marker gh api "repos/$REPO/releases?per_page=30" \
+latest=$(M=$set_marker gh api "repos/$REPO/releases?per_page=30" \
   --jq 'map(select(.draft | not)) | (max_by(.published_at) // {}) |
-        "\(.prerelease // false) \((.body // "") | contains(env.M))"')
+        "\(.prerelease // false) \((.body // "") | contains(env.M))"') ||
+  fail "could not read the releases"
+read -r latest_pre latest_same <<< "$latest"
 if [ "${FORCE:-}" != true ]; then
   if [ "$latest_pre" = true ] && [ "$latest_same" = true ]; then
     echo "::notice::the labelled pull requests and master are what the last testing build has: nothing to publish"
@@ -198,7 +212,6 @@ if [ "$revision" -gt 255 ]; then
 fi
 version="$base.$revision"
 tag="v${version}_testing"
-output revision "$revision"
 
 # --- notes and bundle --------------------------------------------------------------------------------------------------
 

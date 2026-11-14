@@ -150,12 +150,14 @@ jobs:
           }
           for tested in $(gh run list -R "$GITHUB_REPOSITORY" -w tests.yml -e push -b master -s success -L 20 \
                             --json headSha -q '.[].headSha'); do
-            status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$tested...$GITHUB_SHA" -q .status)
-            [ "$status" = ahead ] || continue
-            # the compare lists at most 300 files: that many is no workflow-only change anyway
-            files=$(gh api "repos/$GITHUB_REPOSITORY/compare/$tested...$GITHUB_SHA" -q '.files | if length < 300 then .[].filename else "too many" end')
+            # status first, then the files; the compare lists at most 300, and that many is no workflow-only change
+            compared=$(gh api "repos/$GITHUB_REPOSITORY/compare/$tested...$GITHUB_SHA" \
+              -q '.status, (.files // [] | if length < 300 then .[].filename else "too many" end)')
+            [ "$(head -n 1 <<< "$compared")" = ahead ] || continue
             untested=""
-            while read -r f; do skippable "$f" || untested="$untested $f"; done <<< "$files"
+            while read -r f; do
+              [ -z "$f" ] || skippable "$f" || untested="$untested $f"
+            done < <(tail -n +2 <<< "$compared")
             if [ -z "$untested" ]; then
               echo "$GITHUB_SHA changes only workflows since ${tested::8}, whose Tests passed"
               exit 0
