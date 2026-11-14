@@ -18,7 +18,7 @@ namespace FerramAerospaceResearch.KspTests
     /// <summary>
     /// FAR in the editor as a craft is changed: a wing panel taken off and put back, a wing's mass slider, the flap,
     /// spoiler and pitch-with-angle-of-attack settings of the control surfaces in the static analysis, the intakes of
-    /// engine nacelles, and the chute info window in the hangar.
+    /// engine nacelles, the chute info window in the hangar, and TweakScale's rescale event.
     /// </summary>
     public static class EditorPartChangeTests
     {
@@ -149,6 +149,107 @@ namespace FerramAerospaceResearch.KspTests
                 EditorLogic.LoadShipFromFile(ctx.CraftPath(Far.Plane, "SPH"));
             }
 
+        }
+
+        /// <summary>
+        /// TweakScale's rescale event (OnPartScaleChanged, see TweakScaleEvent) sent to the Aeris 4A's delta wing, in an
+        /// instance without TweakScale: a scale missing, 0, negative, infinite, not a number or not a number type leaves
+        /// FAR's wing model as it was, with a warning from FAR for each (the wing model's; the geometry, which does not
+        /// use the scale, rebuilds) and no exception. A
+        /// scale of 2 (as a float, and as a double) doubles the wing model's span and mean chord and rebuilds its geometry;
+        /// 1 puts them back. A rescale that throws is logged by FAR and goes no further: part.SendEvent has no try/catch
+        /// of its own, so it would end TweakScale's rescale of the part and every other module's handling of the event.
+        /// </summary>
+        [UITest(Kind = "Check", StartsAt = StartState.Sph, Craft = Far.Plane, TimeoutSec = 900)]
+        public static IEnumerator Editor_TweakScaleEventTakesOnlyAUsableScale(TestContext ctx)
+        {
+            yield return Far.WaitForEditorVoxels();
+            yield return Far.Settled("the Aeris 4A");
+            Part part = EditorLogic.fetch.ship.parts.First(p => p.partInfo.name == "deltaWing");
+            var wing = part.FindModuleImplementing<FARWingAerodynamicModel>();
+            var geometry = part.FindModuleImplementing<GeometryPartModule>();
+            Assert.NotNull(wing, "the delta wing is a FAR wing");
+            Assert.NotNull(geometry, "the delta wing has FAR's geometry");
+            Assert.False(part.Modules.Contains("TweakScale"), "no TweakScale on the delta wing in this instance");
+            double b2 = wing.b_2, mac = wing.MAC;
+            Assert.Near(b2, wing.b_2_actual, 1e-6, "the unscaled wing's span is the prefab's");
+
+            var warnings = new List<string>();
+            var failures = new List<string>();
+            void OnLog(string condition, string stackTrace, LogType type)
+            {
+                if (type == LogType.Warning && condition.Contains("TweakScale's rescale event"))
+                    warnings.Add(condition);
+                if (type == LogType.Exception && condition.Contains("rescale to"))
+                    failures.Add(condition);
+            }
+
+            void Send(Action<BaseEventDetails> set)
+            {
+                var data = new BaseEventDetails(BaseEventDetails.Sender.USER);
+                set(data);
+                // to the part alone, as TweakScale sends it (without a depth it goes to every part below too)
+                part.SendEvent("OnPartScaleChanged", data, 0);
+            }
+
+            Application.logMessageReceived += OnLog;
+            try
+            {
+                using (var log = new ExceptionLog())
+                {
+                    ctx.Step("Events with no usable scale");
+                    var bad = new (string what, Action<BaseEventDetails> set)[]
+                    {
+                        ("no scale", d => d.Set("factorType", 1)),
+                        ("0", d => d.Set(TweakScaleEvent.FactorKey, 0f)),
+                        ("-2", d => d.Set(TweakScaleEvent.FactorKey, -2f)),
+                        ("infinity", d => d.Set(TweakScaleEvent.FactorKey, float.PositiveInfinity)),
+                        ("NaN", d => d.Set(TweakScaleEvent.FactorKey, float.NaN)),
+                        ("a string", d => d.Set(TweakScaleEvent.FactorKey, "2")),
+                    };
+                    foreach ((string what, Action<BaseEventDetails> set) in bad)
+                    {
+                        int before = warnings.Count;
+                        Send(set);
+                        Assert.Equal(before + 1, warnings.Count, $"FAR's warnings after an event with {what}");
+                        Assert.Near(b2, wing.b_2_actual, 1e-6, $"the span after an event with {what}");
+                        Assert.Near(mac, wing.MAC_actual, 1e-6, $"the mean chord after an event with {what}");
+                    }
+
+                    yield return Wait.Until(() => geometry.Ready, 30, "FAR's geometry of the wing", shot: false);
+                    ctx.Record("warning", warnings.LastOrDefault());
+
+                    ctx.Step("Scaled to 2 by the event, as a float and as a double, and back to 1");
+                    foreach ((string what, object factor) in new (string, object)[] { ("a float", 2f), ("a double", 2.0) })
+                    {
+                        List<GeometryMesh> meshes = geometry.meshDataList;
+                        Send(d => d.Set(TweakScaleEvent.FactorKey, factor));
+                        Assert.Near(2 * b2, wing.b_2_actual, 1e-4 * b2, $"the span scaled by {what} (m)");
+                        Assert.Near(2 * mac, wing.MAC_actual, 1e-4 * mac, $"the mean chord scaled by {what} (m)");
+                        yield return Wait.Until(() => geometry.Ready && !ReferenceEquals(meshes, geometry.meshDataList), 30,
+                                                $"FAR's geometry of the wing rebuilt for {what}", shot: false);
+                        Send(d => d.Set(TweakScaleEvent.FactorKey, 1f));
+                        Assert.Near(b2, wing.b_2_actual, 1e-4 * b2, "the span back (m)");
+                        Assert.Near(mac, wing.MAC_actual, 1e-4 * mac, "the mean chord back (m)");
+                        yield return Wait.Until(() => geometry.Ready, 30, "FAR's geometry of the wing", shot: false);
+                    }
+
+                    log.AssertNone("TweakScale's rescale events");
+                }
+
+                ctx.Step("A rescale that throws");
+                var scaled = new BaseEventDetails(BaseEventDetails.Sender.USER);
+                scaled.Set(TweakScaleEvent.FactorKey, 2f);
+                TweakScaleEvent.Handle(wing, scaled, _ => throw new InvalidOperationException("a rescale that throws"));
+                Assert.Equal(1, failures.Count, $"FAR's logged rescale failures ({string.Join(" | ", failures)})");
+                ctx.Record("failure", failures[0]);
+            }
+            finally
+            {
+                Application.logMessageReceived -= OnLog;
+                // the craft as it was for the tests after (the editor keeps it), whatever happened to it here
+                EditorLogic.LoadShipFromFile(ctx.CraftPath(Far.Plane, "SPH"));
+            }
         }
 
         /// <summary>
