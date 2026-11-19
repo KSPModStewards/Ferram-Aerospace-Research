@@ -54,7 +54,6 @@ using FerramAerospaceResearch.FARPartGeometry.GeometryModification;
 using FerramAerospaceResearch.Settings;
 using KSP.UI.Screens;
 using KSPCommunityFixes;
-using TweakScale;
 using UnityEngine;
 
 namespace FerramAerospaceResearch.FARPartGeometry
@@ -85,7 +84,7 @@ namespace FerramAerospaceResearch.FARPartGeometry
         }
     }
 
-    public class GeometryPartModule : PartModule, IRescalable<GeometryPartModule>
+    public class GeometryPartModule : PartModule
     {
         private static int ignoreLayer0 = -1;
         public bool destroyed;
@@ -159,12 +158,13 @@ namespace FerramAerospaceResearch.FARPartGeometry
             get { return config.ignoreForMainAxis; }
         }
 
-        public void OnRescale(ScalingFactor factor)
+        // TweakScale's rescale (TweakScaleEvent): the meshes are rebuilt from the part's scaled transforms, so the
+        // event's scale is neither needed nor checked here (the wing model checks it)
+        [KSPEvent]
+        public void OnPartScaleChanged(BaseEventDetails data)
         {
-            if (meshDataList == null)
-                return;
-
-            Rescale(factor.absolute.linear * Vector3.one);
+            if (meshDataList != null)
+                TweakScaleEvent.Run(this, "rebuilding the meshes on a rescale", () => Rescale(Vector3.one));
         }
 
         private void DebugAddMesh(Transform t)
