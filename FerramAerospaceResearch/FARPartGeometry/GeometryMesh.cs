@@ -52,6 +52,7 @@ namespace FerramAerospaceResearch.FARPartGeometry
     {
         public readonly Vector3[] vertices;
         private readonly Vector3[] meshLocalVerts;
+        internal Vector3[] MeshLocalVerts => meshLocalVerts;
         public readonly int[] triangles;
         public readonly Transform meshTransform;
         public readonly Transform partTransform;

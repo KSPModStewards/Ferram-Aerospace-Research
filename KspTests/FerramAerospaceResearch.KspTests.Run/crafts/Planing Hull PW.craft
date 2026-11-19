@@ -1,0 +1,1706 @@
+ship = Planing Hull PW
+version = 1.2.0
+description = Planing Hull (one Spine: 2 m beam, 8 m long, 2 m deep, raked to 0.5 m at the bow) built of ten flat B9 hull plates round a small Spine tank (its fuel the hull's mass)
+type = SPH
+size = 2,2,8
+PART
+{
+	part = proceduralTankLiquid_4294200000
+	partName = Part
+	pos = 0,3,0
+	attPos = 0,0,0
+	attPos0 = 0,3,0
+	rot = 0.707106829,0,0,0.707106829
+	attRot = 0,0,0,1
+	attRot0 = 0.707106829,0,0,0.707106829
+	mir = 1,1,1
+	symMethod = Mirror
+	autostrutMode = Off
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = 0
+	attm = 0
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = B9.Aero.Wing.Procedural.TypeA_4294200002
+	link = B9.Aero.Wing.Procedural.TypeA_4294200009
+	MODULE
+	{
+		name = ProceduralPart
+		isEnabled = True
+		density = 0
+		forceLegacyTextures = False
+		textureSet = Original
+		capTextureIndex = 0
+		shapeName = Spine
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+			upgrade = ProceduralPartsTank1500L
+			upgrade = ProceduralPartsTank2500L
+			upgrade = ProceduralPartsTankAviation
+			upgrade = ProceduralPartsTank20000L
+			upgrade = ProceduralPartsTank37000L
+			upgrade = ProceduralPartsTank45000L
+			upgrade = ProceduralPartsTank85000L
+			upgrade = ProceduralPartsTankMiniaturization
+			upgrade = ProceduralPartsTankUnlimited
+		}
+	}
+	MODULE
+	{
+		name = ProceduralShapeSpine
+		isEnabled = True
+		length = 3.2
+		hScale = 1
+		vScale = 1
+		stagingEnabled = True
+		SPINE_NODE
+		{
+			position = 0
+			sizeH = 1.2
+			sizeV = 1.2
+			section = Rectangle
+		}
+		SPINE_NODE
+		{
+			position = 1
+			sizeH = 1.2
+			sizeV = 1.2
+			section = Rectangle
+		}
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = TankContentSwitcher
+		isEnabled = True
+		tankType = LiquidFuel
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = GeometryPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARAeroPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+}
+PART
+{
+	part = B9.Aero.Wing.Procedural.TypeA_4294200001
+	partName = Part
+	pos = 0.000000,2.010000,-4.000001
+	attPos = 0,0,0
+	attPos0 = 0.000000,2.010000,-4.000001
+	rot = 0.500000034,-0.500000034,0.500000034,0.500000034
+	attRot = 0,0,0,1
+	attRot0 = 0.500000034,-0.500000034,0.500000034,0.500000034
+	mir = 1,1,1
+	symMethod = Mirror
+	autostrutMode = Off
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = 0
+	attm = 1
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = B9.Aero.Wing.Procedural.TypeA_4294200003
+	srfN = srfAttach,B9.Aero.Wing.Procedural.TypeA_4294200007
+	MODULE
+	{
+		name = WingProcedural
+		isEnabled = True
+		isAttached = True
+		isSetToDefaultValues = True
+		sharedBaseLength = 5.6
+		sharedBaseWidthRoot = 2
+		sharedBaseWidthTip = 2
+		sharedBaseOffsetRoot = 0
+		sharedBaseOffsetTip = 0
+		sharedBaseThicknessRoot = 0.02
+		sharedBaseThicknessTip = 0.02
+		sharedEdgeTypeLeading = 2
+		sharedEdgeWidthLeadingRoot = 0
+		sharedEdgeWidthLeadingTip = 0
+		sharedEdgeTypeTrailing = 3
+		sharedEdgeWidthTrailingRoot = 0
+		sharedEdgeWidthTrailingTip = 0
+		sharedMaterialST = 1
+		sharedColorSTOpacity = 0
+		sharedColorSTHue = 0.100000001
+		sharedColorSTSaturation = 0.75
+		sharedColorSTBrightness = 0.600000024
+		sharedMaterialSB = 4
+		sharedColorSBOpacity = 0
+		sharedColorSBHue = 0.100000001
+		sharedColorSBSaturation = 0.75
+		sharedColorSBBrightness = 0.600000024
+		sharedMaterialET = 4
+		sharedColorETOpacity = 0
+		sharedColorETHue = 0.100000001
+		sharedColorETSaturation = 0.75
+		sharedColorETBrightness = 0.600000024
+		sharedMaterialEL = 4
+		sharedColorELOpacity = 0
+		sharedColorELHue = 0.100000001
+		sharedColorELSaturation = 0.75
+		sharedColorELBrightness = 0.600000024
+		sharedSweptAngleFront = 90
+		sharedSweptAngleBack = 90
+		sharedArmorRatio = 0
+		sweepMode = 0
+		sharedVariableSweep = False
+		sharedMaxSweepAngle = 45
+		sweepDriveJoint = False
+		sweepInvertFlaps = False
+		sweepFlapLevel = 0
+		aeroUIMass = 0
+		stockLiftCoefficient = 0
+		aeroIsLiftingSurface = True
+		aeroStatMeanAerodynamicChord = 3.7000001072883606
+		aeroStatSemispan = 14.800000190734863
+		aeroStatMidChordSweep = 20.894692542102764
+		aeroStatTaperRatio = 0.17460317310141993
+		fuelSelectedTankSetup = 1
+		stagingEnabled = True
+		mirrorTexturing = False
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			SweepFlapMoreAction
+			{
+				actionGroup = None
+				active = False
+			}
+			SweepFlapLessAction
+			{
+				actionGroup = None
+				active = False
+			}
+			SweepFlapToggleAction
+			{
+				actionGroup = None
+				active = False
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARWingAerodynamicModel
+		isEnabled = True
+		hullPlate = True
+		massMultiplier = 0.3
+		massOverride = -3.40282347E+38
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = GeometryPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARAeroPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+}
+PART
+{
+	part = B9.Aero.Wing.Procedural.TypeA_4294200002
+	partName = Part
+	pos = 0.000000,2.009545,1.597017
+	attPos = 0,0,0
+	attPos0 = 0.000000,2.009545,1.597017
+	rot = 0.418845169,-0.418845169,0.569709393,0.569709393
+	attRot = 0,0,0,1
+	attRot0 = 0.418845169,-0.418845169,0.569709393,0.569709393
+	mir = 1,1,1
+	symMethod = Mirror
+	autostrutMode = Off
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = 0
+	attm = 1
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = B9.Aero.Wing.Procedural.TypeA_4294200004
+	link = B9.Aero.Wing.Procedural.TypeA_4294200008
+	srfN = srfAttach,proceduralTankLiquid_4294200000
+	MODULE
+	{
+		name = WingProcedural
+		isEnabled = True
+		isAttached = True
+		isSetToDefaultValues = True
+		sharedBaseLength = 2.51446
+		sharedBaseWidthRoot = 2
+		sharedBaseWidthTip = 2
+		sharedBaseOffsetRoot = 0
+		sharedBaseOffsetTip = 0
+		sharedBaseThicknessRoot = 0.02
+		sharedBaseThicknessTip = 0.02
+		sharedEdgeTypeLeading = 2
+		sharedEdgeWidthLeadingRoot = 0
+		sharedEdgeWidthLeadingTip = 0
+		sharedEdgeTypeTrailing = 3
+		sharedEdgeWidthTrailingRoot = 0
+		sharedEdgeWidthTrailingTip = 0
+		sharedMaterialST = 1
+		sharedColorSTOpacity = 0
+		sharedColorSTHue = 0.100000001
+		sharedColorSTSaturation = 0.75
+		sharedColorSTBrightness = 0.600000024
+		sharedMaterialSB = 4
+		sharedColorSBOpacity = 0
+		sharedColorSBHue = 0.100000001
+		sharedColorSBSaturation = 0.75
+		sharedColorSBBrightness = 0.600000024
+		sharedMaterialET = 4
+		sharedColorETOpacity = 0
+		sharedColorETHue = 0.100000001
+		sharedColorETSaturation = 0.75
+		sharedColorETBrightness = 0.600000024
+		sharedMaterialEL = 4
+		sharedColorELOpacity = 0
+		sharedColorELHue = 0.100000001
+		sharedColorELSaturation = 0.75
+		sharedColorELBrightness = 0.600000024
+		sharedSweptAngleFront = 90
+		sharedSweptAngleBack = 90
+		sharedArmorRatio = 0
+		sweepMode = 0
+		sharedVariableSweep = False
+		sharedMaxSweepAngle = 45
+		sweepDriveJoint = False
+		sweepInvertFlaps = False
+		sweepFlapLevel = 0
+		aeroUIMass = 0
+		stockLiftCoefficient = 0
+		aeroIsLiftingSurface = True
+		aeroStatMeanAerodynamicChord = 3.7000001072883606
+		aeroStatSemispan = 14.800000190734863
+		aeroStatMidChordSweep = 20.894692542102764
+		aeroStatTaperRatio = 0.17460317310141993
+		fuelSelectedTankSetup = 1
+		stagingEnabled = True
+		mirrorTexturing = False
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			SweepFlapMoreAction
+			{
+				actionGroup = None
+				active = False
+			}
+			SweepFlapLessAction
+			{
+				actionGroup = None
+				active = False
+			}
+			SweepFlapToggleAction
+			{
+				actionGroup = None
+				active = False
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARWingAerodynamicModel
+		isEnabled = True
+		hullPlate = True
+		massMultiplier = 0.3
+		massOverride = -3.40282347E+38
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = GeometryPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARAeroPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+}
+PART
+{
+	part = B9.Aero.Wing.Procedural.TypeA_4294200003
+	partName = Part
+	pos = 0.990000,3.000000,-4.000001
+	attPos = 0,0,0
+	attPos0 = 0.990000,3.000000,-4.000001
+	rot = 0,-0.707106829,0,0.707106829
+	attRot = 0,0,0,1
+	attRot0 = 0,-0.707106829,0,0.707106829
+	mir = 1,1,1
+	symMethod = Mirror
+	autostrutMode = Off
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = 0
+	attm = 1
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,B9.Aero.Wing.Procedural.TypeA_4294200001
+	MODULE
+	{
+		name = WingProcedural
+		isEnabled = True
+		isAttached = True
+		isSetToDefaultValues = True
+		sharedBaseLength = 5.6
+		sharedBaseWidthRoot = 2
+		sharedBaseWidthTip = 2
+		sharedBaseOffsetRoot = 0
+		sharedBaseOffsetTip = 0
+		sharedBaseThicknessRoot = 0.02
+		sharedBaseThicknessTip = 0.02
+		sharedEdgeTypeLeading = 2
+		sharedEdgeWidthLeadingRoot = 0
+		sharedEdgeWidthLeadingTip = 0
+		sharedEdgeTypeTrailing = 3
+		sharedEdgeWidthTrailingRoot = 0
+		sharedEdgeWidthTrailingTip = 0
+		sharedMaterialST = 1
+		sharedColorSTOpacity = 0
+		sharedColorSTHue = 0.100000001
+		sharedColorSTSaturation = 0.75
+		sharedColorSTBrightness = 0.600000024
+		sharedMaterialSB = 4
+		sharedColorSBOpacity = 0
+		sharedColorSBHue = 0.100000001
+		sharedColorSBSaturation = 0.75
+		sharedColorSBBrightness = 0.600000024
+		sharedMaterialET = 4
+		sharedColorETOpacity = 0
+		sharedColorETHue = 0.100000001
+		sharedColorETSaturation = 0.75
+		sharedColorETBrightness = 0.600000024
+		sharedMaterialEL = 4
+		sharedColorELOpacity = 0
+		sharedColorELHue = 0.100000001
+		sharedColorELSaturation = 0.75
+		sharedColorELBrightness = 0.600000024
+		sharedSweptAngleFront = 90
+		sharedSweptAngleBack = 90
+		sharedArmorRatio = 0
+		sweepMode = 0
+		sharedVariableSweep = False
+		sharedMaxSweepAngle = 45
+		sweepDriveJoint = False
+		sweepInvertFlaps = False
+		sweepFlapLevel = 0
+		aeroUIMass = 0
+		stockLiftCoefficient = 0
+		aeroIsLiftingSurface = True
+		aeroStatMeanAerodynamicChord = 3.7000001072883606
+		aeroStatSemispan = 14.800000190734863
+		aeroStatMidChordSweep = 20.894692542102764
+		aeroStatTaperRatio = 0.17460317310141993
+		fuelSelectedTankSetup = 1
+		stagingEnabled = True
+		mirrorTexturing = False
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			SweepFlapMoreAction
+			{
+				actionGroup = None
+				active = False
+			}
+			SweepFlapLessAction
+			{
+				actionGroup = None
+				active = False
+			}
+			SweepFlapToggleAction
+			{
+				actionGroup = None
+				active = False
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARWingAerodynamicModel
+		isEnabled = True
+		hullPlate = True
+		massMultiplier = 0.3
+		massOverride = -3.40282347E+38
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = GeometryPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARAeroPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+}
+PART
+{
+	part = B9.Aero.Wing.Procedural.TypeA_4294200004
+	partName = Part
+	pos = 0.990000,3.000000,1.600000
+	attPos = 0,0,0
+	attPos0 = 0.990000,3.000000,1.600000
+	rot = 0,-0.707106829,0,0.707106829
+	attRot = 0,0,0,1
+	attRot0 = 0,-0.707106829,0,0.707106829
+	mir = 1,1,1
+	symMethod = Mirror
+	autostrutMode = Off
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = 0
+	attm = 1
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = B9.Aero.Wing.Procedural.TypeA_4294200006
+	srfN = srfAttach,B9.Aero.Wing.Procedural.TypeA_4294200002
+	MODULE
+	{
+		name = WingProcedural
+		isEnabled = True
+		isAttached = True
+		isSetToDefaultValues = True
+		sharedBaseLength = 2.4
+		sharedBaseWidthRoot = 2
+		sharedBaseWidthTip = 0.5
+		sharedBaseOffsetRoot = 0
+		sharedBaseOffsetTip = 0
+		sharedBaseThicknessRoot = 0.02
+		sharedBaseThicknessTip = 0.02
+		sharedEdgeTypeLeading = 2
+		sharedEdgeWidthLeadingRoot = 0
+		sharedEdgeWidthLeadingTip = 0
+		sharedEdgeTypeTrailing = 3
+		sharedEdgeWidthTrailingRoot = 0
+		sharedEdgeWidthTrailingTip = 0
+		sharedMaterialST = 1
+		sharedColorSTOpacity = 0
+		sharedColorSTHue = 0.100000001
+		sharedColorSTSaturation = 0.75
+		sharedColorSTBrightness = 0.600000024
+		sharedMaterialSB = 4
+		sharedColorSBOpacity = 0
+		sharedColorSBHue = 0.100000001
+		sharedColorSBSaturation = 0.75
+		sharedColorSBBrightness = 0.600000024
+		sharedMaterialET = 4
+		sharedColorETOpacity = 0
+		sharedColorETHue = 0.100000001
+		sharedColorETSaturation = 0.75
+		sharedColorETBrightness = 0.600000024
+		sharedMaterialEL = 4
+		sharedColorELOpacity = 0
+		sharedColorELHue = 0.100000001
+		sharedColorELSaturation = 0.75
+		sharedColorELBrightness = 0.600000024
+		sharedSweptAngleFront = 90
+		sharedSweptAngleBack = 90
+		sharedArmorRatio = 0
+		sweepMode = 0
+		sharedVariableSweep = False
+		sharedMaxSweepAngle = 45
+		sweepDriveJoint = False
+		sweepInvertFlaps = False
+		sweepFlapLevel = 0
+		aeroUIMass = 0
+		stockLiftCoefficient = 0
+		aeroIsLiftingSurface = True
+		aeroStatMeanAerodynamicChord = 3.7000001072883606
+		aeroStatSemispan = 14.800000190734863
+		aeroStatMidChordSweep = 20.894692542102764
+		aeroStatTaperRatio = 0.17460317310141993
+		fuelSelectedTankSetup = 1
+		stagingEnabled = True
+		mirrorTexturing = False
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			SweepFlapMoreAction
+			{
+				actionGroup = None
+				active = False
+			}
+			SweepFlapLessAction
+			{
+				actionGroup = None
+				active = False
+			}
+			SweepFlapToggleAction
+			{
+				actionGroup = None
+				active = False
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARWingAerodynamicModel
+		isEnabled = True
+		hullPlate = True
+		massMultiplier = 0.3
+		massOverride = -3.40282347E+38
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = GeometryPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARAeroPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+}
+PART
+{
+	part = B9.Aero.Wing.Procedural.TypeA_4294200005
+	partName = Part
+	pos = 0.000000,3.990000,-4.000001
+	attPos = 0,0,0
+	attPos0 = 0.000000,3.990000,-4.000001
+	rot = 0.500000034,-0.500000034,0.500000034,0.500000034
+	attRot = 0,0,0,1
+	attRot0 = 0.500000034,-0.500000034,0.500000034,0.500000034
+	mir = 1,1,1
+	symMethod = Mirror
+	autostrutMode = Off
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = 0
+	attm = 1
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,B9.Aero.Wing.Procedural.TypeA_4294200007
+	MODULE
+	{
+		name = WingProcedural
+		isEnabled = True
+		isAttached = True
+		isSetToDefaultValues = True
+		sharedBaseLength = 5.6
+		sharedBaseWidthRoot = 2
+		sharedBaseWidthTip = 2
+		sharedBaseOffsetRoot = 0
+		sharedBaseOffsetTip = 0
+		sharedBaseThicknessRoot = 0.02
+		sharedBaseThicknessTip = 0.02
+		sharedEdgeTypeLeading = 2
+		sharedEdgeWidthLeadingRoot = 0
+		sharedEdgeWidthLeadingTip = 0
+		sharedEdgeTypeTrailing = 3
+		sharedEdgeWidthTrailingRoot = 0
+		sharedEdgeWidthTrailingTip = 0
+		sharedMaterialST = 1
+		sharedColorSTOpacity = 0
+		sharedColorSTHue = 0.100000001
+		sharedColorSTSaturation = 0.75
+		sharedColorSTBrightness = 0.600000024
+		sharedMaterialSB = 4
+		sharedColorSBOpacity = 0
+		sharedColorSBHue = 0.100000001
+		sharedColorSBSaturation = 0.75
+		sharedColorSBBrightness = 0.600000024
+		sharedMaterialET = 4
+		sharedColorETOpacity = 0
+		sharedColorETHue = 0.100000001
+		sharedColorETSaturation = 0.75
+		sharedColorETBrightness = 0.600000024
+		sharedMaterialEL = 4
+		sharedColorELOpacity = 0
+		sharedColorELHue = 0.100000001
+		sharedColorELSaturation = 0.75
+		sharedColorELBrightness = 0.600000024
+		sharedSweptAngleFront = 90
+		sharedSweptAngleBack = 90
+		sharedArmorRatio = 0
+		sweepMode = 0
+		sharedVariableSweep = False
+		sharedMaxSweepAngle = 45
+		sweepDriveJoint = False
+		sweepInvertFlaps = False
+		sweepFlapLevel = 0
+		aeroUIMass = 0
+		stockLiftCoefficient = 0
+		aeroIsLiftingSurface = True
+		aeroStatMeanAerodynamicChord = 3.7000001072883606
+		aeroStatSemispan = 14.800000190734863
+		aeroStatMidChordSweep = 20.894692542102764
+		aeroStatTaperRatio = 0.17460317310141993
+		fuelSelectedTankSetup = 1
+		stagingEnabled = True
+		mirrorTexturing = False
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			SweepFlapMoreAction
+			{
+				actionGroup = None
+				active = False
+			}
+			SweepFlapLessAction
+			{
+				actionGroup = None
+				active = False
+			}
+			SweepFlapToggleAction
+			{
+				actionGroup = None
+				active = False
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARWingAerodynamicModel
+		isEnabled = True
+		hullPlate = True
+		massMultiplier = 0.3
+		massOverride = -3.40282347E+38
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = GeometryPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARAeroPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+}
+PART
+{
+	part = B9.Aero.Wing.Procedural.TypeA_4294200006
+	partName = Part
+	pos = 0.000000,3.990455,1.597017
+	attPos = 0,0,0
+	attPos0 = 0.000000,3.990455,1.597017
+	rot = 0.569709393,-0.569709393,0.418845169,0.418845169
+	attRot = 0,0,0,1
+	attRot0 = 0.569709393,-0.569709393,0.418845169,0.418845169
+	mir = 1,1,1
+	symMethod = Mirror
+	autostrutMode = Off
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = 0
+	attm = 1
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,B9.Aero.Wing.Procedural.TypeA_4294200004
+	MODULE
+	{
+		name = WingProcedural
+		isEnabled = True
+		isAttached = True
+		isSetToDefaultValues = True
+		sharedBaseLength = 2.51446
+		sharedBaseWidthRoot = 2
+		sharedBaseWidthTip = 2
+		sharedBaseOffsetRoot = 0
+		sharedBaseOffsetTip = 0
+		sharedBaseThicknessRoot = 0.02
+		sharedBaseThicknessTip = 0.02
+		sharedEdgeTypeLeading = 2
+		sharedEdgeWidthLeadingRoot = 0
+		sharedEdgeWidthLeadingTip = 0
+		sharedEdgeTypeTrailing = 3
+		sharedEdgeWidthTrailingRoot = 0
+		sharedEdgeWidthTrailingTip = 0
+		sharedMaterialST = 1
+		sharedColorSTOpacity = 0
+		sharedColorSTHue = 0.100000001
+		sharedColorSTSaturation = 0.75
+		sharedColorSTBrightness = 0.600000024
+		sharedMaterialSB = 4
+		sharedColorSBOpacity = 0
+		sharedColorSBHue = 0.100000001
+		sharedColorSBSaturation = 0.75
+		sharedColorSBBrightness = 0.600000024
+		sharedMaterialET = 4
+		sharedColorETOpacity = 0
+		sharedColorETHue = 0.100000001
+		sharedColorETSaturation = 0.75
+		sharedColorETBrightness = 0.600000024
+		sharedMaterialEL = 4
+		sharedColorELOpacity = 0
+		sharedColorELHue = 0.100000001
+		sharedColorELSaturation = 0.75
+		sharedColorELBrightness = 0.600000024
+		sharedSweptAngleFront = 90
+		sharedSweptAngleBack = 90
+		sharedArmorRatio = 0
+		sweepMode = 0
+		sharedVariableSweep = False
+		sharedMaxSweepAngle = 45
+		sweepDriveJoint = False
+		sweepInvertFlaps = False
+		sweepFlapLevel = 0
+		aeroUIMass = 0
+		stockLiftCoefficient = 0
+		aeroIsLiftingSurface = True
+		aeroStatMeanAerodynamicChord = 3.7000001072883606
+		aeroStatSemispan = 14.800000190734863
+		aeroStatMidChordSweep = 20.894692542102764
+		aeroStatTaperRatio = 0.17460317310141993
+		fuelSelectedTankSetup = 1
+		stagingEnabled = True
+		mirrorTexturing = False
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			SweepFlapMoreAction
+			{
+				actionGroup = None
+				active = False
+			}
+			SweepFlapLessAction
+			{
+				actionGroup = None
+				active = False
+			}
+			SweepFlapToggleAction
+			{
+				actionGroup = None
+				active = False
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARWingAerodynamicModel
+		isEnabled = True
+		hullPlate = True
+		massMultiplier = 0.3
+		massOverride = -3.40282347E+38
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = GeometryPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARAeroPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+}
+PART
+{
+	part = B9.Aero.Wing.Procedural.TypeA_4294200007
+	partName = Part
+	pos = -0.990000,3.000000,-4.000001
+	attPos = 0,0,0
+	attPos0 = -0.990000,3.000000,-4.000001
+	rot = 0,-0.707106829,0,0.707106829
+	attRot = 0,0,0,1
+	attRot0 = 0,-0.707106829,0,0.707106829
+	mir = 1,1,1
+	symMethod = Mirror
+	autostrutMode = Off
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = 0
+	attm = 1
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = B9.Aero.Wing.Procedural.TypeA_4294200001
+	link = B9.Aero.Wing.Procedural.TypeA_4294200005
+	srfN = srfAttach,B9.Aero.Wing.Procedural.TypeA_4294200009
+	MODULE
+	{
+		name = WingProcedural
+		isEnabled = True
+		isAttached = True
+		isSetToDefaultValues = True
+		sharedBaseLength = 5.6
+		sharedBaseWidthRoot = 2
+		sharedBaseWidthTip = 2
+		sharedBaseOffsetRoot = 0
+		sharedBaseOffsetTip = 0
+		sharedBaseThicknessRoot = 0.02
+		sharedBaseThicknessTip = 0.02
+		sharedEdgeTypeLeading = 2
+		sharedEdgeWidthLeadingRoot = 0
+		sharedEdgeWidthLeadingTip = 0
+		sharedEdgeTypeTrailing = 3
+		sharedEdgeWidthTrailingRoot = 0
+		sharedEdgeWidthTrailingTip = 0
+		sharedMaterialST = 1
+		sharedColorSTOpacity = 0
+		sharedColorSTHue = 0.100000001
+		sharedColorSTSaturation = 0.75
+		sharedColorSTBrightness = 0.600000024
+		sharedMaterialSB = 4
+		sharedColorSBOpacity = 0
+		sharedColorSBHue = 0.100000001
+		sharedColorSBSaturation = 0.75
+		sharedColorSBBrightness = 0.600000024
+		sharedMaterialET = 4
+		sharedColorETOpacity = 0
+		sharedColorETHue = 0.100000001
+		sharedColorETSaturation = 0.75
+		sharedColorETBrightness = 0.600000024
+		sharedMaterialEL = 4
+		sharedColorELOpacity = 0
+		sharedColorELHue = 0.100000001
+		sharedColorELSaturation = 0.75
+		sharedColorELBrightness = 0.600000024
+		sharedSweptAngleFront = 90
+		sharedSweptAngleBack = 90
+		sharedArmorRatio = 0
+		sweepMode = 0
+		sharedVariableSweep = False
+		sharedMaxSweepAngle = 45
+		sweepDriveJoint = False
+		sweepInvertFlaps = False
+		sweepFlapLevel = 0
+		aeroUIMass = 0
+		stockLiftCoefficient = 0
+		aeroIsLiftingSurface = True
+		aeroStatMeanAerodynamicChord = 3.7000001072883606
+		aeroStatSemispan = 14.800000190734863
+		aeroStatMidChordSweep = 20.894692542102764
+		aeroStatTaperRatio = 0.17460317310141993
+		fuelSelectedTankSetup = 1
+		stagingEnabled = True
+		mirrorTexturing = False
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			SweepFlapMoreAction
+			{
+				actionGroup = None
+				active = False
+			}
+			SweepFlapLessAction
+			{
+				actionGroup = None
+				active = False
+			}
+			SweepFlapToggleAction
+			{
+				actionGroup = None
+				active = False
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARWingAerodynamicModel
+		isEnabled = True
+		hullPlate = True
+		massMultiplier = 0.3
+		massOverride = -3.40282347E+38
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = GeometryPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARAeroPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+}
+PART
+{
+	part = B9.Aero.Wing.Procedural.TypeA_4294200008
+	partName = Part
+	pos = -0.990000,3.000000,1.600000
+	attPos = 0,0,0
+	attPos0 = -0.990000,3.000000,1.600000
+	rot = 0,-0.707106829,0,0.707106829
+	attRot = 0,0,0,1
+	attRot0 = 0,-0.707106829,0,0.707106829
+	mir = 1,1,1
+	symMethod = Mirror
+	autostrutMode = Off
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = 0
+	attm = 1
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = B9.Aero.Wing.Procedural.TypeA_4294200010
+	srfN = srfAttach,B9.Aero.Wing.Procedural.TypeA_4294200002
+	MODULE
+	{
+		name = WingProcedural
+		isEnabled = True
+		isAttached = True
+		isSetToDefaultValues = True
+		sharedBaseLength = 2.4
+		sharedBaseWidthRoot = 2
+		sharedBaseWidthTip = 0.5
+		sharedBaseOffsetRoot = 0
+		sharedBaseOffsetTip = 0
+		sharedBaseThicknessRoot = 0.02
+		sharedBaseThicknessTip = 0.02
+		sharedEdgeTypeLeading = 2
+		sharedEdgeWidthLeadingRoot = 0
+		sharedEdgeWidthLeadingTip = 0
+		sharedEdgeTypeTrailing = 3
+		sharedEdgeWidthTrailingRoot = 0
+		sharedEdgeWidthTrailingTip = 0
+		sharedMaterialST = 1
+		sharedColorSTOpacity = 0
+		sharedColorSTHue = 0.100000001
+		sharedColorSTSaturation = 0.75
+		sharedColorSTBrightness = 0.600000024
+		sharedMaterialSB = 4
+		sharedColorSBOpacity = 0
+		sharedColorSBHue = 0.100000001
+		sharedColorSBSaturation = 0.75
+		sharedColorSBBrightness = 0.600000024
+		sharedMaterialET = 4
+		sharedColorETOpacity = 0
+		sharedColorETHue = 0.100000001
+		sharedColorETSaturation = 0.75
+		sharedColorETBrightness = 0.600000024
+		sharedMaterialEL = 4
+		sharedColorELOpacity = 0
+		sharedColorELHue = 0.100000001
+		sharedColorELSaturation = 0.75
+		sharedColorELBrightness = 0.600000024
+		sharedSweptAngleFront = 90
+		sharedSweptAngleBack = 90
+		sharedArmorRatio = 0
+		sweepMode = 0
+		sharedVariableSweep = False
+		sharedMaxSweepAngle = 45
+		sweepDriveJoint = False
+		sweepInvertFlaps = False
+		sweepFlapLevel = 0
+		aeroUIMass = 0
+		stockLiftCoefficient = 0
+		aeroIsLiftingSurface = True
+		aeroStatMeanAerodynamicChord = 3.7000001072883606
+		aeroStatSemispan = 14.800000190734863
+		aeroStatMidChordSweep = 20.894692542102764
+		aeroStatTaperRatio = 0.17460317310141993
+		fuelSelectedTankSetup = 1
+		stagingEnabled = True
+		mirrorTexturing = False
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			SweepFlapMoreAction
+			{
+				actionGroup = None
+				active = False
+			}
+			SweepFlapLessAction
+			{
+				actionGroup = None
+				active = False
+			}
+			SweepFlapToggleAction
+			{
+				actionGroup = None
+				active = False
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARWingAerodynamicModel
+		isEnabled = True
+		hullPlate = True
+		massMultiplier = 0.3
+		massOverride = -3.40282347E+38
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = GeometryPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARAeroPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+}
+PART
+{
+	part = B9.Aero.Wing.Procedural.TypeA_4294200009
+	partName = Part
+	pos = -1.000000,3.000000,-3.990001
+	attPos = 0,0,0
+	attPos0 = -1.000000,3.000000,-3.990001
+	rot = 1.11022302e-16,0,0,1.00000007
+	attRot = 0,0,0,1
+	attRot0 = 1.11022302e-16,0,0,1.00000007
+	mir = 1,1,1
+	symMethod = Mirror
+	autostrutMode = Off
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = 0
+	attm = 1
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	link = B9.Aero.Wing.Procedural.TypeA_4294200007
+	srfN = srfAttach,proceduralTankLiquid_4294200000
+	MODULE
+	{
+		name = WingProcedural
+		isEnabled = True
+		isAttached = True
+		isSetToDefaultValues = True
+		sharedBaseLength = 2
+		sharedBaseWidthRoot = 2
+		sharedBaseWidthTip = 2
+		sharedBaseOffsetRoot = 0
+		sharedBaseOffsetTip = 0
+		sharedBaseThicknessRoot = 0.02
+		sharedBaseThicknessTip = 0.02
+		sharedEdgeTypeLeading = 2
+		sharedEdgeWidthLeadingRoot = 0
+		sharedEdgeWidthLeadingTip = 0
+		sharedEdgeTypeTrailing = 3
+		sharedEdgeWidthTrailingRoot = 0
+		sharedEdgeWidthTrailingTip = 0
+		sharedMaterialST = 1
+		sharedColorSTOpacity = 0
+		sharedColorSTHue = 0.100000001
+		sharedColorSTSaturation = 0.75
+		sharedColorSTBrightness = 0.600000024
+		sharedMaterialSB = 4
+		sharedColorSBOpacity = 0
+		sharedColorSBHue = 0.100000001
+		sharedColorSBSaturation = 0.75
+		sharedColorSBBrightness = 0.600000024
+		sharedMaterialET = 4
+		sharedColorETOpacity = 0
+		sharedColorETHue = 0.100000001
+		sharedColorETSaturation = 0.75
+		sharedColorETBrightness = 0.600000024
+		sharedMaterialEL = 4
+		sharedColorELOpacity = 0
+		sharedColorELHue = 0.100000001
+		sharedColorELSaturation = 0.75
+		sharedColorELBrightness = 0.600000024
+		sharedSweptAngleFront = 90
+		sharedSweptAngleBack = 90
+		sharedArmorRatio = 0
+		sweepMode = 0
+		sharedVariableSweep = False
+		sharedMaxSweepAngle = 45
+		sweepDriveJoint = False
+		sweepInvertFlaps = False
+		sweepFlapLevel = 0
+		aeroUIMass = 0
+		stockLiftCoefficient = 0
+		aeroIsLiftingSurface = True
+		aeroStatMeanAerodynamicChord = 3.7000001072883606
+		aeroStatSemispan = 14.800000190734863
+		aeroStatMidChordSweep = 20.894692542102764
+		aeroStatTaperRatio = 0.17460317310141993
+		fuelSelectedTankSetup = 1
+		stagingEnabled = True
+		mirrorTexturing = False
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			SweepFlapMoreAction
+			{
+				actionGroup = None
+				active = False
+			}
+			SweepFlapLessAction
+			{
+				actionGroup = None
+				active = False
+			}
+			SweepFlapToggleAction
+			{
+				actionGroup = None
+				active = False
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARWingAerodynamicModel
+		isEnabled = True
+		hullPlate = True
+		massMultiplier = 0.3
+		massOverride = -3.40282347E+38
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = GeometryPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARAeroPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+}
+PART
+{
+	part = B9.Aero.Wing.Procedural.TypeA_4294200010
+	partName = Part
+	pos = -1.000000,3.000000,3.990001
+	attPos = 0,0,0
+	attPos0 = -1.000000,3.000000,3.990001
+	rot = 1.11022302e-16,0,0,1.00000007
+	attRot = 0,0,0,1
+	attRot0 = 1.11022302e-16,0,0,1.00000007
+	mir = 1,1,1
+	symMethod = Mirror
+	autostrutMode = Off
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = 0
+	attm = 1
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	srfN = srfAttach,B9.Aero.Wing.Procedural.TypeA_4294200008
+	MODULE
+	{
+		name = WingProcedural
+		isEnabled = True
+		isAttached = True
+		isSetToDefaultValues = True
+		sharedBaseLength = 2
+		sharedBaseWidthRoot = 0.5
+		sharedBaseWidthTip = 0.5
+		sharedBaseOffsetRoot = 0
+		sharedBaseOffsetTip = 0
+		sharedBaseThicknessRoot = 0.02
+		sharedBaseThicknessTip = 0.02
+		sharedEdgeTypeLeading = 2
+		sharedEdgeWidthLeadingRoot = 0
+		sharedEdgeWidthLeadingTip = 0
+		sharedEdgeTypeTrailing = 3
+		sharedEdgeWidthTrailingRoot = 0
+		sharedEdgeWidthTrailingTip = 0
+		sharedMaterialST = 1
+		sharedColorSTOpacity = 0
+		sharedColorSTHue = 0.100000001
+		sharedColorSTSaturation = 0.75
+		sharedColorSTBrightness = 0.600000024
+		sharedMaterialSB = 4
+		sharedColorSBOpacity = 0
+		sharedColorSBHue = 0.100000001
+		sharedColorSBSaturation = 0.75
+		sharedColorSBBrightness = 0.600000024
+		sharedMaterialET = 4
+		sharedColorETOpacity = 0
+		sharedColorETHue = 0.100000001
+		sharedColorETSaturation = 0.75
+		sharedColorETBrightness = 0.600000024
+		sharedMaterialEL = 4
+		sharedColorELOpacity = 0
+		sharedColorELHue = 0.100000001
+		sharedColorELSaturation = 0.75
+		sharedColorELBrightness = 0.600000024
+		sharedSweptAngleFront = 90
+		sharedSweptAngleBack = 90
+		sharedArmorRatio = 0
+		sweepMode = 0
+		sharedVariableSweep = False
+		sharedMaxSweepAngle = 45
+		sweepDriveJoint = False
+		sweepInvertFlaps = False
+		sweepFlapLevel = 0
+		aeroUIMass = 0
+		stockLiftCoefficient = 0
+		aeroIsLiftingSurface = True
+		aeroStatMeanAerodynamicChord = 3.7000001072883606
+		aeroStatSemispan = 14.800000190734863
+		aeroStatMidChordSweep = 20.894692542102764
+		aeroStatTaperRatio = 0.17460317310141993
+		fuelSelectedTankSetup = 1
+		stagingEnabled = True
+		mirrorTexturing = False
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			SweepFlapMoreAction
+			{
+				actionGroup = None
+				active = False
+			}
+			SweepFlapLessAction
+			{
+				actionGroup = None
+				active = False
+			}
+			SweepFlapToggleAction
+			{
+				actionGroup = None
+				active = False
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARWingAerodynamicModel
+		isEnabled = True
+		hullPlate = True
+		massMultiplier = 0.3
+		massOverride = -3.40282347E+38
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = GeometryPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARAeroPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+}

@@ -43,6 +43,8 @@
         <!-- this repository's FAR build over CKAN's: FarGameData (a property, or the environment), else GameData/ -->
         <KspOverlay Include="$(FarGameData)" Condition="'$(FarGameData)' != ''" />
         <KspOverlay Include="..\..\GameData\FerramAerospaceResearch" Condition="'$(FarGameData)' == ''" />
+        <!-- a B9 Procedural Wings build over CKAN's: B9GameData (a property, or the environment; its B9_Aerospace_ProceduralWings) -->
+        <KspOverlay Include="$(B9GameData)" Condition="'$(B9GameData)' != ''" />
     </ItemGroup>
     <ItemGroup>
         <!-- the crafts the tests fly that KSP and FAR do not ship as they are, put into every run's save -->
