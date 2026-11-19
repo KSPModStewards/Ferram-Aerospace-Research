@@ -29,6 +29,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
     ///   leaves, not under the level water;
     /// - crossflow drag 1/2 Cd rho w V|V| per strip (damping when U is small);
     /// - impact pressure 1/2 Cp rho vn^2 on steep faces moving into the water (a blunt bow);
+    /// - entry: the momentum the water a hull newly wets takes up as it sinks into it (von Karman's water entry), as the
+    ///   hull's added mass in heave grows, in so far as it is more than the crossflow drag gives that step (a flat face
+    ///   meeting the water square on: all of it at once; a wedge or a ball: as it wets);
     /// - skin friction (ITTC-57) on the wetted area.
     /// A part whose mesh is closed takes its buoyancy from the water pressure on it; others keep stock's. A mesh's open
     /// edges (a B9 wing's pieces leave its root, tip and joins open) are capped for the pressure alone: the pressure on
@@ -59,6 +62,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
         public static double CrossflowDragIn = 1.0;
         public static double CrossflowDragOut = 0.5;
         public static double ImpactPressureCoefficient = 1.0;
+        public static double EntryAddedMass = 1.0;   // the entry momentum's share (0: none)
         public static double StripLength = 0.25;
         public static double PlaningBuoyancy = 0.75;  // share of the hydrostatic force kept once planing (1: all of it)
         // the C_V (on the mean wetted beam) over which it fades to PlaningBuoyancy (from 1 to 3: TN 470's 11-A 0.3 in low
@@ -74,8 +78,10 @@ namespace FerramAerospaceResearch.FARAeroComponents
         // water (an afterbody at a trim past its own keel angle), and carries its pressure below the line
         public static double WakeSlope = 0.25;
         // under the water: the share of a shrinking section's momentum change the flow gives back (1: potential flow,
-        // Munk's pure couple; 0: separated at the largest section, its lift and none of the couple aft of it)
-        public static double SubmergedRecovery = 0.65;
+        // Munk's pure couple; 0: separated at the largest section, its lift and none of the couple aft of it). The body's
+        // linear side force goes with 1 minus it: 0.75, DARPA SUBOFF's bare hull Y'v within 5% of Roddy's (N'v 1.08x;
+        // 0.65: Y'v 1.34x, on a hull of its true volume), and with its stern fins Y'v, N'v, Y'r and N'r within 5%
+        public static double SubmergedRecovery = 0.75;
         // under the water: crossflow drag coefficient of each side's strips on the flow across the body, either way (a
         // body's crossflow drag, Allen and Perkins: about 0.6 on its whole width, both sides). 0.45: DARPA SUBOFF's yaw
         // damping (N'r 0.9 of Roddy's, bare and with fins) with its side force at 18 deg drift within 25% (0.4: the
@@ -102,6 +108,16 @@ namespace FerramAerospaceResearch.FARAeroComponents
         // hold up), from C_V 1 fading out as the planing lift comes in (LowSpeedLiftFullCv), as C_V^2 below 1 (TN 470's
         // 11-A at C_V 1 to 1.5 has about twice the resistance its planing terms give, at every trim)
         public static double WaveDrag = 0.045;
+        // the waves a hull heaving, pitching or rolling at the surface makes, carrying its energy away (radiation
+        // damping: what settles a ship within a few periods; the crossflow drag, V|V|, is next to none at small motions):
+        // a pressure RadiationDamping rho sqrt(g B) times its bottom's vertical speed on its planform, B the strip's
+        // wetted beam (a heaving strip's wave speed's scale; 0.25: a ship's heave about 0.2 of critical, its 1 m float's
+        // much the same), fading with its section under the water as the strips' terms do; roll RadiationRollShare of
+        // it (a ship's roll is lightly damped: its bilges radiate little)
+        public static double RadiationDamping = 0.25, RadiationRollShare = 0.3;
+        // ... fading out from a strip's beam Froude number C_V RadiationFadeCv to 2.5x it (moving, its strips'
+        // momentum damps its heave and pitch: the waves it radiates are a slow hull's damping, not a planing one's)
+        public static double RadiationFadeCv = 0.4;
         // a foil on a hull wholly under the water: the share (1: all of it) of the hull's upwash it feels as the hull
         // turns (FARWingAerodynamicModel.HullUpwash)
         public static double FoilHullUpwash = 1;
@@ -111,6 +127,18 @@ namespace FerramAerospaceResearch.FARAeroComponents
         // Spine collider of 6260: 13 ms a step on a floatplane in waves, 1.7 ms simplified), and a grid's clustering
         // to a count rounded off the step and chines (TN 470's 11-A 1.4 - 1.5x at 5 - 7 deg)
         public static double MeshSimplifyTolerance = 0.003, MeshSimplifyShare = 0.0025, MeshSimplifyMinTriangles = 500;
+        // ... and a part under SmallPartShare of its vessel's size (its bounds' volume's cube root: a long thin shaft line
+        // is small), within the larger of that and SmallPartVesselShare of the vessel's size, at most SmallPartOwnShare
+        // of its own length and SmallPartThinShare of its smallest size (a thin plate keeps its thickness): its detail
+        // is nothing to its hull's flow, and it costs as much as any (a 70 m ship's two propellers at 3 mm, 1224
+        // triangles each against its hull's 404, were most of its polygons, its lee rays' targets and a 46 ms
+        // closed-in rebuild each)
+        public static double SmallPartShare = 0.05, SmallPartVesselShare = 0.002, SmallPartOwnShare = 0.01, SmallPartThinShare = 0.1;
+        // a wet face's lee (whether the flow reaches it, a ray upstream) kept per (triangle, strip) and cast again each
+        // LeeRefreshSteps steps (staggered), or at once when the flow's direction in its part turns more than LeeRefreshTurn
+        // (cos): the rays graze the hull along its length, ~10 us each, 940 a step on a 70 m ship (9 ms)
+        public const int LeeRefreshSteps = 10;
+        public const float LeeRefreshTurn = 0.9986f;   // (3 deg)
         // a foil in the water hands its force to the first of its parents that is not a foil, whether or not that part is
         // in a hull (FARWingAerodynamicModel.WaterHost; false: only to a hull's part, as before: tests compare)
         public static bool FoilHostAnyBody = true;
@@ -124,16 +152,23 @@ namespace FerramAerospaceResearch.FARAeroComponents
         /// Stock's water drag and angular drag on the wet parts' rigidbodies (PartBuoyancy, FlightIntegrator), on top of
         /// this model's own damping: as stock applies them (Unity's rigidbody damping, which on a vessel of several parts
         /// puts a moment on it: it damps each part's share of the forces the joints pass on), as forces from each part's
-        /// motion (Explicit: the same damping, none at rest), or none (the rigidbodies keep the air's angular drag).
+        /// motion (Explicit: the same damping, none at rest), or none (the rigidbodies keep the air's angular drag; the
+        /// default: stock's linear drag slowed a body plunging into the water well past what the water does, its depth
+        /// after a drop short of SPH's; a floatplane porpoises without it, to be damped by the model itself).
         /// </summary>
         public enum WaterDampingMode { Stock, Explicit, None }
-        public static WaterDampingMode WaterDamping = WaterDampingMode.Stock;
+        public static WaterDampingMode WaterDamping = WaterDampingMode.None;
         // a mesh whose area-weighted normals sum to more than this share of its area is not closed: its hydrostatic
         // pressure would not add up to a buoyancy, and stock's stays
         public const double ClosureTolerance = 0.02;
         // nor one whose open edges take caps of more than this share of its area: a cap fanned across a large gap (a
         // missing face) need not follow the body
         public const double CapTolerance = 0.05;
+        // ...unless its caps are flat (each loop within FlatCapFlatness of its size off its plane: an open hull's rim, a
+        // shell's open end: the cap stands for the deck it lacks, nothing while the rim is out of the water) and close
+        // it, its area vectors' sum after them under CappedResidual of its area (a loop walked only partly, a cap that
+        // closes it roughly: on a small part sunk deep the pressure on the rest pushed it sideways), up to FlatCapShare
+        public const double FlatCapShare = 0.75, FlatCapFlatness = 0.02, CappedResidual = 1e-3;
         public const int MinStrips = 4, MaxStrips = 40;
         // a face this far (m) out along its normal inside another part: the two parts meet there
         public const float ContactProbe = 0.005f;
@@ -178,17 +213,27 @@ namespace FerramAerospaceResearch.FARAeroComponents
         internal readonly List<Vector3> PolyVerts = new List<Vector3>();
         internal readonly List<int> PolyCounts = new List<int>();
         internal readonly List<Vector3> PolyNormals = new List<Vector3>();
+        internal readonly List<int> PolyTris = new List<int>();   // each polygon's triangle (its index in the mesh)
+        // the lee cache: per (triangle, strip), the flow's direction (part space) it was cast for, the refresh period it
+        // was cast in, and whether the face was in the lee then
+        private readonly Dictionary<int, (Vector3 dir, int period, bool lee)> leeCache = new Dictionary<int, (Vector3, int, bool)>();
+        private int gatherCount;
         private readonly List<Vector3> scratchA = new List<Vector3>(8);
         // each wet fan triangle's hydrostatic force and moment about the part's CoM, and its centroid
         internal readonly List<Vector3> HsForces = new List<Vector3>(), HsTorques = new List<Vector3>(), HsPoints = new List<Vector3>();
         internal double Gravity;
         internal Vector3 Origin;
         internal float OriginDepth;   // Origin's depth below the water (m)
-        // a FAR wing part: a foil, FAR's wing model gives it its water forces (its buoyancy only here)
-        internal readonly bool Foil;
+        // a FAR wing part: a foil, FAR's wing model gives it its water forces (its buoyancy only here); a hull plate
+        // (FARWingAerodynamicModel.hullPlate) is no foil, its water this model's as any hull part's
+        private readonly ferram4.FARWingAerodynamicModel wingModel;
+        internal bool Foil => wingModel != null && !wingModel.IsHullPlate;
+        internal bool IsHullPlate => wingModel != null && wingModel.IsHullPlate;
 
         // the mesh is closed: its hydrostatic pressure is the part's buoyancy, which replaces stock's (part.buoyancy 0)
-        public bool OwnsBuoyancy { get; private set; }
+        // (and buoyancy from shape is on, FARDebugValues.shapeBuoyancy)
+        public bool OwnsBuoyancy => meshCloses && FARDebugValues.shapeBuoyancy;
+        private bool meshCloses;
         public double MeshVolume { get; private set; }
         public double OpenShare { get; private set; }   // the mesh's area vectors' sum over its area (0: closed), uncapped
         public double CapArea { get; private set; }     // the area of the caps on its open edges (m2)
@@ -200,7 +245,10 @@ namespace FerramAerospaceResearch.FARAeroComponents
         // what the last step did, for tests and display (kN, m2, m): this part's share of its hull's forces.
         // LastHydrostaticForce: the part's buoyancy when the mesh is closed, else the planing cut to stock's.
         // LastPlanform, LastWettedLength, LastLimiter, LastStrips: its hull's
-        public Vector3 LastForce, LastMomentumForce, LastFrictionForce, LastImpactForce, LastCrossflowForce, LastHydrostaticForce, LastWaveForce;
+        public Vector3 LastForce, LastMomentumForce, LastFrictionForce, LastImpactForce, LastCrossflowForce, LastHydrostaticForce, LastWaveForce,
+                       LastRadiationForce;
+        // the added mass in heave at the surface of the hull this part was in last step (kg), and when (water entry)
+        internal double EntryMa, EntryTime = double.NaN;
         public Vector3 LastHydrostaticTorque;   // kN m, about the part's CoM (the closed mesh's pressure)
         public Vector3 LastTorque;              // kN m, LastForce's about the part's CoM
         public double LastWettedArea, LastPlanform, LastWettedLength, LastLimiter = 1;
@@ -224,8 +272,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
         {
             this.part = part;
             foreach (PartModule m in part.Modules)
-                if (m is ferram4.FARWingAerodynamicModel)
-                    Foil = true;
+                if (m is ferram4.FARWingAerodynamicModel w)
+                    wingModel = w;
         }
 
         private bool EnsureMesh()
@@ -257,8 +305,13 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     b0.Encapsulate(w);
                 double smallest = Math.Min(b0.size.x, Math.Min(b0.size.y, b0.size.z));
                 double tol = Math.Min(MeshSimplifyTolerance, MeshSimplifyShare * smallest);
+                double largest = Math.Max(b0.size.x, Math.Max(b0.size.y, b0.size.z)), vesselSize = VesselSize();
+                double bulk = Math.Pow(Math.Max(b0.size.x, 1e-3) * Math.Max(b0.size.y, 1e-3) * Math.Max(b0.size.z, 1e-3), 1 / 3.0);
+                if (bulk < SmallPartShare * vesselSize)
+                    tol = Math.Max(tol, Math.Min(Math.Min(SmallPartVesselShare * vesselSize, SmallPartOwnShare * largest),
+                                                 SmallPartThinShare * smallest));
                 if (MeshSimplifier.Simplify(verts, t, tol) > 0)
-                    log.Append($"; simplified from {unsimplified} within {tol * 1000:F1} mm");
+                    log.Append($"; simplified from {unsimplified} within {tol * 1000:F1} mm (size {largest:F2} m, bulk {bulk:F2} m, vessel {vesselSize:F1} m)");
             }
 
             // closed and outward: the area vectors cancel and the enclosed volume (capped) is positive
@@ -271,9 +324,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 area += n2.magnitude * 0.5;
             }
             capStart = t.Count / 3;
-            CapArea = CapOpenEdges(verts, t, out int loops);
+            CapArea = CapOpenEdges(verts, t, out int loops, out double roughCap);
             if (loops > 0)
-                log.Append($"; {loops} open edge loops capped, {CapArea:F4} m2");
+                log.Append($"; {loops} open edge loops capped, {CapArea:F4} m2 ({roughCap:F4} not flat)");
             // (pieces together sealing a space in: their faces on it dropped, when that closes a hollow in, its volume
             // grown; pieces only overlapping, a B9 wing's, are left as they are: their buried faces' pressures cancel,
             // and dropping them left its skin's seams a little open)
@@ -306,14 +359,17 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 bounds.Encapsulate(w);
             localBounds = bounds;
             log.Append($"; part-space bounds {bounds.min:F3} to {bounds.max:F3}");
-            OwnsBuoyancy = area > 0 && volume > 0 && openSum.magnitude < ClosureTolerance * area && CapArea < CapTolerance * area;
+            meshCloses = area > 0 && volume > 0 &&
+                           (openSum.magnitude < ClosureTolerance * area && CapArea < CapTolerance * area ||
+                            loops > 0 && roughCap <= 0 && CapArea < FlatCapShare * area && areaSum.magnitude < CappedResidual * area);
             leakArea = areaSum;
             OpenShare = area > 0 ? openSum.magnitude / area : 1;
             if (!OwnsBuoyancy)
                 RestoreStockBuoyancy();
             FARLogger.Info($"Hydrodynamics of {part.partInfo?.name}: {t.Count / 3} triangles from FAR's meshes{log}; " +
                            $"volume {volume:F3} m3, open {OpenShare:F4} of its area: " +
-                           (OwnsBuoyancy ? "buoyancy from its pressure" : "stock buoyancy"));
+                           (meshCloses ? "buoyancy from its pressure" : "stock buoyancy") +
+                           (FARDebugValues.shapeBuoyancy ? "" : " (buoyancy from shape off: stock's)"));
             localVerts = verts.ToArray();
             tris = t.ToArray();
             worldVerts = new Vector3[localVerts.Length];
@@ -325,6 +381,24 @@ namespace FerramAerospaceResearch.FARAeroComponents
             meshVersion++;
             ProfileMeshTicks += Stopwatch.GetTimestamp() - t0;
             return tris.Length > 0;
+        }
+
+        // the vessel's size (m): the span of its parts' origins, and the largest part's own bounds (0 with no vessel)
+        private double VesselSize()
+        {
+            Vessel v = part.vessel;
+            if (v == null || v.parts.Count == 0)
+                return 0;
+            Transform root = v.rootPart != null ? v.rootPart.partTransform : part.partTransform;
+            var b = new Bounds(root.InverseTransformPoint(v.parts[0].partTransform.position), Vector3.zero);
+            float own = 0;
+            foreach (Part q in v.parts)
+            {
+                b.Encapsulate(root.InverseTransformPoint(q.partTransform.position));
+                foreach (Renderer r in q.GetComponentsInChildren<Renderer>(false))
+                    own = Math.Max(own, r.bounds.size.magnitude);
+            }
+            return Math.Max(b.size.magnitude, own);
         }
 
         /// <summary>
@@ -380,8 +454,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
         private bool[] shadowed;
         private long shadowKey = -1;
         private TriangleBvh shadowBvh;
-        // the neighbours' places in this part's space it was computed at (a hinge, a servo moves them)
-        private readonly List<Matrix4x4> shadowPoses = new List<Matrix4x4>(8);
+        // the neighbours' places in this part's space it was computed at (its triangles were put there), and their
+        // designed places (orgPos / orgRot: a hinge, a servo moves those; a joint's flex does not)
+        private readonly List<Matrix4x4> shadowPoses = new List<Matrix4x4>(8), shadowOrgPoses = new List<Matrix4x4>(8);
         // its neighbours two joints out (their modules: a neighbour's hydrodynamics comes once it is wet), found again
         // when a vessel's parts change (structureVersion)
         private readonly List<FARAeroPartModule> nearModules = new List<FARAeroPartModule>(16);
@@ -390,20 +465,26 @@ namespace FerramAerospaceResearch.FARAeroComponents
         private Vessel nearVessel;
         private static int structureVersion;
         private static bool structureHooked;
-        // a neighbour moved this far (m) or turned this far (its axes' change, ~10 deg) from its place: computed again, at
-        // most once in PoseEvery s (a hinge's, a servo's travel; a joint's flex under the water's load, a few cm on a big
-        // boat's keel foils every step, is not: rebuilt each step, 17 ms each, it took the frame rate)
+
+        private static void HookStructure()
+        {
+            if (structureHooked)
+                return;
+            structureHooked = true;
+            GameEvents.onVesselWasModified.Add(v => structureVersion++);
+        }
+        // a neighbour's designed place (orgPos / orgRot, relative to this part's) moved this far (m) or turned this far
+        // (its axes' change, ~10 deg): computed again, at most once in PoseEvery s (a hinge's, a servo's travel). Not
+        // its place now: a joint's flex is no change of shape, and a 70 m ship's hull, keel and rudder flex 0.3 m
+        // against its propellers under way, 1.1 m in waves (a 13 ms rebuild 1.4 times a second; a big boat's keel foils
+        // every step, 17 ms each, once took the frame rate)
         private const float PoseMove = 0.2f, PoseTurn = 0.17f, PoseEvery = 1f;
         private float shadowBuiltAt = float.NegativeInfinity;
         private int shadowLogged = -1;
 
         private void FindNear()
         {
-            if (!structureHooked)
-            {
-                structureHooked = true;
-                GameEvents.onVesselWasModified.Add(v => structureVersion++);
-            }
+            HookStructure();
             if (nearVersion == structureVersion && ReferenceEquals(nearVessel, part.vessel))
                 return;
             nearVersion = structureVersion;
@@ -429,21 +510,34 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     nearModules.Add(m);
         }
 
+        private string poseWhy = "";
+        // a part's designed place in this part's space (from the vessel's orgPos / orgRot, which flex leaves alone)
+        private Matrix4x4 OrgPose(Part q) =>
+            Matrix4x4.TRS(part.orgPos, part.orgRot, Vector3.one).inverse * Matrix4x4.TRS(q.orgPos, q.orgRot, Vector3.one);
         private bool PosesMoved()
         {
-            if (shadowPoses.Count != nb.Count)
+            if (shadowOrgPoses.Count != nb.Count)
+            {
+                poseWhy = "neighbours changed";
                 return true;
-            Matrix4x4 toMe = part.partTransform.worldToLocalMatrix;
+            }
             for (int i = 0; i < nb.Count; i++)
             {
-                Matrix4x4 now = toMe * nb[i].part.partTransform.localToWorldMatrix, was = shadowPoses[i];
-                if ((now.GetColumn(3) - was.GetColumn(3)).sqrMagnitude > PoseMove * PoseMove)
+                Matrix4x4 now = OrgPose(nb[i].part), was = shadowOrgPoses[i];
+                float moved = (now.GetColumn(3) - was.GetColumn(3)).magnitude;
+                if (moved > PoseMove)
+                {
+                    poseWhy = $"{nb[i].part.partInfo?.name} moved {moved:F2} m";
                     return true;
+                }
                 for (int c = 0; c < 3; c++)
                 {
                     Vector4 a = now.GetColumn(c), b = was.GetColumn(c);
                     if ((a - b).sqrMagnitude > PoseTurn * PoseTurn * b.sqrMagnitude)
+                    {
+                        poseWhy = $"{nb[i].part.partInfo?.name} turned {Mathf.Sqrt((a - b).sqrMagnitude / Mathf.Max(b.sqrMagnitude, 1e-12f)) * Mathf.Rad2Deg:F1} deg";
                         return true;
+                    }
                 }
             }
             return false;
@@ -452,13 +546,379 @@ namespace FerramAerospaceResearch.FARAeroComponents
         /// <summary>
         /// Whether a face's point (world, just off it) is in the lee of this part's or its neighbours' bodies along a
         /// direction (world: upstream, the way the face moves through the water): a ray from it that way meets them.
+        /// Kept per (triangle, strip) (LeeRefreshSteps, LeeRefreshTurn); cast reports whether a ray went out.
         /// </summary>
-        internal bool Lee(Vector3 point, Vector3 dir)
+        internal bool LeeCached(int tri, int strip, Vector3 point, Vector3 dir, out bool cast)
         {
+            cast = false;
             if (shadowBvh == null)
                 return false;
             Transform tf = part.partTransform;
-            return shadowBvh.AnyHit(tf.InverseTransformPoint(point), tf.InverseTransformDirection(dir).normalized, -1);
+            Vector3 d = tf.InverseTransformDirection(dir).normalized;
+            int key = tri * 64 + strip;
+            // (each entry's period offset by its key: the casts spread over the steps, not all in one)
+            int period = (gatherCount + (key & 0x7fffffff) % LeeRefreshSteps) / LeeRefreshSteps;
+            if (leeCache.TryGetValue(key, out var e) && e.period == period && Vector3.Dot(e.dir, d) > LeeRefreshTurn)
+                return e.lee;
+            cast = true;
+            bool lee = shadowBvh.AnyHit(tf.InverseTransformPoint(point), d, -1);
+            leeCache[key] = (d, period, lee);
+            return lee;
+        }
+
+        // --- faces the sea doesn't reach: the air a hull holds (an open boat's hollow, a skin of plates' inside) ---
+
+        // the faces of this part's mesh no sea water reaches past the meshes around it (DryFaces): not one ray from the
+        // face over the half it looks into gets to the open sea. A ray that leaves level or downward and meets nothing is
+        // in it; one that rises and meets nothing short of the surface came up through open water if the surface there
+        // is open (a level ray from it meets nothing) and through the hull's own opening if not (every level ray from it
+        // meets the hull's walls). An open boat's inner wall and floor (the hollow walled round, open above the water)
+        // are dry, and a decked hull's inside; a submarine's top stays wet, its rays rising to an open surface. Once the
+        // rim goes under, the surface over the hollow is open and it floods. Neither pressure nor flow on a dry face.
+        // The meshes: the part's own (an open boat as one closed mesh, its deck caved in), and for a hull plate
+        // (FARWingAerodynamicModel.hullPlate) the vessel's (VesselMeshes: the plates and the deck together). Faces a ray
+        // over their half meets the meshes at all are the only ones that can be dry (DryCandidates, once a mesh): a
+        // convex part has none. The rest depends on the water's level and the hull's attitude: computed again when
+        // the level moves DryLevelStep or the attitude DryTurn.
+        private bool[] dryFaces, dryCandidates;
+        private long dryKey = long.MinValue, dryCandidateKey = long.MinValue;
+        private int dryLogged = -1;
+        private TriangleBvh ownBvh;
+        private int ownBvhVersion = -1;
+        private const float DryLevelStep = 0.05f, DryTurn = 0.05f;
+
+        private TriangleBvh OwnBvh()
+        {
+            if (ownBvh != null && ownBvhVersion == meshVersion)
+                return ownBvh;
+            int n = tris.Length / 3;
+            var ta = new Vector3[n];
+            var te1 = new Vector3[n];
+            var te2 = new Vector3[n];
+            for (int i = 0; i < n; i++)
+            {
+                Vector3 a = localVerts[tris[3 * i]];
+                ta[i] = a;
+                te1[i] = localVerts[tris[3 * i + 1]] - a;
+                te2[i] = localVerts[tris[3 * i + 2]] - a;
+            }
+            ownBvh = new TriangleBvh(ta, te1, te2);
+            ownBvhVersion = meshVersion;
+            return ownBvh;
+        }
+
+        /// <summary>The faces dry this step (null: none), for the water's up (world) and this part's origin's depth.</summary>
+        private bool[] DryFaces(Vector3 upWorld, double depth0)
+        {
+            TriangleBvh bvh;
+            Matrix4x4 toBvh;
+            int baseIndex;
+            long version;
+            if (IsHullPlate)
+            {
+                VesselMeshes vm = VesselMeshes.For(part.vessel);
+                if (vm == null || !vm.BaseOf(this, out baseIndex, out toBvh))
+                    return null;
+                bvh = vm.Bvh;
+                version = vm.Version * 1000003L + meshVersion;
+            }
+            else
+            {
+                if (tris.Length == 0)
+                    return null;
+                bvh = OwnBvh();
+                toBvh = Matrix4x4.identity;
+                baseIndex = 0;
+                version = -1 - meshVersion;
+            }
+            int n = tris.Length / 3;
+            long t0 = Stopwatch.GetTimestamp();
+            // (candidates: a ray over the face's half meets the meshes; once a mesh)
+            if (dryCandidateKey != version)
+            {
+                dryCandidateKey = version;
+                dryCandidates = null;
+                for (int i = 0; i < n; i++)
+                {
+                    Face(toBvh, i, out Vector3 a, out Vector3 e1, out Vector3 e2);
+                    if (!Blocked(bvh, a, e1, e2, baseIndex + i))
+                        continue;
+                    dryCandidates ??= new bool[n];
+                    dryCandidates[i] = true;
+                }
+                dryKey = long.MinValue;
+            }
+            if (dryCandidates == null)
+                return null;
+            // the water's up and level in the meshes' space (a point on the surface: the origin's depth above it)
+            Vector3 upPart = part.partTransform.InverseTransformDirection(upWorld).normalized;
+            Vector3 up = toBvh.MultiplyVector(upPart).normalized;
+            float level = Vector3.Dot(toBvh.MultiplyPoint3x4(upPart * (float)depth0), up);
+            long key = version * 31 + Mathf.RoundToInt(level / DryLevelStep) * 1000003L +
+                       Mathf.RoundToInt(up.x / DryTurn) * 961 + Mathf.RoundToInt(up.y / DryTurn) * 31 + Mathf.RoundToInt(up.z / DryTurn);
+            if (key == dryKey)
+                return dryFaces;
+            dryKey = key;
+            bool[] result = null;
+            int count = 0;
+            for (int i = 0; i < n; i++)
+            {
+                if (!dryCandidates[i])
+                    continue;
+                Face(toBvh, i, out Vector3 a, out Vector3 e1, out Vector3 e2);
+                // (past the part's own mesh, only a face in a hollow open to the air: a ray of its up to the surface
+                // clear. One every ray of which meets the mesh is buried in it (a B9 panel's pieces overlap, an
+                // engine's casing): its pressure is its part's own, cancelled by the face it lies against)
+                if (SeaReaches(bvh, a, e1, e2, baseIndex + i, up, level, out bool surfaced) || !IsHullPlate && !surfaced)
+                    continue;
+                result ??= new bool[n];
+                result[i] = true;
+                count++;
+            }
+            dryFaces = result;
+            double ms = (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
+            if (count != dryLogged || ms > 20)
+                FARLogger.Info($"Hydrodynamics of {part.partInfo?.name}: {count} of {n} faces out of the sea's reach ({ms:F0} ms)");
+            dryLogged = count;
+            return dryFaces;
+        }
+
+        private void Face(Matrix4x4 m, int i, out Vector3 a, out Vector3 e1, out Vector3 e2)
+        {
+            a = m.MultiplyPoint3x4(localVerts[tris[3 * i]]);
+            e1 = m.MultiplyPoint3x4(localVerts[tris[3 * i + 1]]) - a;
+            e2 = m.MultiplyPoint3x4(localVerts[tris[3 * i + 2]]) - a;
+        }
+
+        // directions over a hemisphere about +z: the normal, then rings 85, 65 and 35 deg off it
+        private static readonly Vector3[] HemiDirs = Hemisphere();
+
+        private static Vector3[] Hemisphere()
+        {
+            var d = new List<Vector3> { Vector3.forward };
+            foreach ((float deg, int count) in new[] { (85f, 12), (65f, 8), (35f, 6) })
+                for (int k = 0; k < count; k++)
+                {
+                    float az = (k + 0.5f) * 2 * Mathf.PI / count, el = deg * Mathf.Deg2Rad;
+                    d.Add(new Vector3(Mathf.Sin(el) * Mathf.Cos(az), Mathf.Sin(el) * Mathf.Sin(az), Mathf.Cos(el)));
+                }
+            return d.ToArray();
+        }
+
+        // the face's frame: its centre just off it, its normal, two axes across it (false: no area)
+        private static bool FaceFrame(Vector3 a, Vector3 e1, Vector3 e2, out Vector3 o, out Vector3 nn, out Vector3 b1, out Vector3 b2)
+        {
+            nn = Vector3.Cross(e1, e2);
+            o = b1 = b2 = Vector3.zero;
+            if (nn.sqrMagnitude < 1e-12f)
+                return false;
+            nn.Normalize();
+            o = a + (e1 + e2) / 3 + nn * 1e-3f;
+            b1 = Vector3.Cross(nn, Math.Abs(nn.x) < 0.9f ? Vector3.right : Vector3.up).normalized;
+            b2 = Vector3.Cross(nn, b1);
+            return true;
+        }
+
+        // any ray over the face's half meets bvh
+        private static bool Blocked(TriangleBvh bvh, Vector3 a, Vector3 e1, Vector3 e2, int self)
+        {
+            if (!FaceFrame(a, e1, e2, out Vector3 o, out Vector3 nn, out Vector3 b1, out Vector3 b2))
+                return false;
+            foreach (Vector3 d in HemiDirs)
+                if (bvh.AnyHit(o, b1 * d.x + b2 * d.y + nn * d.z, self))
+                    return true;
+            return false;
+        }
+
+        // the sea reaches the face (DryFaces): SeaRays of its level and downward rays meet nothing (not one: a mesh of
+        // pieces may have cracks, CustomProceduralParts' convex collider pieces), or one rises clear to a surface that is
+        // open (OpenSurfaceRays of its 8 level rays meet nothing: a pocket under the water opening upward is wet); a
+        // face under no water, too
+        private const int SeaRays = 2, OpenSurfaceRays = 3;
+
+        private static bool SeaReaches(TriangleBvh bvh, Vector3 a, Vector3 e1, Vector3 e2, int self, Vector3 up, float level, out bool surfaced)
+        {
+            surfaced = false;
+            if (!FaceFrame(a, e1, e2, out Vector3 o, out Vector3 nn, out Vector3 b1, out Vector3 b2))
+                return true;
+            float depth = level - Vector3.Dot(o, up);
+            if (depth <= 0)
+            {
+                // its middle out of the water: from near its deepest corner (the part of it under; a big face across the
+                // waterline, an open boat's floor as it planes, was all wet for its middle in the air)
+                Vector3 deep = a;
+                foreach (Vector3 c in new[] { a + e1, a + e2 })
+                    if (Vector3.Dot(c, up) < Vector3.Dot(deep, up))
+                        deep = c;
+                o = Vector3.Lerp(o - nn * 1e-3f, deep, 0.8f) + nn * 1e-3f;
+                depth = level - Vector3.Dot(o, up);
+                if (depth <= 0)
+                    return true;
+            }
+            Vector3 l1 = Vector3.Cross(up, Math.Abs(up.x) < 0.9f ? Vector3.right : Vector3.forward).normalized, l2 = Vector3.Cross(up, l1);
+            int found = 0;
+            // level and downward rays first: the sea under the water, the commonest way in
+            for (int pass = 0; pass < 2; pass++)
+                foreach (Vector3 h in HemiDirs)
+                {
+                    Vector3 d = b1 * h.x + b2 * h.y + nn * h.z;
+                    float du = Vector3.Dot(d, up);
+                    bool rising = du > 0.02f;
+                    if (rising != (pass == 1))
+                        continue;
+                    if (!rising)
+                    {
+                        if (!bvh.AnyHit(o, d, self) && ++found >= SeaRays)
+                            return true;
+                        continue;
+                    }
+                    float ts = depth / du;
+                    if (bvh.AnyHit(o, d, self, ts))
+                        continue;
+                    surfaced = true;
+                    // up to the surface clear: is the surface there open (its level rays from just under it meet
+                    // nothing)? (just under: never below the face itself)
+                    Vector3 q = o + d * ts - up * Math.Min(0.01f, 0.5f * depth);
+                    int open = 0;
+                    for (int k = 0; k < 8 && open < OpenSurfaceRays; k++)
+                    {
+                        float az = k * Mathf.PI / 4;
+                        if (!bvh.AnyHit(q, l1 * Mathf.Cos(az) + l2 * Mathf.Sin(az), -1))
+                            open++;
+                    }
+                    if (open >= OpenSurfaceRays)   // (an open surface over it: the sea, one ray enough)
+                        return true;
+                }
+            return false;
+        }
+
+        /// <summary>
+        /// Every mesh of a vessel's parts (their PartHydrodynamics', dry ones too) in one triangle BVH, in the root
+        /// part's space, for DryFaces. Built again when the vessel's parts change, a mesh changes, or a part's
+        /// designed place does (a hinge's travel: orgPos / orgRot, PoseMove / PoseTurn, looked at once in PoseEvery s;
+        /// a joint's flex is no change).
+        /// </summary>
+        internal sealed class VesselMeshes
+        {
+            private static readonly Dictionary<Vessel, VesselMeshes> All = new Dictionary<Vessel, VesselMeshes>();
+            private static float prunedAt;
+
+            public TriangleBvh Bvh { get; private set; }
+            // (from one count over every vessel's: a vessel split off starts its own, and its parts' dry faces kept for
+            // the meshes they had with the other must not match)
+            public long Version { get; private set; }
+            private static long builds;
+            private readonly Vessel vessel;
+            // a part's first triangle in the BVH and its faces' place there as they were put in (flex since moves the
+            // part, not the BVH: its own faces are matched to their copies)
+            private readonly Dictionary<PartHydrodynamics, (int index, Matrix4x4 toBvh)> baseOf =
+                new Dictionary<PartHydrodynamics, (int, Matrix4x4)>();
+            private readonly List<(PartHydrodynamics hd, int meshVersion, Matrix4x4 org)> members =
+                new List<(PartHydrodynamics, int, Matrix4x4)>();
+            private Part root;
+            private int structure = -1;
+            private float checkedAt = float.NegativeInfinity, posesAt = float.NegativeInfinity;
+
+            private VesselMeshes(Vessel v) => vessel = v;
+
+            public static VesselMeshes For(Vessel v)
+            {
+                if (v == null)
+                    return null;
+                if (Time.time - prunedAt > 10)
+                {
+                    prunedAt = Time.time;
+                    foreach (Vessel gone in All.Keys.Where(k => k == null || !k.loaded).ToList())
+                        All.Remove(gone);
+                }
+                if (!All.TryGetValue(v, out VesselMeshes m))
+                    All[v] = m = new VesselMeshes(v);
+                m.Ensure();
+                return m.Bvh != null ? m : null;
+            }
+
+            public bool BaseOf(PartHydrodynamics hd, out int index, out Matrix4x4 toBvh)
+            {
+                bool found = baseOf.TryGetValue(hd, out var b);
+                index = b.index;
+                toBvh = found ? b.toBvh : Matrix4x4.identity;
+                return found;
+            }
+
+            private Matrix4x4 Org(Part p) =>
+                Matrix4x4.TRS(root.orgPos, root.orgRot, Vector3.one).inverse * Matrix4x4.TRS(p.orgPos, p.orgRot, Vector3.one);
+
+            private void Ensure()
+            {
+                // (once a physics step: every wet part asks)
+                if (Time.fixedTime == checkedAt && Bvh != null)
+                    return;
+                checkedAt = Time.fixedTime;
+                HookStructure();
+                bool stale = Bvh == null || structure != structureVersion || !ReferenceEquals(root, vessel.rootPart);
+                if (!stale)
+                    foreach (var m in members)
+                        if (m.hd.meshVersion != m.meshVersion)
+                        {
+                            stale = true;
+                            break;
+                        }
+                if (!stale && Time.time - posesAt > PoseEvery)
+                {
+                    posesAt = Time.time;
+                    foreach (var m in members)
+                    {
+                        Matrix4x4 now = Org(m.hd.part);
+                        bool turned = false;
+                        for (int c = 0; c < 3 && !turned; c++)
+                            turned = (now.GetColumn(c) - m.org.GetColumn(c)).sqrMagnitude > PoseTurn * PoseTurn;
+                        if (turned || (now.GetColumn(3) - m.org.GetColumn(3)).magnitude > PoseMove)
+                        {
+                            stale = true;
+                            break;
+                        }
+                    }
+                }
+                if (stale)
+                    Build();
+            }
+
+            private void Build()
+            {
+                long t0 = Stopwatch.GetTimestamp();
+                structure = structureVersion;
+                root = vessel.rootPart;
+                posesAt = Time.time;
+                members.Clear();
+                baseOf.Clear();
+                Bvh = null;
+                if (root == null)
+                    return;
+                var ta = new List<Vector3>();
+                var te1 = new List<Vector3>();
+                var te2 = new List<Vector3>();
+                Matrix4x4 toRoot = root.partTransform.worldToLocalMatrix;
+                foreach (Part p in vessel.parts)
+                {
+                    PartHydrodynamics hd = p.Modules.GetModule<FARAeroPartModule>()?.EnsureHydrodynamics();
+                    if (hd == null || !hd.EnsureMesh())
+                        continue;
+                    Matrix4x4 m = toRoot * p.partTransform.localToWorldMatrix;
+                    baseOf[hd] = (ta.Count, m);
+                    members.Add((hd, hd.meshVersion, Org(p)));
+                    for (int i = 0; i + 2 < hd.tris.Length; i += 3)
+                    {
+                        Vector3 a = m.MultiplyPoint3x4(hd.localVerts[hd.tris[i]]);
+                        ta.Add(a);
+                        te1.Add(m.MultiplyPoint3x4(hd.localVerts[hd.tris[i + 1]]) - a);
+                        te2.Add(m.MultiplyPoint3x4(hd.localVerts[hd.tris[i + 2]]) - a);
+                    }
+                }
+                Bvh = new TriangleBvh(ta.ToArray(), te1.ToArray(), te2.ToArray());
+                Version = ++builds;
+                double ms = (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
+                FARLogger.Info($"Hydrodynamics of {vessel.vesselName}: {members.Count} parts' meshes, {ta.Count} triangles, for the faces they seal in ({ms:F0} ms)");
+            }
         }
 
         /// <summary>
@@ -487,6 +947,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
             long key = meshVersion;
             foreach (PartHydrodynamics hq in nb)
                 key = key * 1000003 + hq.meshVersion * 7919 + hq.part.GetInstanceID();
+            poseWhy = key != shadowKey ? "meshes changed" : "";
             if (key == shadowKey && (Time.time - shadowBuiltAt < PoseEvery || !PosesMoved()))
                 return shadowed;
             shadowBuiltAt = Time.time;
@@ -494,6 +955,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
             shadowed = null;
             shadowBvh = null;
             shadowPoses.Clear();
+            shadowOrgPoses.Clear();
             if (tris.Length == 0)
                 return null;
 
@@ -519,10 +981,12 @@ namespace FerramAerospaceResearch.FARAeroComponents
             {
                 Matrix4x4 pose = toMe * hq.part.partTransform.localToWorldMatrix;
                 shadowPoses.Add(pose);
+                shadowOrgPoses.Add(OrgPose(hq.part));
                 Mesh(hq.localVerts, hq.tris, pose);
             }
             var bvh = new TriangleBvh(ta, te1, te2);
             shadowBvh = bvh;
+            leeCache.Clear();
 
             int ownCount = tris.Length / 3;
             var result = new bool[ownCount];
@@ -544,7 +1008,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
             // (logged when it changes what is closed in, or is slow)
             double ms = ticks * 1000.0 / Stopwatch.Frequency;
             if (count != shadowLogged || ms > 20)
-                FARLogger.Info($"Hydrodynamics of {part.partInfo?.name}: {count} of {capStart} faces closed in with {nb.Count} neighbours ({ms:F0} ms)");
+                FARLogger.Info($"Hydrodynamics of {part.partInfo?.name}: {count} of {capStart} faces closed in with {nb.Count} neighbours ({ms:F0} ms; {poseWhy})");
             shadowLogged = count;
             return shadowed;
         }
@@ -633,9 +1097,10 @@ namespace FerramAerospaceResearch.FARAeroComponents
         /// closed: its pressure integrates to the displaced water's weight, straight up (exact for a flat gap, as a
         /// wing's root or tip; a T-join's sliver caps to nothing). Returns the caps' area; loops: how many.
         /// </summary>
-        private static double CapOpenEdges(List<Vector3> verts, List<int> t, out int loops)
+        private static double CapOpenEdges(List<Vector3> verts, List<int> t, out int loops, out double roughArea)
         {
             loops = 0;
+            roughArea = 0;
             int nv = verts.Count;
             var weld = new int[nv];
             var at = new Dictionary<(int, int, int), int>(nv);
@@ -706,14 +1171,32 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     int c = verts.Count;
                     verts.Add(mid);
                     // the surface's boundary runs a to b: the cap's runs b to a
+                    double loopArea = 0;
+                    Vector3 normal = Vector3.zero;
                     for (int k = 0; k < loop.Count; k++)
                     {
                         int a = loop[k], b = loop[(k + 1) % loop.Count];
                         t.Add(c);
                         t.Add(b);
                         t.Add(a);
-                        capArea += 0.5 * Vector3.Cross(verts[b] - mid, verts[a] - mid).magnitude;
+                        Vector3 n2 = Vector3.Cross(verts[b] - mid, verts[a] - mid);
+                        loopArea += 0.5 * n2.magnitude;
+                        normal += n2;
                     }
+                    capArea += loopArea;
+                    // flat: every point of the loop within FlatCapFlatness of its size off its plane
+                    float size = 0, off = 0;
+                    if (normal.sqrMagnitude > 0)
+                    {
+                        normal.Normalize();
+                        foreach (int k in loop)
+                        {
+                            size = Math.Max(size, (verts[k] - mid).magnitude);
+                            off = Math.Max(off, Math.Abs(Vector3.Dot(verts[k] - mid, normal)));
+                        }
+                    }
+                    if (normal.sqrMagnitude == 0 || off > FlatCapFlatness * size)
+                        roughArea += loopArea;
                     loops++;
                 }
             return capArea;
@@ -754,7 +1237,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
         private void HoldStockBuoyancy(double rho)
         {
             if (StockBuoyancy < 0)
-                StockBuoyancy = part.buoyancy;
+                StockBuoyancy = CfgBuoyancy();
             double stock = part.partBuoyancy.lastBuoyantForce.magnitude * 1000;
             if (part.buoyancy > 1e-4 && stock > 0)
                 stockPerUnit = stock / part.buoyancy;
@@ -771,6 +1254,14 @@ namespace FerramAerospaceResearch.FARAeroComponents
             part.buoyancy = (float)(StockBuoyancy * Math.Min(1, cap / Math.Max(1e-9, stockPerUnit * StockBuoyancy)));
         }
 
+        // the part's cfg buoyancy: as FARAeroPartModule had it before holding stock's to the drag cube's box (a B9
+        // panel's is scaled to a thousandth or so while it is dry; taken as it stood, its pressure buoyancy was too)
+        private float CfgBuoyancy()
+        {
+            FARAeroPartModule m = part.Modules.GetModule<FARAeroPartModule>();
+            return m != null ? m.CfgBuoyancy : part.buoyancy;
+        }
+
         /// <summary>Gives the part its stock buoyancy back (the model off, or the mesh not closed).</summary>
         public void RestoreStockBuoyancy()
         {
@@ -784,6 +1275,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
             if (!keepLastHull)
                 LastHull = null;
             LastForce = LastMomentumForce = LastFrictionForce = LastImpactForce = LastCrossflowForce = LastHydrostaticForce = LastWaveForce = LastHydrostaticTorque = LastTorque = Vector3.zero;
+            LastRadiationForce = Vector3.zero;
             LastWettedArea = LastPlanform = LastWettedLength = 0;
             LastStrips = 0;
             LastLimiter = 1;
@@ -791,6 +1283,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
             PolyVerts.Clear();
             PolyCounts.Clear();
             PolyNormals.Clear();
+            PolyTris.Clear();
             HsForces.Clear();
             HsTorques.Clear();
             HsPoints.Clear();
@@ -894,6 +1387,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
         /// </summary>
         internal bool Gather(List<PartHydrodynamics> wet)
         {
+            gatherCount++;
             long t0 = Stopwatch.GetTimestamp();
             Vessel vessel = part.vessel;
             CelestialBody body = vessel.mainBody;
@@ -923,13 +1417,19 @@ namespace FerramAerospaceResearch.FARAeroComponents
             }
             // the part's buoyancy, whether its mesh finds water or not (KSP may have the part under where its mesh is
             // not): stock's off where its pressure gives it, else held to its mesh's box
-            if (OwnsBuoyancy && StockBuoyancy < 0)
+            // (buoyancy from shape off: stock's as it is)
+            if (!FARDebugValues.shapeBuoyancy)
             {
-                StockBuoyancy = part.buoyancy;
+                if (StockBuoyancy >= 0)
+                    RestoreStockBuoyancy();
+            }
+            else if (OwnsBuoyancy && StockBuoyancy < 0)
+            {
+                StockBuoyancy = CfgBuoyancy();
                 part.buoyancy = 0;
             }
             Gravity = FlightGlobals.getGeeForceAtPosition((Vector3d)p0).magnitude;
-            if (!OwnsBuoyancy && part.partBuoyancy != null)
+            if (!OwnsBuoyancy && FARDebugValues.shapeBuoyancy && part.partBuoyancy != null)
                 HoldStockBuoyancy(rho);
             if (!any)
             {
@@ -940,6 +1440,10 @@ namespace FerramAerospaceResearch.FARAeroComponents
             // the faces closed in by the part and its neighbours (a cargo bay's inside, an end cap facing into it): no
             // flow on them (their pressure kept: each part's buoyancy its own)
             bool[] shadow = Foil ? null : Shadowed();
+            // the faces the sea doesn't reach (an open boat's hollow, a skin of plates' inside): no water on them at all.
+            // Past its own mesh, or a hull plate's past the vessel's: a hull of other parts keeps each part's buoyancy its
+            // own, as it was built for (a submarine's sail, a wing's seams: hollows that are no air tank)
+            bool[] sealedF = OwnsBuoyancy ? DryFaces(up, depth0) : null;
 
             // the faces that meet another wet part this step
             stamp++;
@@ -1021,7 +1525,10 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 if (scratchA.Count < 3)
                     continue;
                 // (a part sealed inside others is dry: no pressure)
-                if (OwnsBuoyancy && !sealedIn)
+                // (a sealed face looking into another wet part keeps its pressure: the other's face against it
+                // cancels it, and each part's buoyancy stays its own, so no part feels the water's level push; only a
+                // face sealed in over air, a void the parts close in, loses it)
+                if (OwnsBuoyancy && !sealedIn && !(sealedF != null && sealedF[i / 3] && !(anyContact && contactStamp[i / 3] == stamp)))
                 {
                     // hydrostatic pressure rho g depth on the wet piece, integrated exactly: linear over each fan
                     // triangle, so its force is A mean(p) and its first moment A/12 (sum p_i r_i + sum p_i sum r_i)
@@ -1047,11 +1554,13 @@ namespace FerramAerospaceResearch.FARAeroComponents
                         HsPoints.Add((o + q1 + q2) / 3f);
                     }
                 }
-                if (Foil || i / 3 >= capStart || anyContact && contactStamp[i / 3] == stamp || shadow != null && shadow[i / 3])
+                if (Foil || i / 3 >= capStart || anyContact && contactStamp[i / 3] == stamp || shadow != null && shadow[i / 3] ||
+                    sealedF != null && sealedF[i / 3])
                     continue;
                 PolyVerts.AddRange(scratchA);
                 PolyCounts.Add(scratchA.Count);
                 PolyNormals.Add(n);
+                PolyTris.Add(i / 3);
             }
             ProfilePolygons += PolyCounts.Count;
             ProfileGatherTicks += Stopwatch.GetTimestamp() - t0;
@@ -1111,13 +1620,16 @@ namespace FerramAerospaceResearch.FARAeroComponents
         private Strip[][] Mirrored => mirrored ??= new[] { tops, ports, stbds };
         // each strip's section: its shallowest and deepest wet point (m below the water), and at the surface (1) or under it (0)
         private readonly float[] secTop = new float[PartHydrodynamics.MaxStrips], secBottom = new float[PartHydrodynamics.MaxStrips];
+        // (radiation damping: each strip's bottom's lateral extent, its planform and its planform-weighted vertical speed)
+        private readonly float[] radLo = new float[PartHydrodynamics.MaxStrips], radHi = new float[PartHydrodynamics.MaxStrips];
+        private readonly double[] radArea = new double[PartHydrodynamics.MaxStrips], radW = new double[PartHydrodynamics.MaxStrips];
         private readonly double[] sec = new double[PartHydrodynamics.MaxStrips];
         // each section's area across the flow (m2; its wet surface's r.n over twice its length: a closed section's)
         private readonly double[] secArea = new double[PartHydrodynamics.MaxStrips];
         // the wet pieces, put in their strips once their sections' sec is known
         private struct Piece
         {
-            public int Part, Strip;
+            public int Part, Strip, Tri;
             public float Area, Down, Lat, Vn, Axial;
             public Vector3 N, Centroid, V;
             public Vector2 SpanAcross, SpanUp;
@@ -1377,6 +1889,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
             var impactOf = new Vector3[parts.Count];
             var torqueOf = new Vector3[parts.Count];   // of LastForce, about each part's CoM (N m)
             var impactTorqueOf = new Vector3[parts.Count];
+            var radiationOf = new Vector3[parts.Count];
             long piecesT0 = Stopwatch.GetTimestamp();
             for (int pi = 0; pi < parts.Count; pi++)
             {
@@ -1454,7 +1967,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                         }
                         pieces.Add(new Piece
                         {
-                            Part = pi, Strip = k, Area = area, Down = down, Lat = Vector3.Dot(n, yHat), Vn = vn,
+                            Part = pi, Strip = k, Tri = hd.PolyTris[poly], Area = area, Down = down, Lat = Vector3.Dot(n, yHat), Vn = vn,
                             Axial = Math.Abs(Vector3.Dot(n, xHat)), N = n, Centroid = centroid, V = v,
                             SpanAcross = new Vector2(yLo, yHi), SpanUp = new Vector2(uLo, uHi)
                         });
@@ -1507,9 +2020,10 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 // (the flow must reach it: a face in the lee of the hull, the body right ahead of it upstream, takes no
                 // stagnation pressure: a lip behind the 11-A's sternpost, an end cap facing into a cargo bay)
                 long leeT0 = Stopwatch.GetTimestamp();
-                bool lee = parts[pc.Part].Lee(pc.Centroid + pc.N * 0.002f, pc.V);
+                bool lee = parts[pc.Part].LeeCached(pc.Tri, k, pc.Centroid + pc.N * 0.002f, pc.V, out bool cast);
                 PartHydrodynamics.ProfileLeeTicks += Stopwatch.GetTimestamp() - leeT0;
-                PartHydrodynamics.ProfileLeeRays++;
+                if (cast)
+                    PartHydrodynamics.ProfileLeeRays++;
                 if (lee)
                     continue;
                 Vector3 f = -pc.N * (float)(0.5 * PartHydrodynamics.ImpactPressureCoefficient * rho * pc.Vn * pc.Vn * pc.Area * w);
@@ -1526,6 +2040,54 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     parts[pi].part.AddTorque((Vector3d)impactTorqueOf[pi] * 0.001);
                 }
             PartHydrodynamics.ProfileImpactTicks += Stopwatch.GetTimestamp() - impactT0;
+
+            // radiation damping: on each bottom piece at the surface, against its strip's mean vertical speed (heave and
+            // pitch) and RadiationRollShare of its own about that (roll), on its planform
+            if (PartHydrodynamics.RadiationDamping > 0)
+            {
+                for (int k = 0; k < nStrips; k++)
+                {
+                    radLo[k] = float.MaxValue;
+                    radHi[k] = float.MinValue;
+                    radArea[k] = radW[k] = 0;
+                }
+                foreach (Piece pc in pieces)
+                    if (pc.Down > 0)
+                    {
+                        int k = pc.Strip;
+                        double a = pc.Area * pc.Down;
+                        radLo[k] = Math.Min(radLo[k], pc.SpanAcross.x);
+                        radHi[k] = Math.Max(radHi[k], pc.SpanAcross.y);
+                        radArea[k] += a;
+                        radW[k] += a * Vector3.Dot(pc.V, up);
+                    }
+                double g = first.Gravity, roll = PartHydrodynamics.RadiationRollShare;
+                var radTorqueOf = new Vector3[parts.Count];
+                foreach (Piece pc in pieces)
+                {
+                    int k = pc.Strip;
+                    if (pc.Down <= 0 || sec[k] <= 0 || radArea[k] <= 0 || radHi[k] <= radLo[k])
+                        continue;
+                    double wMean = radW[k] / radArea[k], w = wMean + roll * (Vector3.Dot(pc.V, up) - wMean);
+                    // (gone as the hull gets going, on the strip's beam Froude number from RadiationFadeCv: there the
+                    // strips' momentum, m_a V from the point velocity, damps its heave and pitch already; both at a
+                    // planing hull's C_V 3-5 set NACA 57-B5's free trim 2.4 deg below TN 716's)
+                    double b = radHi[k] - radLo[k], cvk = U / Math.Sqrt(g * Math.Max(0.05, b));
+                    double fade = 1 - Mathf.SmoothStep(0, 1, (float)((cvk - PartHydrodynamics.RadiationFadeCv) / (1.5 * PartHydrodynamics.RadiationFadeCv)));
+                    if (fade <= 0)
+                        continue;
+                    Vector3 f = -up * (float)(PartHydrodynamics.RadiationDamping * rho * Math.Sqrt(g * b) * w * pc.Area * pc.Down * sec[k] * fade);
+                    radiationOf[pc.Part] += f;
+                    radTorqueOf[pc.Part] += Vector3.Cross(pc.Centroid - parts[pc.Part].part.rb.worldCenterOfMass, f);
+                }
+                for (int pi = 0; pi < parts.Count; pi++)
+                    if (radiationOf[pi] != Vector3.zero)
+                    {
+                        torqueOf[pi] += radTorqueOf[pi];
+                        parts[pi].part.AddForce((Vector3d)radiationOf[pi] * 0.001);
+                        parts[pi].part.AddTorque((Vector3d)radTorqueOf[pi] * 0.001);
+                    }
+            }
 
             // (under: the most any wet section is under; each section's own sec blends its terms)
             double under = 0, secSum = 0, secWeight = 0;
@@ -1576,6 +2138,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
             // explicit-step safety: the damping these forces put on the vessel stays well inside one step
             double mass = Math.Max(vessel.totalMass, first.part.rb.mass) * 1000;
             double limiter = Math.Min(1, 0.5 * mass / Math.Max(1e-9, stiffness * TimeWarp.fixedDeltaTime));
+
+            Entry(parts, strips, nStrips, sec, U, xHat, dx, wettedLength, mass, limiter, impactOf, torqueOf);
 
             if (PartHydrodynamics.RecordStrips)
                 for (int k = nStrips - 1; k >= 0; k--)
@@ -1723,7 +2287,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     hd.part.AddForce((Vector3d)hydrostatic);
                     hd.part.AddTorque((Vector3d)hd.LastHydrostaticTorque);
                 }
-                else if (take > 0 && pb != null)
+                else if (take > 0 && pb != null && FARDebugValues.shapeBuoyancy)
                 {
                     hydrostatic = -pb.lastBuoyantForce * (float)(take * surface);
                     hd.part.AddForceAtPosition((Vector3d)hydrostatic, (Vector3d)pb.lastForcePosition);
@@ -1743,8 +2307,9 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 hd.LastCrossflowForce = crossflowOf[pi] * 0.001f;
                 hd.LastFrictionForce = frictionOf[pi] * 0.001f;
                 hd.LastImpactForce = impactOf[pi] * 0.001f;
+                hd.LastRadiationForce = radiationOf[pi] * 0.001f;
                 hd.LastTorque = torqueOf[pi] * 0.001f;
-                hd.LastForce = (momentumOf[pi] + frictionOf[pi] + impactOf[pi]) * 0.001f + wave;
+                hd.LastForce = (momentumOf[pi] + frictionOf[pi] + impactOf[pi] + radiationOf[pi]) * 0.001f + wave;
                 hd.LastWettedArea = wettedOf[pi];
                 hd.LastPlanform = planformTotal;
                 hd.LastWettedLength = wettedLength;
@@ -1755,6 +2320,87 @@ namespace FerramAerospaceResearch.FARAeroComponents
             hull.Planform = planformTotal;
             hull.Limiter = limiter;
             hull.Strips = wetStrips;
+        }
+
+        // water entry (von Karman): the water a hull sinks into takes up momentum m_a V as the hull's added mass in heave
+        // m_a grows, m_a its bottom strips' (at the surface) times a 3D factor: the strips' sum over an elliptic planform
+        // of the wetted length and widest beam against the plate's own (half the elliptic disc's in open water: a disc's
+        // 2/pi, a long one's 1). Taken as an inelastic collision with the water newly set moving, so it never pushes the
+        // hull back out faster than it came (a light hull: M V dm/(M + m_a)); less what the strips' crossflow drag gives
+        // that step (a flat face square on: nearly all of it in the step it touches; a wedge or a ball wetting by degrees:
+        // the larger of the two). On each strip by its added mass, along its normal at its parts' centroids. Its added
+        // mass last step kept on its parts (the largest of theirs that were wet then: hulls regroup and reorder as parts
+        // wet and dry, and a hull taken for new would be struck afresh), the collision with the hull's own parts' mass
+        // (a float or a broken-off piece is not driven as the whole vessel)
+        internal static bool EntryDebug = false;
+        private static void Entry(List<PartHydrodynamics> parts, Strip[] ss, int nStrips,
+                                  double[] sec, double U, Vector3 xHat, float dx, double wettedLength, double mass, double limiter,
+                                  Vector3[] impactOf, Vector3[] torqueOf)
+        {
+            double now = Planetarium.GetUniversalTime(), dt = TimeWarp.fixedDeltaTime;
+            double sum = 0, vSum = 0, cross = 0, beam = 0;
+            for (int k = 0; k < nStrips; k++)
+            {
+                ref Strip s = ref ss[k];
+                if (s.Planform <= 0 || sec[k] <= 0)
+                    continue;
+                double w = s.Ma * dx * sec[k];
+                sum += w;
+                vSum += w * (s.V - U * Vector3.Dot(xHat, s.Normal));
+                cross += s.Crossflow * sec[k] * limiter;
+                beam = Math.Max(beam, s.Width);
+            }
+            double ma = 0;
+            if (sum > 0 && beam > 0 && wettedLength > 0)
+            {
+                double lx = wettedLength / 2, wy = beam / 2, a = Math.Max(lx, wy), b = Math.Min(lx, wy);
+                double h = (a - b) * (a - b) / ((a + b) * (a + b));
+                double e2 = Math.PI * (a + b) * (1 + 3 * h / (10 + Math.Sqrt(4 - 3 * h))) / (4 * a);   // E(e)
+                ma = PartHydrodynamics.EntryAddedMass * sum * a * b * b / (e2 * lx * wy * wy);
+            }
+            double before = 0, hullMass = 0;
+            bool continued = false;
+            foreach (PartHydrodynamics hd in parts)
+            {
+                if (now - hd.EntryTime < 3 * dt + 1e-6)
+                {
+                    before = Math.Max(before, hd.EntryMa);
+                    continued = true;
+                }
+                hd.EntryMa = ma;
+                hd.EntryTime = now;
+                hullMass += hd.part.rb.mass * 1000.0;
+            }
+            mass = Math.Min(mass, hullMass);
+            double vh = sum > 0 ? vSum / sum : 0;
+            if (EntryDebug)
+                FARLogger.Info($"[entry] t {now:F3} sum {sum:F0} ma {ma:F0} before {before:F0} cont {continued} vh {vh:F2} cross {cross:F0} " +
+                               $"mass {mass:F0} len {wettedLength:F2} beam {beam:F2} U {U:F2}");
+            if (ma <= before || vh <= 0)
+                return;
+            double impulse = mass * vh * (ma - before) / (mass + ma) - cross * dt;
+            if (impulse <= 0)
+                return;
+            double f = impulse / dt;
+            for (int k = 0; k < nStrips; k++)
+            {
+                ref Strip s = ref ss[k];
+                if (s.Planform <= 0 || sec[k] <= 0)
+                    continue;
+                double fk = f * s.Ma * dx * sec[k] / sum;
+                for (int i = 0; i < s.ShareCount; i++)
+                {
+                    ref Share sh = ref s.Shares[i];
+                    if (sh.Planform <= 0)
+                        continue;
+                    PartHydrodynamics hd = parts[sh.Part];
+                    Vector3 fv = -s.Normal * (float)(fk * sh.Planform / s.Planform);
+                    Vector3 at = sh.CentroidSum / (float)sh.Planform;
+                    impactOf[sh.Part] += fv;
+                    torqueOf[sh.Part] += Vector3.Cross(at - hd.part.rb.worldCenterOfMass, fv);
+                    hd.part.AddForceAtPosition((Vector3d)fv * 0.001, (Vector3d)at);
+                }
+            }
         }
 
         // a strip's force with its share along the flow (xHat) taken off as far as its section is under the water

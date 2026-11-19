@@ -84,6 +84,17 @@ namespace ferram4
 
         public float oldMassMultiplier = -1f;
 
+        // a panel of a hull's skin, not a foil (FARDebugValues.hydrodynamics): the water on it is the hull's (its
+        // strips, its pressure; the air it encloses with the others its buoyancy), not this wing model's lift and drag
+        // at the water's density. A wing panel can't tell the two apart: a rudder or a hydrofoil in the water and a
+        // hull's bottom plate are the same part. Its lift and drag in the air are its wing model's still
+        [KSPField(guiName = "Water: hull plate", isPersistant = true, guiActiveEditor = true, guiActive = false),
+         UI_Toggle(scene = UI_Scene.Editor)]
+        public bool hullPlate;
+
+        /// <summary>A hull plate with FAR's hydrodynamics on: the hull model's in the water, no foil.</summary>
+        public bool IsHullPlate => hullPlate && FARDebugValues.hydrodynamics;
+
         [KSPField(isPersistant = false)] public double MAC;
 
         public double MAC_actual;
@@ -977,7 +988,7 @@ namespace ferram4
                     // there (the force and the motion it acts on one body's: a light foil's own rigidbody shaking on
                     // its joint, its lift pushing the hull and not it, nothing damped it: a jet boat's hydrofoil drove
                     // its hull's roll and pitch from it, MN of lift tilted into thrust), the hull's upwash added
-                    Part host = WaterHost();
+                    Part host = IsHullPlate ? null : WaterHost();
                     waterHostMass = host != null ? host.rb.mass : 0;
                     Rigidbody moving = host != null ? host.rb : rb;
                     Vector3d velocity = moving.GetPointVelocity(CurWingCentroid) +
@@ -990,8 +1001,13 @@ namespace ferram4
 
                     // water's contribution to rho: the wing is a foil in it (a rudder, keel, dive plane, hydrofoil; with
                     // FARDebugValues.hydrodynamics PartHydrodynamics gives it its buoyancy only)
+                    // (a hull plate: the air on its dry share only, the hull model has the water)
                     double waterRho = 0;
-                    if (partVessel.mainBody.ocean)
+                    if (IsHullPlate)
+                    {
+                        rho = part.atmDensity * (1 - part.submergedPortion);
+                    }
+                    else if (partVessel.mainBody.ocean)
                     {
                         waterRho = partVessel.mainBody.oceanDensity * 1000 * part.submergedPortion;
                         rho = waterRho + part.atmDensity * (1 - part.submergedPortion);
@@ -1008,7 +1024,16 @@ namespace ferram4
                         v_scalar = velocity.magnitude;
                     }
                     else
+                    {
                         waterCrossWas = null;
+                        // in the air: the vessel's propellers' slipstreams on the panel (a dry one: a wet one's rho
+                        // is the water's too)
+                        if (waterRho <= 0 && part.submergedPortion < 1)
+                        {
+                            velocity = FerramAerospaceResearch.FARAeroComponents.Propwash.Apply(this, partVessel, velocity, part.atmDensity);
+                            v_scalar = velocity.magnitude;
+                        }
+                    }
 
                     double machNumber = partVessel.mach;
                     if (rho > 0 && v_scalar > 0.1)

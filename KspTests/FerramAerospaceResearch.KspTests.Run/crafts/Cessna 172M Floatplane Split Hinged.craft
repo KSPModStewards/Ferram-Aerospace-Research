@@ -4,7 +4,7 @@ description = The Cessna 172M on EDO 89-2000 floats for FAR's water tests (craft
 type = SPH
 size = 33.0132599,9.15447617,31.6725025
 steamPublishedFileId = 0
-persistentId = 2014969468
+persistentId = 1491444000
 rot = 0,0,0,1
 missionFlag = Squad/Flags/default
 vesselType = Plane
@@ -17,10 +17,10 @@ PART
 {
 	part = proceduralTankLiquid_4000000001
 	partName = Part
-	persistentId = 2610069993
-	pos = 0,6,0
+	persistentId = 896234480
+	pos = 0,6,-0.215
 	attPos = 0,0,0
-	attPos0 = 0,6,0
+	attPos0 = 0,6,-0.215
 	rot = 0.707107,0,0,0.707107
 	attRot = 0,0,0,1
 	attRot0 = 0.707107,0,0,0.707107
@@ -105,8 +105,8 @@ PART
 		name = ProceduralPart
 		isEnabled = True
 		density = 0
-		forceLegacyTextures = False
-		textureSet = Original
+		forceLegacyTextures = True
+		textureSet = Mu
 		capTextureIndex = 0
 		shapeName = Spine
 		moduleCost = 4397.87012
@@ -435,7 +435,7 @@ PART
 	{
 		name = ProceduralShapeSpine
 		isEnabled = True
-		length = 7.31212
+		length = 6.88212
 		hScale = 1
 		vScale = 1
 		airfoil = False
@@ -457,9 +457,9 @@ PART
 		SPINE_NODE
 		{
 			position = 1
-			sizeH = 0.05
-			sizeV = 0.0866738
-			offsetV = -0.165468
+			sizeH = 0
+			sizeV = 0
+			offsetV = 0.0994446
 			offsetH = 0
 			tiltV = 0
 			tiltH = 0
@@ -471,10 +471,10 @@ PART
 		}
 		SPINE_NODE
 		{
-			position = 0.981681
-			sizeH = 0.0725862
-			sizeV = 0.0866738
-			offsetV = -0.165468
+			position = 0.982564
+			sizeH = 0.876483
+			sizeV = 0.698583
+			offsetV = 0.0994446
 			offsetH = 0
 			tiltV = 0
 			tiltH = 0
@@ -486,127 +486,7 @@ PART
 		}
 		SPINE_NODE
 		{
-			position = 0.975216
-			sizeH = 0.206853
-			sizeV = 0.0866738
-			offsetV = -0.165468
-			offsetH = 0
-			tiltV = 0
-			tiltH = 0
-			filletTop = 0
-			filletBottom = 0
-			stretch = 0
-			profile = Ellipse
-			slopeAbove = Linear
-		}
-		SPINE_NODE
-		{
-			position = 0.974138
-			sizeH = 0.317586
-			sizeV = 0.0866738
-			offsetV = -0.165468
-			offsetH = 0
-			tiltV = 0
-			tiltH = 0
-			filletTop = 0
-			filletBottom = 0
-			stretch = 0
-			profile = Ellipse
-			slopeAbove = Linear
-		}
-		SPINE_NODE
-		{
-			position = 0.967672
-			sizeH = 0.354569
-			sizeV = 0.0866738
-			offsetV = -0.161529
-			offsetH = 0
-			tiltV = 0
-			tiltH = 0
-			filletTop = 0
-			filletBottom = 0
-			stretch = 0
-			profile = Ellipse
-			slopeAbove = Linear
-		}
-		SPINE_NODE
-		{
-			position = 0.965517
-			sizeH = 0.732414
-			sizeV = 0.0866738
-			offsetV = -0.161529
-			offsetH = 0
-			tiltV = 0
-			tiltH = 0
-			filletTop = 0
-			filletBottom = 0
-			stretch = 0
-			profile = Ellipse
-			slopeAbove = Linear
-		}
-		SPINE_NODE
-		{
-			position = 0.961207
-			sizeH = 0.789483
-			sizeV = 0.0945533
-			offsetV = -0.130011
-			offsetH = 0
-			tiltV = 0
-			tiltH = 0
-			filletTop = 0
-			filletBottom = 0
-			stretch = 0
-			profile = Ellipse
-			slopeAbove = Linear
-		}
-		SPINE_NODE
-		{
-			position = 0.960129
-			sizeH = 0.802651
-			sizeV = 0.196986
-			offsetV = -0.0472766
-			offsetH = 0
-			tiltV = 0
-			tiltH = 0
-			filletTop = 0
-			filletBottom = 0
-			stretch = 0
-			profile = Ellipse
-			slopeAbove = Linear
-		}
-		SPINE_NODE
-		{
-			position = 0.955819
-			sizeH = 0.824289
-			sizeV = 0.267901
-			offsetV = -0.0118192
-			offsetH = 0
-			tiltV = 0
-			tiltH = 0
-			filletTop = 0
-			filletBottom = 0
-			stretch = 0
-			profile = Ellipse
-			slopeAbove = Linear
-		}
-		SPINE_NODE
-		{
-			position = 0.949353
-			sizeH = 0.84
-			sizeV = 0.42549
-			offsetV = 0.027578
-			offsetH = 0
-			tiltV = 0
-			tiltH = 0
-			filletTop = 0
-			filletBottom = 0
-			stretch = 0
-			profile = Ellipse
-			slopeAbove = Linear
-		}
-		SPINE_NODE
-		{
-			position = 0.922414
+			position = 0.980047
 			sizeH = 0.88
 			sizeV = 0.724909
 			offsetV = 0.106372
@@ -621,7 +501,7 @@ PART
 		}
 		SPINE_NODE
 		{
-			position = 0.845905
+			position = 0.898758
 			sizeH = 0.98
 			sizeV = 0.945533
 			offsetV = 0.0827341
@@ -636,7 +516,7 @@ PART
 		}
 		SPINE_NODE
 		{
-			position = 0.807112
+			position = 0.857541
 			sizeH = 1.03
 			sizeV = 1.01645
 			offsetV = 0.0393972
@@ -651,7 +531,7 @@ PART
 		}
 		SPINE_NODE
 		{
-			position = 0.769397
+			position = 0.817469
 			sizeH = 1.08
 			sizeV = 1.28207
 			offsetV = -0.098493
@@ -666,7 +546,7 @@ PART
 		}
 		SPINE_NODE
 		{
-			position = 0.643319
+			position = 0.683514
 			sizeH = 1.09395
 			sizeV = 1.16446
 			offsetV = -0.106456
@@ -681,7 +561,7 @@ PART
 		}
 		SPINE_NODE
 		{
-			position = 0.537716
+			position = 0.571312
 			sizeH = 1.0605
 			sizeV = 1.09524
 			offsetV = -0.196986
@@ -696,7 +576,7 @@ PART
 		}
 		SPINE_NODE
 		{
-			position = 0.507543
+			position = 0.539255
 			sizeH = 0.97
 			sizeV = 1.05584
 			offsetV = -0.208805
@@ -711,7 +591,7 @@ PART
 		}
 		SPINE_NODE
 		{
-			position = 0.283405
+			position = 0.301113
 			sizeH = 0.58
 			sizeV = 0.70915
 			offsetV = -0.303358
@@ -726,7 +606,7 @@ PART
 		}
 		SPINE_NODE
 		{
-			position = 0.0743534
+			position = 0.0789991
 			sizeH = 0.226634
 			sizeV = 0.158307
 			offsetV = -0.268218
@@ -741,7 +621,7 @@ PART
 		}
 		SPINE_NODE
 		{
-			position = 0.0625
+			position = 0.066405
 			sizeH = 0.199965
 			sizeV = 0.118192
 			offsetV = -0.254795
@@ -756,7 +636,7 @@ PART
 		}
 		SPINE_NODE
 		{
-			position = 0.0614224
+			position = 0.0652601
 			sizeH = 0.197541
 			sizeV = 0.05
 			offsetV = -0.236383
@@ -827,10 +707,10 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000002
 	partName = Part
-	persistentId = 1630852207
+	persistentId = 2805378289
 	pos = 0,6.78205,1.28621
 	attPos = 0,0,0
-	attPos0 = 0,1.28621,-0.782054
+	attPos0 = 0,1.50121,-0.782054
 	rot = -0.678742,-0.00961198,-0.00888523,-0.734259
 	attRot = 0,0,0,1
 	attRot0 = 0.0392564,-0.0130795,0.000513895,-0.999143
@@ -917,26 +797,26 @@ PART
 		sharedEdgeTypeTrailing = 3
 		sharedEdgeWidthTrailingRoot = 0
 		sharedEdgeWidthTrailingTip = 0
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
-		sharedMaterialSB = 4
-		sharedColorSBOpacity = 0
-		sharedColorSBHue = 0.100000001
-		sharedColorSBSaturation = 0.75
-		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
-		sharedColorETOpacity = 0
-		sharedColorETHue = 0.100000001
-		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
-		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 1
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.200000003
+		sharedColorSTBrightness = 0.150000006
+		sharedMaterialSB = 0
+		sharedColorSBOpacity = 1
+		sharedColorSBHue = 0.109999999
+		sharedColorSBSaturation = 0.200000003
+		sharedColorSBBrightness = 0.150000006
+		sharedMaterialET = 0
+		sharedColorETOpacity = 1
+		sharedColorETHue = 0.119999997
+		sharedColorETSaturation = 0.200000003
+		sharedColorETBrightness = 0.150000006
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
+		sharedColorELHue = 0.109999999
+		sharedColorELSaturation = 0.200000003
+		sharedColorELBrightness = 0.150000006
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -1060,10 +940,10 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000003
 	partName = Part
-	persistentId = 649513681
+	persistentId = 2385610458
 	pos = 0,6.78205,1.28621
 	attPos = 0,0,0
-	attPos0 = 0,1.28621,-0.782054
+	attPos0 = 0,1.50121,-0.782054
 	rot = -0.00888523,-0.734259,-0.678742,-0.00961198
 	attRot = 0,0,0,1
 	attRot0 = 0.000513895,-0.999143,0.0392564,-0.0130795
@@ -1150,26 +1030,26 @@ PART
 		sharedEdgeTypeTrailing = 3
 		sharedEdgeWidthTrailingRoot = 0
 		sharedEdgeWidthTrailingTip = 0
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
-		sharedMaterialSB = 4
-		sharedColorSBOpacity = 0
-		sharedColorSBHue = 0.100000001
-		sharedColorSBSaturation = 0.75
-		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
-		sharedColorETOpacity = 0
-		sharedColorETHue = 0.100000001
-		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
-		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 1
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.200000003
+		sharedColorSTBrightness = 0.150000006
+		sharedMaterialSB = 0
+		sharedColorSBOpacity = 1
+		sharedColorSBHue = 0.109999999
+		sharedColorSBSaturation = 0.200000003
+		sharedColorSBBrightness = 0.150000006
+		sharedMaterialET = 0
+		sharedColorETOpacity = 1
+		sharedColorETHue = 0.119999997
+		sharedColorETSaturation = 0.200000003
+		sharedColorETBrightness = 0.150000006
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
+		sharedColorELHue = 0.109999999
+		sharedColorELSaturation = 0.200000003
+		sharedColorELBrightness = 0.150000006
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -1293,7 +1173,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000004
 	partName = Part
-	persistentId = 1897797525
+	persistentId = 2925482212
 	pos = 2.8496,6.85671,1.28373
 	attPos = 0,0,0
 	attPos0 = 2.85058,0.00339,-5.90854e-07
@@ -1382,26 +1262,26 @@ PART
 		sharedEdgeTypeTrailing = 3
 		sharedEdgeWidthTrailingRoot = 0.4722
 		sharedEdgeWidthTrailingTip = 0.386028
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
-		sharedMaterialSB = 4
-		sharedColorSBOpacity = 0
-		sharedColorSBHue = 0.100000001
-		sharedColorSBSaturation = 0.75
-		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
-		sharedColorETOpacity = 0
-		sharedColorETHue = 0.100000001
-		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
-		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 1
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.200000003
+		sharedColorSTBrightness = 0.150000006
+		sharedMaterialSB = 0
+		sharedColorSBOpacity = 1
+		sharedColorSBHue = 0.109999999
+		sharedColorSBSaturation = 0.200000003
+		sharedColorSBBrightness = 0.150000006
+		sharedMaterialET = 0
+		sharedColorETOpacity = 1
+		sharedColorETHue = 0.119999997
+		sharedColorETSaturation = 0.199999988
+		sharedColorETBrightness = 0.149999991
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
+		sharedColorELHue = 0.109999999
+		sharedColorELSaturation = 0.200000003
+		sharedColorELBrightness = 0.150000006
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -1525,7 +1405,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000005
 	partName = Part
-	persistentId = 3692987171
+	persistentId = 1435505038
 	pos = -2.8496,6.85671,1.28373
 	attPos = 0,0,0
 	attPos0 = 2.85058,0.00339,5.90854e-07
@@ -1614,26 +1494,26 @@ PART
 		sharedEdgeTypeTrailing = 3
 		sharedEdgeWidthTrailingRoot = 0.4722
 		sharedEdgeWidthTrailingTip = 0.386028
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
-		sharedMaterialSB = 4
-		sharedColorSBOpacity = 0
-		sharedColorSBHue = 0.100000001
-		sharedColorSBSaturation = 0.75
-		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
-		sharedColorETOpacity = 0
-		sharedColorETHue = 0.100000001
-		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
-		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 1
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.200000003
+		sharedColorSTBrightness = 0.150000006
+		sharedMaterialSB = 0
+		sharedColorSBOpacity = 1
+		sharedColorSBHue = 0.109999999
+		sharedColorSBSaturation = 0.200000003
+		sharedColorSBBrightness = 0.150000006
+		sharedMaterialET = 0
+		sharedColorETOpacity = 1
+		sharedColorETHue = 0.119999997
+		sharedColorETSaturation = 0.199999988
+		sharedColorETBrightness = 0.149999991
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
+		sharedColorELHue = 0.109999999
+		sharedColorELSaturation = 0.200000003
+		sharedColorELBrightness = 0.150000006
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -1757,7 +1637,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000006
 	partName = Part
-	persistentId = 2975460383
+	persistentId = 4059010316
 	pos = 3.014,6.8581,1.2466
 	attPos = 0,0,0
 	attPos0 = 0.164456,-0.03691,4.9642e-06
@@ -1847,26 +1727,26 @@ PART
 		sharedEdgeTypeTrailing = 3
 		sharedEdgeWidthTrailingRoot = 0
 		sharedEdgeWidthTrailingTip = 0
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
-		sharedMaterialSB = 4
-		sharedColorSBOpacity = 0
-		sharedColorSBHue = 0.100000001
-		sharedColorSBSaturation = 0.75
-		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
-		sharedColorETOpacity = 0
-		sharedColorETHue = 0.100000001
-		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
-		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 1
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.200000003
+		sharedColorSTBrightness = 0.150000006
+		sharedMaterialSB = 0
+		sharedColorSBOpacity = 1
+		sharedColorSBHue = 0.109999999
+		sharedColorSBSaturation = 0.200000003
+		sharedColorSBBrightness = 0.150000006
+		sharedMaterialET = 0
+		sharedColorETOpacity = 1
+		sharedColorETHue = 0.109999999
+		sharedColorETSaturation = 0.199999988
+		sharedColorETBrightness = 0.149999991
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
+		sharedColorELHue = 0.109999999
+		sharedColorELSaturation = 0.200000003
+		sharedColorELBrightness = 0.150000006
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -1990,7 +1870,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000007
 	partName = Part
-	persistentId = 2954627762
+	persistentId = 102008406
 	pos = -3.014,6.8581,1.2466
 	attPos = 0,0,0
 	attPos0 = 0.164456,-0.03691,-4.9642e-06
@@ -2080,26 +1960,26 @@ PART
 		sharedEdgeTypeTrailing = 3
 		sharedEdgeWidthTrailingRoot = 0
 		sharedEdgeWidthTrailingTip = 0
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
-		sharedMaterialSB = 4
-		sharedColorSBOpacity = 0
-		sharedColorSBHue = 0.100000001
-		sharedColorSBSaturation = 0.75
-		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
-		sharedColorETOpacity = 0
-		sharedColorETHue = 0.100000001
-		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
-		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 1
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.200000003
+		sharedColorSTBrightness = 0.150000006
+		sharedMaterialSB = 0
+		sharedColorSBOpacity = 1
+		sharedColorSBHue = 0.109999999
+		sharedColorSBSaturation = 0.200000003
+		sharedColorSBBrightness = 0.150000006
+		sharedMaterialET = 0
+		sharedColorETOpacity = 1
+		sharedColorETHue = 0.109999999
+		sharedColorETSaturation = 0.199999988
+		sharedColorETBrightness = 0.149999991
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
+		sharedColorELHue = 0.109999999
+		sharedColorELSaturation = 0.200000003
+		sharedColorELBrightness = 0.150000006
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -2223,7 +2103,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000008
 	partName = Part
-	persistentId = 3282691602
+	persistentId = 3991833818
 	pos = 5.206,6.91924,1.2919
 	attPos = 0,0,0
 	attPos0 = 2.19275,0.04996,-4.54503e-07
@@ -2311,26 +2191,26 @@ PART
 		sharedEdgeTypeTrailing = 3
 		sharedEdgeWidthTrailingRoot = 0.283917
 		sharedEdgeWidthTrailingTip = 0.014943
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
-		sharedMaterialSB = 4
-		sharedColorSBOpacity = 0
-		sharedColorSBHue = 0.100000001
-		sharedColorSBSaturation = 0.75
-		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
-		sharedColorETOpacity = 0
-		sharedColorETHue = 0.100000001
-		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
-		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 1
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.200000003
+		sharedColorSTBrightness = 0.150000006
+		sharedMaterialSB = 0
+		sharedColorSBOpacity = 1
+		sharedColorSBHue = 0.109999999
+		sharedColorSBSaturation = 0.200000003
+		sharedColorSBBrightness = 0.150000006
+		sharedMaterialET = 0
+		sharedColorETOpacity = 1
+		sharedColorETHue = 0.119999997
+		sharedColorETSaturation = 0.199999988
+		sharedColorETBrightness = 0.149999991
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
+		sharedColorELHue = 0.109999999
+		sharedColorELSaturation = 0.200000003
+		sharedColorELBrightness = 0.150000006
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -2454,7 +2334,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000009
 	partName = Part
-	persistentId = 3219048523
+	persistentId = 502683964
 	pos = -5.206,6.91924,1.2919
 	attPos = 0,0,0
 	attPos0 = 2.19275,0.04996,4.54503e-07
@@ -2542,26 +2422,26 @@ PART
 		sharedEdgeTypeTrailing = 3
 		sharedEdgeWidthTrailingRoot = 0.283917
 		sharedEdgeWidthTrailingTip = 0.014943
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
-		sharedMaterialSB = 4
-		sharedColorSBOpacity = 0
-		sharedColorSBHue = 0.100000001
-		sharedColorSBSaturation = 0.75
-		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
-		sharedColorETOpacity = 0
-		sharedColorETHue = 0.100000001
-		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
-		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 1
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.200000003
+		sharedColorSTBrightness = 0.150000006
+		sharedMaterialSB = 0
+		sharedColorSBOpacity = 1
+		sharedColorSBHue = 0.109999999
+		sharedColorSBSaturation = 0.200000003
+		sharedColorSBBrightness = 0.150000006
+		sharedMaterialET = 0
+		sharedColorETOpacity = 1
+		sharedColorETHue = 0.119999997
+		sharedColorETSaturation = 0.199999988
+		sharedColorETBrightness = 0.149999991
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
+		sharedColorELHue = 0.109999999
+		sharedColorELSaturation = 0.200000003
+		sharedColorELBrightness = 0.150000006
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -2685,7 +2565,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeB_4000000010
 	partName = Part
-	persistentId = 1495901852
+	persistentId = 1581341978
 	pos = 1.4248,6.78037,0.789293
 	attPos = 0,0,0
 	attPos0 = 1.42529,-0.495512,-2.95427e-07
@@ -2775,26 +2655,26 @@ PART
 		sharedEdgeTypeTrailing = 2
 		sharedEdgeWidthTrailingRoot = 0.490117
 		sharedEdgeWidthTrailingTip = 0.472186
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 1
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.199999988
+		sharedColorSTBrightness = 0.149999991
 		sharedMaterialSB = 4
 		sharedColorSBOpacity = 0
 		sharedColorSBHue = 0.100000001
 		sharedColorSBSaturation = 0.75
 		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
-		sharedColorETOpacity = 0
-		sharedColorETHue = 0.100000001
-		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
-		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedMaterialET = 0
+		sharedColorETOpacity = 1
+		sharedColorETHue = 0.119999997
+		sharedColorETSaturation = 0.199999988
+		sharedColorETBrightness = 0.149999991
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
+		sharedColorELHue = 0.109999999
+		sharedColorELSaturation = 0.199999988
+		sharedColorELBrightness = 0.149999991
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -2933,7 +2813,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeB_4000000011
 	partName = Part
-	persistentId = 182014416
+	persistentId = 3777740267
 	pos = -1.4248,6.78037,0.789293
 	attPos = 0,0,0
 	attPos0 = 1.42529,-0.495512,2.95427e-07
@@ -3023,26 +2903,26 @@ PART
 		sharedEdgeTypeTrailing = 2
 		sharedEdgeWidthTrailingRoot = 0.490117
 		sharedEdgeWidthTrailingTip = 0.472186
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 1
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.199999988
+		sharedColorSTBrightness = 0.149999991
 		sharedMaterialSB = 4
 		sharedColorSBOpacity = 0
 		sharedColorSBHue = 0.100000001
 		sharedColorSBSaturation = 0.75
 		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
-		sharedColorETOpacity = 0
-		sharedColorETHue = 0.100000001
-		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
-		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedMaterialET = 0
+		sharedColorETOpacity = 1
+		sharedColorETHue = 0.119999997
+		sharedColorETSaturation = 0.199999988
+		sharedColorETBrightness = 0.149999991
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
+		sharedColorELHue = 0.109999999
+		sharedColorELSaturation = 0.199999988
+		sharedColorELBrightness = 0.149999991
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -3181,7 +3061,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeB_4000000012
 	partName = Part
-	persistentId = 196935386
+	persistentId = 4028877316
 	pos = 4.11,6.85345,0.821764
 	attPos = 0,0,0
 	attPos0 = 1.09638,-0.423887,-2.27252e-07
@@ -3271,26 +3151,26 @@ PART
 		sharedEdgeTypeTrailing = 2
 		sharedEdgeWidthTrailingRoot = 0.384635
 		sharedEdgeWidthTrailingTip = 0.282893
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 1
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.199999988
+		sharedColorSTBrightness = 0.149999991
 		sharedMaterialSB = 4
 		sharedColorSBOpacity = 0
 		sharedColorSBHue = 0.100000001
 		sharedColorSBSaturation = 0.75
 		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
-		sharedColorETOpacity = 0
-		sharedColorETHue = 0.100000001
-		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
-		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedMaterialET = 0
+		sharedColorETOpacity = 1
+		sharedColorETHue = 0.119999997
+		sharedColorETSaturation = 0.199999988
+		sharedColorETBrightness = 0.149999991
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
+		sharedColorELHue = 0.109999999
+		sharedColorELSaturation = 0.199999988
+		sharedColorELBrightness = 0.149999991
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -3429,7 +3309,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeB_4000000013
 	partName = Part
-	persistentId = 2983626384
+	persistentId = 309826267
 	pos = -4.11,6.85345,0.821764
 	attPos = 0,0,0
 	attPos0 = 1.09638,-0.423887,2.27252e-07
@@ -3519,26 +3399,26 @@ PART
 		sharedEdgeTypeTrailing = 2
 		sharedEdgeWidthTrailingRoot = 0.384635
 		sharedEdgeWidthTrailingTip = 0.282893
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 1
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.199999988
+		sharedColorSTBrightness = 0.149999991
 		sharedMaterialSB = 4
 		sharedColorSBOpacity = 0
 		sharedColorSBHue = 0.100000001
 		sharedColorSBSaturation = 0.75
 		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
-		sharedColorETOpacity = 0
-		sharedColorETHue = 0.100000001
-		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
-		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedMaterialET = 0
+		sharedColorETOpacity = 1
+		sharedColorETHue = 0.119999997
+		sharedColorETSaturation = 0.199999988
+		sharedColorETBrightness = 0.149999991
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
+		sharedColorELHue = 0.109999999
+		sharedColorELSaturation = 0.199999988
+		sharedColorELBrightness = 0.149999991
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -3677,10 +3557,10 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000014
 	partName = Part
-	persistentId = 2695910619
+	persistentId = 3970942107
 	pos = 0,6.41296,-2.87522
 	attPos = 0,0,0
-	attPos0 = 0,-2.87522,-0.412957
+	attPos0 = 0,-2.66022,-0.412957
 	rot = -0.716911,0,0,-0.697165
 	attRot = 0,0,0,1
 	attRot0 = -0.0139622,0,0,-0.999903
@@ -3909,10 +3789,10 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000015
 	partName = Part
-	persistentId = 1421078042
+	persistentId = 3651459439
 	pos = 0,6.41296,-2.87522
 	attPos = 0,0,0
-	attPos0 = 0,-2.87522,-0.412957
+	attPos0 = 0,-2.66022,-0.412957
 	rot = 0,-0.697165,-0.716911,0
 	attRot = 0,0,0,1
 	attRot0 = 0,-0.999903,-0.0139622,0
@@ -4141,7 +4021,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000016
 	partName = Part
-	persistentId = 3164447734
+	persistentId = 2563993193
 	pos = 0.0553053,6.41296,-2.87522
 	attPos = 0,0,0
 	attPos0 = 0.0553054,0,-0
@@ -4231,26 +4111,26 @@ PART
 		sharedEdgeTypeTrailing = 3
 		sharedEdgeWidthTrailingRoot = 0
 		sharedEdgeWidthTrailingTip = 0
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
-		sharedMaterialSB = 4
-		sharedColorSBOpacity = 0
-		sharedColorSBHue = 0.100000001
-		sharedColorSBSaturation = 0.75
-		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 0.979999959
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.140000001
+		sharedColorSTBrightness = 0.149999991
+		sharedMaterialSB = 0
+		sharedColorSBOpacity = 1
+		sharedColorSBHue = 0.109999999
+		sharedColorSBSaturation = 0.199999988
+		sharedColorSBBrightness = 0.149999991
+		sharedMaterialET = 0
 		sharedColorETOpacity = 0
 		sharedColorETHue = 0.100000001
 		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
+		sharedColorETBrightness = 0.159999996
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
 		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedColorELSaturation = 0.199999988
+		sharedColorELBrightness = 0.149999991
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -4374,7 +4254,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000017
 	partName = Part
-	persistentId = 3089508799
+	persistentId = 1732320360
 	pos = -0.0553053,6.41296,-2.87522
 	attPos = 0,0,0
 	attPos0 = 0.0553054,0,0
@@ -4464,26 +4344,26 @@ PART
 		sharedEdgeTypeTrailing = 3
 		sharedEdgeWidthTrailingRoot = 0
 		sharedEdgeWidthTrailingTip = 0
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
-		sharedMaterialSB = 4
-		sharedColorSBOpacity = 0
-		sharedColorSBHue = 0.100000001
-		sharedColorSBSaturation = 0.75
-		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 0.979999959
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.140000001
+		sharedColorSTBrightness = 0.149999991
+		sharedMaterialSB = 0
+		sharedColorSBOpacity = 1
+		sharedColorSBHue = 0.109999999
+		sharedColorSBSaturation = 0.199999988
+		sharedColorSBBrightness = 0.149999991
+		sharedMaterialET = 0
 		sharedColorETOpacity = 0
 		sharedColorETHue = 0.100000001
 		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
+		sharedColorETBrightness = 0.159999996
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
 		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedColorELSaturation = 0.199999988
+		sharedColorELBrightness = 0.149999991
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -4607,7 +4487,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000018
 	partName = Part
-	persistentId = 1494349881
+	persistentId = 656668443
 	pos = 1.07292,6.41831,-3.0667
 	attPos = 0,0,0
 	attPos0 = 1.01762,-0.19156,1.94289e-16
@@ -4695,26 +4575,26 @@ PART
 		sharedEdgeTypeTrailing = 3
 		sharedEdgeWidthTrailingRoot = 0.3
 		sharedEdgeWidthTrailingTip = 0.0953778
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
-		sharedMaterialSB = 4
-		sharedColorSBOpacity = 0
-		sharedColorSBHue = 0.100000001
-		sharedColorSBSaturation = 0.75
-		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 0.979999959
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.140000001
+		sharedColorSTBrightness = 0.149999991
+		sharedMaterialSB = 0
+		sharedColorSBOpacity = 1
+		sharedColorSBHue = 0.109999999
+		sharedColorSBSaturation = 0.199999988
+		sharedColorSBBrightness = 0.149999991
+		sharedMaterialET = 0
 		sharedColorETOpacity = 0
 		sharedColorETHue = 0.100000001
 		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
+		sharedColorETBrightness = 0.159999996
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
 		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedColorELSaturation = 0.199999988
+		sharedColorELBrightness = 0.149999991
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -4838,7 +4718,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000019
 	partName = Part
-	persistentId = 284187976
+	persistentId = 532751786
 	pos = -1.07292,6.41831,-3.0667
 	attPos = 0,0,0
 	attPos0 = 1.01762,-0.19156,-1.94289e-16
@@ -4926,26 +4806,26 @@ PART
 		sharedEdgeTypeTrailing = 3
 		sharedEdgeWidthTrailingRoot = 0.3
 		sharedEdgeWidthTrailingTip = 0.0953778
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
-		sharedMaterialSB = 4
-		sharedColorSBOpacity = 0
-		sharedColorSBHue = 0.100000001
-		sharedColorSBSaturation = 0.75
-		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 0.979999959
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.140000001
+		sharedColorSTBrightness = 0.149999991
+		sharedMaterialSB = 0
+		sharedColorSBOpacity = 1
+		sharedColorSBHue = 0.109999999
+		sharedColorSBSaturation = 0.199999988
+		sharedColorSBBrightness = 0.149999991
+		sharedMaterialET = 0
 		sharedColorETOpacity = 0
 		sharedColorETHue = 0.100000001
 		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
+		sharedColorETBrightness = 0.159999996
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
 		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedColorELSaturation = 0.199999988
+		sharedColorELBrightness = 0.149999991
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -5069,7 +4949,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeB_4000000020
 	partName = Part
-	persistentId = 3638730293
+	persistentId = 745406642
 	pos = 0.564114,6.42214,-3.20416
 	attPos = 0,0,0
 	attPos0 = 0.508809,-0.32907,-4.44089e-16
@@ -5159,26 +5039,26 @@ PART
 		sharedEdgeTypeTrailing = 2
 		sharedEdgeWidthTrailingRoot = 0.419475
 		sharedEdgeWidthTrailingTip = 0.299625
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
-		sharedMaterialSB = 4
-		sharedColorSBOpacity = 0
-		sharedColorSBHue = 0.100000001
-		sharedColorSBSaturation = 0.75
-		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
-		sharedColorETOpacity = 0
-		sharedColorETHue = 0.100000001
-		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 0.979999959
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.140000001
+		sharedColorSTBrightness = 0.149999991
+		sharedMaterialSB = 0
+		sharedColorSBOpacity = 1
+		sharedColorSBHue = 0.109999999
+		sharedColorSBSaturation = 0.199999988
+		sharedColorSBBrightness = 0.149999991
+		sharedMaterialET = 0
+		sharedColorETOpacity = 1
+		sharedColorETHue = 0.109999999
+		sharedColorETSaturation = 0.199999988
+		sharedColorETBrightness = 0.149999991
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
 		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedColorELSaturation = 0.199999988
+		sharedColorELBrightness = 0.149999991
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -5317,7 +5197,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeB_4000000021
 	partName = Part
-	persistentId = 2033191428
+	persistentId = 4113628779
 	pos = -0.564114,6.42214,-3.20416
 	attPos = 0,0,0
 	attPos0 = 0.508809,-0.32907,4.44089e-16
@@ -5407,26 +5287,26 @@ PART
 		sharedEdgeTypeTrailing = 2
 		sharedEdgeWidthTrailingRoot = 0.419475
 		sharedEdgeWidthTrailingTip = 0.299625
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
-		sharedMaterialSB = 4
-		sharedColorSBOpacity = 0
-		sharedColorSBHue = 0.100000001
-		sharedColorSBSaturation = 0.75
-		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
-		sharedColorETOpacity = 0
-		sharedColorETHue = 0.100000001
-		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 0.979999959
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.140000001
+		sharedColorSTBrightness = 0.149999991
+		sharedMaterialSB = 0
+		sharedColorSBOpacity = 1
+		sharedColorSBHue = 0.109999999
+		sharedColorSBSaturation = 0.199999988
+		sharedColorSBBrightness = 0.149999991
+		sharedMaterialET = 0
+		sharedColorETOpacity = 1
+		sharedColorETHue = 0.109999999
+		sharedColorETSaturation = 0.199999988
+		sharedColorETBrightness = 0.149999991
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
 		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedColorELSaturation = 0.199999988
+		sharedColorELBrightness = 0.149999991
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -5565,10 +5445,10 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000022
 	partName = Part
-	persistentId = 4042515637
+	persistentId = 280136353
 	pos = 0,6.24032,-2.78526
 	attPos = 0,0,0
-	attPos0 = 0,-2.78526,-0.240323
+	attPos0 = 0,-2.57026,-0.240323
 	rot = -0.5,-0.5,-0.5,-0.5
 	attRot = 0,0,0,1
 	attRot0 = 0,-0.707107,0,-0.707107
@@ -5795,10 +5675,10 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000023
 	partName = Part
-	persistentId = 2948754893
+	persistentId = 767318914
 	pos = 0,6.32621,-2.79938
 	attPos = 0,0,0
-	attPos0 = 0,-2.79938,-0.326209
+	attPos0 = 0,-2.58438,-0.326209
 	rot = -0.5,-0.5,-0.5,-0.5
 	attRot = 0,0,0,1
 	attRot0 = 0,-0.707107,0,-0.707107
@@ -5883,26 +5763,26 @@ PART
 		sharedEdgeTypeTrailing = 3
 		sharedEdgeWidthTrailingRoot = 0
 		sharedEdgeWidthTrailingTip = 0
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
-		sharedMaterialSB = 4
-		sharedColorSBOpacity = 0
-		sharedColorSBHue = 0.100000001
-		sharedColorSBSaturation = 0.75
-		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
-		sharedColorETOpacity = 0
-		sharedColorETHue = 0.100000001
-		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
-		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 1
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.200000003
+		sharedColorSTBrightness = 1
+		sharedMaterialSB = 0
+		sharedColorSBOpacity = 1
+		sharedColorSBHue = 0.109999999
+		sharedColorSBSaturation = 0.200000003
+		sharedColorSBBrightness = 1
+		sharedMaterialET = 0
+		sharedColorETOpacity = 1
+		sharedColorETHue = 0.109999999
+		sharedColorETSaturation = 0.200000003
+		sharedColorETBrightness = 1
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
+		sharedColorELHue = 0.109999999
+		sharedColorELSaturation = 0.200000003
+		sharedColorELBrightness = 1
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -6026,10 +5906,10 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeA_4000000024
 	partName = Part
-	persistentId = 48352938
+	persistentId = 2293597541
 	pos = 0,7.87216,-3.02339
 	attPos = 0,0,0
-	attPos0 = 0,-3.02339,-1.87215
+	attPos0 = 0,-2.80839,-1.87215
 	rot = -0.5,-0.5,-0.5,-0.5
 	attRot = 0,0,0,1
 	attRot0 = 0,-0.707107,0,-0.707107
@@ -6113,26 +5993,26 @@ PART
 		sharedEdgeTypeTrailing = 3
 		sharedEdgeWidthTrailingRoot = 0.302255
 		sharedEdgeWidthTrailingTip = 0.0157589
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
-		sharedMaterialSB = 4
-		sharedColorSBOpacity = 0
-		sharedColorSBHue = 0.100000001
-		sharedColorSBSaturation = 0.75
-		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
-		sharedColorETOpacity = 0
-		sharedColorETHue = 0.100000001
-		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
-		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 1
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.200000003
+		sharedColorSTBrightness = 1
+		sharedMaterialSB = 0
+		sharedColorSBOpacity = 1
+		sharedColorSBHue = 0.109999999
+		sharedColorSBSaturation = 0.200000003
+		sharedColorSBBrightness = 1
+		sharedMaterialET = 0
+		sharedColorETOpacity = 1
+		sharedColorETHue = 0.109999999
+		sharedColorETSaturation = 0.200000003
+		sharedColorETBrightness = 0.179999992
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
+		sharedColorELHue = 0.109999999
+		sharedColorELSaturation = 0.200000003
+		sharedColorELBrightness = 1
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -6256,7 +6136,7 @@ PART
 {
 	part = B9.Aero.Wing.Procedural.TypeB_4000000025
 	partName = Part
-	persistentId = 1236662188
+	persistentId = 106017433
 	pos = 0,7.09918,-3.17886
 	attPos = 0,0,0
 	attPos0 = 0.772973,-0.379486,0
@@ -6345,26 +6225,26 @@ PART
 		sharedEdgeTypeTrailing = 2
 		sharedEdgeWidthTrailingRoot = 0.520028
 		sharedEdgeWidthTrailingTip = 0.301831
-		sharedMaterialST = 1
-		sharedColorSTOpacity = 0
-		sharedColorSTHue = 0.100000001
-		sharedColorSTSaturation = 0.75
-		sharedColorSTBrightness = 0.600000024
-		sharedMaterialSB = 4
-		sharedColorSBOpacity = 0
-		sharedColorSBHue = 0.100000001
-		sharedColorSBSaturation = 0.75
-		sharedColorSBBrightness = 0.600000024
-		sharedMaterialET = 4
-		sharedColorETOpacity = 0
-		sharedColorETHue = 0.100000001
-		sharedColorETSaturation = 0.75
-		sharedColorETBrightness = 0.600000024
-		sharedMaterialEL = 4
-		sharedColorELOpacity = 0
-		sharedColorELHue = 0.100000001
-		sharedColorELSaturation = 0.75
-		sharedColorELBrightness = 0.600000024
+		sharedMaterialST = 0
+		sharedColorSTOpacity = 1
+		sharedColorSTHue = 0.109999999
+		sharedColorSTSaturation = 0.200000003
+		sharedColorSTBrightness = 0.049999997
+		sharedMaterialSB = 0
+		sharedColorSBOpacity = 1
+		sharedColorSBHue = 0.109999999
+		sharedColorSBSaturation = 0.200000003
+		sharedColorSBBrightness = 0.119999997
+		sharedMaterialET = 0
+		sharedColorETOpacity = 1
+		sharedColorETHue = 0.109999999
+		sharedColorETSaturation = 0.200000003
+		sharedColorETBrightness = 0.199999988
+		sharedMaterialEL = 0
+		sharedColorELOpacity = 1
+		sharedColorELHue = 0.109999999
+		sharedColorELSaturation = 0.200000003
+		sharedColorELBrightness = 1
 		sharedSweptAngleFront = 90
 		sharedSweptAngleBack = 90
 		sharedArmorRatio = 0
@@ -6503,10 +6383,10 @@ PART
 {
 	part = probeCoreOcto_4000000029
 	partName = Part
-	persistentId = 2841604629
+	persistentId = 2357296683
 	pos = 0,5.91333,2.55924
 	attPos = 0,0,0
-	attPos0 = 0,2.55924,0.0866738
+	attPos0 = 0,2.77424,0.0866738
 	rot = 0.707107,0,0,0.707107
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
@@ -6694,10 +6574,10 @@ PART
 {
 	part = proceduralTankLiquid_4000000030
 	partName = Part
-	persistentId = 3713072918
-	pos = 0,6,1.56823
+	persistentId = 2259129963
+	pos = 0,6,1.61423
 	attPos = 0,0,0
-	attPos0 = 0,1.56823,-0
+	attPos0 = 0,1.82923,-0
 	rot = 0.707107,0,0,0.707107
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
@@ -7195,9 +7075,9 @@ PART
 	part = FARTest.O320E2D_4100000001
 	partName = Part
 	persistentId = 4100000001
-	pos = 0,5.96056,3.25606
+	pos = 0,5.9,3.08506
 	attPos = 0,0,0
-	attPos0 = 0,3.25606,0.0394435
+	attPos0 = 0,3.30006,0.1
 	rot = 0.707107,0,0,0.707107
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
@@ -7231,9 +7111,9 @@ PART
 	part = proceduralStructural_4100000002
 	partName = Part
 	persistentId = 4100000002
-	pos = 1.2982,6.19231,1.72606
+	pos = 1.2982,6.20001,1.72606
 	attPos = 0,0,0
-	attPos0 = 1.2982,1.72606,-0.192305
+	attPos0 = 1.2982,1.94106,-0.200005
 	rot = -0.0187637,0.0105578,-0.490259,0.871311
 	attRot = 0,0,0,1
 	attRot0 = -0.629378,-0.3392,-0.354131,0.602842
@@ -7685,9 +7565,9 @@ PART
 	part = proceduralStructural_4100000003
 	partName = Part
 	persistentId = 4100000003
-	pos = -1.2982,6.19231,1.72606
+	pos = -1.2982,6.20001,1.72606
 	attPos = 0,0,0
-	attPos0 = -1.2982,1.72606,-0.192305
+	attPos0 = -1.2982,1.94106,-0.200005
 	rot = -0.0187637,-0.0105578,0.490259,0.871311
 	attRot = 0,0,0,1
 	attRot0 = -0.629378,0.3392,0.354131,0.602842
@@ -8141,7 +8021,7 @@ PART
 	persistentId = 4100000004
 	pos = 0.5588,5.15516,2.97698
 	attPos = 0,0,0
-	attPos0 = 0.5588,2.97698,0.844843
+	attPos0 = 0.5588,3.19198,0.844843
 	rot = 0,0,0.891724,-0.452579
 	attRot = 0,0,0,1
 	attRot0 = 0.320022,0.630544,0.630544,-0.320022
@@ -8596,7 +8476,7 @@ PART
 	persistentId = 4100000005
 	pos = 0.5588,5.15427,1.21572
 	attPos = 0,0,0
-	attPos0 = 0.5588,1.21572,0.845734
+	attPos0 = 0.5588,1.43072,0.845734
 	rot = 0,0,0.891489,-0.453043
 	attRot = 0,0,0,1
 	attRot0 = 0.32035,0.630378,0.630378,-0.32035
@@ -9050,7 +8930,7 @@ PART
 	persistentId = 4100000006
 	pos = 1.1176,4.74646,0.173427
 	attPos = 0,0,0
-	attPos0 = -3.90291e-06,0.692308,-2.80355
+	attPos0 = -3.9663e-06,0.692308,-2.80355
 	rot = 0,0.707107,0.707107,0
 	attRot = 0,0,0,1
 	attRot0 = 0.630544,-0.320022,-0.320022,0.630544
@@ -9123,8 +9003,8 @@ PART
 		name = ProceduralPart
 		isEnabled = True
 		density = 0
-		forceLegacyTextures = False
-		textureSet = Original
+		forceLegacyTextures = True
+		textureSet = BlueSide
 		capTextureIndex = 0
 		shapeName = Spine
 		moduleCost = 4397.87012
@@ -10025,8 +9905,8 @@ PART
 		name = ProceduralPart
 		isEnabled = True
 		density = 0
-		forceLegacyTextures = False
-		textureSet = Original
+		forceLegacyTextures = True
+		textureSet = BlueSide
 		capTextureIndex = 0
 		shapeName = Spine
 		moduleCost = 4397.87012
@@ -10893,8 +10773,8 @@ PART
 		name = ProceduralPart
 		isEnabled = True
 		density = 0
-		forceLegacyTextures = False
-		textureSet = Original
+		forceLegacyTextures = True
+		textureSet = BlueSide
 		capTextureIndex = 0
 		shapeName = Spine
 		moduleCost = 4397.87012
@@ -11909,7 +11789,7 @@ PART
 	persistentId = 4100000011
 	pos = -0.5588,5.15516,2.97698
 	attPos = 0,0,0
-	attPos0 = -0.5588,2.97698,0.844843
+	attPos0 = -0.5588,3.19198,0.844843
 	rot = 0,0,0.891724,0.452579
 	attRot = 0,0,0,1
 	attRot0 = -0.320022,0.630544,0.630544,0.320022
@@ -12364,7 +12244,7 @@ PART
 	persistentId = 4100000012
 	pos = -0.5588,5.15427,1.21572
 	attPos = 0,0,0
-	attPos0 = -0.5588,1.21572,0.845734
+	attPos0 = -0.5588,1.43072,0.845734
 	rot = 0,0,0.891489,0.453043
 	attRot = 0,0,0,1
 	attRot0 = -0.32035,0.630378,0.630378,0.32035
@@ -12818,7 +12698,7 @@ PART
 	persistentId = 4100000013
 	pos = -1.1176,4.74646,0.173427
 	attPos = 0,0,0
-	attPos0 = 3.90291e-06,0.692308,-2.80355
+	attPos0 = 3.9663e-06,0.692308,-2.80355
 	rot = 0,0.707107,0.707107,0
 	attRot = 0,0,0,1
 	attRot0 = 0.630544,0.320022,0.320022,0.630544
@@ -12891,8 +12771,8 @@ PART
 		name = ProceduralPart
 		isEnabled = True
 		density = 0
-		forceLegacyTextures = False
-		textureSet = Original
+		forceLegacyTextures = True
+		textureSet = BlueSide
 		capTextureIndex = 0
 		shapeName = Spine
 		moduleCost = 4397.87012
@@ -13793,8 +13673,8 @@ PART
 		name = ProceduralPart
 		isEnabled = True
 		density = 0
-		forceLegacyTextures = False
-		textureSet = Original
+		forceLegacyTextures = True
+		textureSet = BlueSide
 		capTextureIndex = 0
 		shapeName = Spine
 		moduleCost = 4397.87012
@@ -14661,8 +14541,8 @@ PART
 		name = ProceduralPart
 		isEnabled = True
 		density = 0
-		forceLegacyTextures = False
-		textureSet = Original
+		forceLegacyTextures = True
+		textureSet = BlueSide
 		capTextureIndex = 0
 		shapeName = Spine
 		moduleCost = 4397.87012
@@ -15677,7 +15557,7 @@ PART
 	persistentId = 4100000018
 	pos = 0,5.50154,1.49922
 	attPos = 0,0,0
-	attPos0 = 0,-0.0690077,0.498456
+	attPos0 = 0,-0.115008,0.498456
 	rot = 0.707107,0,0,0.707107
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1

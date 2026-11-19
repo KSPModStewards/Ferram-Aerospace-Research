@@ -56,8 +56,22 @@ namespace FerramAerospaceResearch.KspTests
                 StartsAt = StartState.Flight, Craft = NacaModel + " Split", CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 2400)]
         public static IEnumerator Tow_Naca11AModelSplit(TestContext ctx) => TowNaca(ctx, 17 * 0.0254);
 
-        private static IEnumerator TowNaca(TestContext ctx, double beam)
+        /// <summary>
+        /// As Tow_Naca11A, the hull with its deck caved in (NACA 11-A Shell.craft, crafts/naca_11a.py shell): every station but
+        /// the bow's and the stern's is the 2 cm wall alone (the outer line, then the inner wall back), one closed mesh
+        /// round an open hollow, as an open boat is built. The water must not reach the hollow: it floats on the air in
+        /// it, as the decked hull does on its own. Its wall as a fuel tank weighs ~30 kg, too light to tow: its tank type is
+        /// the test mods' FARTestBallast, ~3.2 t. (It needs CustomProceduralParts' convex-piece Spine collider, WaterMods'
+        /// checkout: the pinned build's 12 points a ring are too few for a section's two walls.)
+        /// </summary>
+        [UITest(Kind = "Measure", Explicit = true, Mods = TestWarp.WaterMods,
+                StartsAt = StartState.Flight, Craft = Naca + " Shell", CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 2400)]
+        public static IEnumerator Tow_Naca11AShell(TestContext ctx) => TowNaca(ctx, 2.0, true);
+
+        // shell: NACA 11-A Shell (its mesh the wall's, its keel the Spine's -z as the solid one's)
+        private static IEnumerator TowNaca(TestContext ctx, double beam, bool shell = false)
         {
+            HullParts Hull(Vessel vessel) => HullParts.Whole(vessel);
             // crafts/naca_11a.py: the model's inch at this beam; the step at the spine's middle, the base line its axis
             double Beam = beam, Inch = beam / 17.0, size = beam / 2.0;
             double KeelAtStep = 14.0 * Inch;                                        // below the base line
@@ -83,7 +97,7 @@ namespace FerramAerospaceResearch.KspTests
 
             yield return Wait.Seconds(5);
             Vessel v = FlightGlobals.ActiveVessel;
-            HullParts hull = HullParts.Whole(v);
+            HullParts hull = Hull(v);
             ctx.Record("parts", $"{hull.Parts.Length}: " + string.Join(", ", hull.Parts.Select(q => $"{q.partInfo.name} at {hull.InverseTransformPoint(q.transform.position).y:F3}")) +
                                 $", {hull.Length:F3} m long");
             foreach (PartResource r in hull.Parts.SelectMany(q => q.Resources.Cast<PartResource>()))
@@ -98,12 +112,14 @@ namespace FerramAerospaceResearch.KspTests
                 yield return FarFlightProbe.Place(Far.At(0, 600, 0, "naca", speedMs: 5));
                 v = FlightGlobals.ActiveVessel;
                 CelestialBody body = v.mainBody;
-                hull = HullParts.Whole(v);
+                hull = Hull(v);
                 Rigidbody rb = hull.Ref.rb;
                 Vector3 up = v.upAxis;
                 Vector3 h = Vector3.ProjectOnPlane(hull.Forward, up).normalized;
                 Vector3 bowUp = Vector3.Cross(h, up).normalized;     // rotation about it raises the bow
-                Vector3 keel = PlaningVideoTests.KeelAxis(hull.Ref);
+                // (the strut is turned as the station Spine is, its keel the Spine's)
+                // (the shell's colliders are convex pieces: the first of them no measure of the keel)
+                Vector3 keel = shell ? Vector3.back : PlaningVideoTests.KeelAxis(hull.Ref);
                 Assert.True(Mathf.Abs(keel.z) > 0.5f, $"the keel is along the part's z (sections' -y): {keel}");
                 DumpObj(hull, Path.Combine(ctx.ResultsDir, $"collider-{v.vesselName}.obj"), true);
                 DumpObj(hull, Path.Combine(ctx.ResultsDir, $"visual-{v.vesselName}.obj"), false);
@@ -123,8 +139,6 @@ namespace FerramAerospaceResearch.KspTests
                 var rows = new StringBuilder("trim_deg,C_V,V_ms,R_kN,R_sd,air_kN,C_R,R_over_Delta,draft_step_m,draft_step_in,moment_kNm,C_M,moment_lbft_model," +
                                              "hydroUp_kN,buoyUp_kN,wetLength_m,limiter\n");
                 var fixedWait = new WaitForFixedUpdate();
-                // hyper-warped (parameter hyperWarp; the hull held every step: the same run, sooner)
-                TestWarp.Hyper(ctx, true);
                 var stripCsv = new StringBuilder("trim_deg,C_V,x_m,width_m,ma_kg_m,v_ms,jump_N,load_N,separated,y_part_m,z_part_m,momUp_kN,crossUp_kN,hydrostaticUp_kN,friction_kN,impact_kN\n");
                 FARAeroComponents.PartHydrodynamics.RecordStrips = true;
                 // the hull's attitude at a trim, against the local vertical where it is now (it runs kilometres)
@@ -138,155 +152,219 @@ namespace FerramAerospaceResearch.KspTests
                     return Quaternion.LookRotation(keel.z > 0 ? down : -down, fwd);
                 }
 
-                for (int ti = 0; ti < trims.Length; ti++)
+                // at each collider detail (ColliderDetail): the trims' runs and their checks, each level's resistance and
+                // step draft held to the finest's after (the shell: 12 points a ring too few for a section's two walls)
+                int[] details = ColliderDetail.Levels(ctx, shell ? "24+48" : "12+24+48", v);
+                var missed = new List<string>();
+                var lodRuns = new Dictionary<(int, double, double), (double cr, double draft)>();
+                int rowsHead = rows.Length, stripsHead = stripCsv.Length;
+                foreach (int detail in details)
                 {
-                    double tau = trims[ti];
-                    v.SetRotation(Hold(tau));
-                    yield return new WaitForFixedUpdate();
-                    double stepAlt = FlightGlobals.getAltitudeAtPos(hull.TransformPoint(stepKeel), body);
-                    v.SetPosition(v.vesselTransform.position + (Vector3d)up * (-0.45 * size - stepAlt));
-                    RigidVessel.Set(v, Vector3.zero, Vector3.zero);
-
-                    double setAlong = 0;
-                    var phases = new List<double> { 0 };
-                    phases.AddRange(cvs);
-                    foreach (double cv in phases)
+                    yield return ColliderDetail.Set(ctx, v, detail);
+                    // the frame where the hull is now: a level's tows carry it a km or more round the planet, its up turned with it
+                    up = v.upAxis;
+                    h = Vector3.ProjectOnPlane(h, up).normalized;
+                    // hyper-warped (parameter hyperWarp; the hull held every step: the same run, sooner)
+                    TestWarp.Hyper(ctx, true, 16);
+                    string at = details.Length > 1 ? $" @{detail}" : "", sfx = details.Length > 1 ? $"-{detail}" : "";
+                    runs.Clear();
+                    rows.Length = rowsHead;
+                    stripCsv.Length = stripsHead;
+                    for (int ti = 0; ti < trims.Length; ti++)
                     {
-                        double V = cv * sqrtGb;
-                        ctx.Step(cv == 0 ? $"trim {tau}: at rest" : $"trim {tau}: C_V {cv}");
-                        double settle = cv == 0 ? 8 : 6, t0 = Planetarium.GetUniversalTime();
-                        var tow = new List<double>(); var air = new List<double>(); var draft = new List<double>(); var mom = new List<double>();
-                        var hUp = new List<double>(); var bUp = new List<double>(); var wetL = new List<double>(); var lim = new List<double>();
-                        int n = 0;
-                        while (Planetarium.GetUniversalTime() - t0 < settle + 4)
+                        double tau = trims[ti];
+                        v.SetRotation(Hold(tau));
+                        yield return new WaitForFixedUpdate();
+                        double stepAlt = FlightGlobals.getAltitudeAtPos(hull.TransformPoint(stepKeel), body);
+                        v.SetPosition(v.vesselTransform.position + (Vector3d)up * (-0.45 * size - stepAlt));
+                        RigidVessel.Set(v, Vector3.zero, Vector3.zero);
+
+                        double setAlong = 0;
+                        var phases = new List<double> { 0 };
+                        phases.AddRange(cvs);
+                        foreach (double cv in phases)
                         {
-                            // after the physics step: the tow line's force, the hold's moment; then speed, trim and the
-                            // counterweight's share of the weight for the next step
-                            double dt = TimeWarp.fixedDeltaTime;
-                            Vector3 vel = RigidVessel.Velocity(v);
-                            Vector3 bowUpWas = bowUp, hWas = h;
-                            Quaternion hold = Hold(tau);
-                            double towKN = mass * (setAlong - Vector3.Dot(vel, hWas)) / dt;
-                            Vector3 torque = RigidVessel.AngularMomentum(v) / (float)dt;   // kN m, what the water put in
-                            double momentKNm = Vector3.Dot(torque, bowUpWas);
-
-                            Vector3d com = RigidVessel.CoM(v);
-                            double g = -Vector3d.Dot(FlightGlobals.getGeeForceAtPosition(com) + FlightGlobals.getCentrifugalAcc(com, body), (Vector3d)up);
-                            double lift = mass * g - delta;                  // the counterweight, kN
-                            double vUp = Vector3.Dot(vel, up) + lift / mass * dt;
-                            (double d, double m) bend = RigidVessel.Bend(v, hull.Ref);
-                            bendDeg = Math.Max(bendDeg, bend.d);
-                            bendM = Math.Max(bendM, bend.m);
-                            if (rigid)
-                                RigidVessel.Snap(v, hull.Ref);
-                            RigidVessel.Rotate(v, hull.Ref, hold);
-                            RigidVessel.Set(v, up * (float)vUp + h * (float)V, Vector3.zero);
-                            setAlong = V;
-
-                            double t = Planetarium.GetUniversalTime() - t0;
-                            if (t >= settle)
+                            double V = cv * sqrtGb;
+                            ctx.Step(cv == 0 ? $"trim {tau}: at rest" : $"trim {tau}: C_V {cv}");
+                            double settle = cv == 0 ? 8 : 6, t0 = Planetarium.GetUniversalTime();
+                            var tow = new List<double>(); var air = new List<double>(); var draft = new List<double>(); var mom = new List<double>();
+                            var hUp = new List<double>(); var bUp = new List<double>(); var wetL = new List<double>(); var lim = new List<double>();
+                            int n = 0;
+                            while (Planetarium.GetUniversalTime() - t0 < settle + 4)
                             {
-                                double d = -FlightGlobals.getAltitudeAtPos(hull.TransformPoint(stepKeel), body);
-                                tow.Add(towKN); draft.Add(d); mom.Add(momentKNm);
-                                hUp.Add(Vector3.Dot(hull.Sum(x => x.LastForce), up));
-                                bUp.Add(Vector3.Dot(hull.StockBuoyancy + hull.Sum(x => x.LastHydrostaticForce), up));
-                                wetL.Add(hull.WettedLength); lim.Add(hull.Limiter);
-                                if (n % 10 == 0 && V > 0)
+                                // after the physics step: the tow line's force, the hold's moment; then speed, trim and the
+                                // counterweight's share of the weight for the next step
+                                double dt = TimeWarp.fixedDeltaTime;
+                                Vector3 vel = RigidVessel.Velocity(v);
+                                Vector3 bowUpWas = bowUp, hWas = h;
+                                Quaternion hold = Hold(tau);
+                                // (the rigidbodies' mass as it is now, not the vessel's total read before the tow: FAR sets
+                                // a wing panel's mass later, and a hull of B9 plates came out 0.34 t heavier, 3 kN more on the
+                                // water)
+                                mass = RigidVessel.Mass(v);
+                                double towKN = mass * (setAlong - Vector3.Dot(vel, hWas)) / dt;
+                                Vector3 torque = RigidVessel.AngularMomentum(v) / (float)dt;   // kN m, what the water put in
+                                double momentKNm = Vector3.Dot(torque, bowUpWas);
+
+                                Vector3d com = RigidVessel.CoM(v);
+                                double g = -Vector3d.Dot(FlightGlobals.getGeeForceAtPosition(com) + FlightGlobals.getCentrifugalAcc(com, body), (Vector3d)up);
+                                double lift = mass * g - delta;                  // the counterweight, kN
+                                double vUp = Vector3.Dot(vel, up) + lift / mass * dt;
+                                (double d, double m) bend = RigidVessel.Bend(v, hull.Ref);
+                                bendDeg = Math.Max(bendDeg, bend.d);
+                                bendM = Math.Max(bendM, bend.m);
+                                if (rigid)
+                                    RigidVessel.Snap(v, hull.Ref);
+                                RigidVessel.Rotate(v, hull.Ref, hold);
+                                RigidVessel.Set(v, up * (float)vUp + h * (float)V, Vector3.zero);
+                                setAlong = V;
+
+                                double t = Planetarium.GetUniversalTime() - t0;
+                                if (t >= settle)
                                 {
-                                    FARAPI.CalculateVesselAeroForces(v, out Vector3 f, out _, h * (float)V, Math.Max(0, v.altitude));
-                                    air.Add(-Vector3.Dot(f, h));
+                                    double d = -FlightGlobals.getAltitudeAtPos(hull.TransformPoint(stepKeel), body);
+                                    tow.Add(towKN); draft.Add(d); mom.Add(momentKNm);
+                                    hUp.Add(Vector3.Dot(hull.Sum(x => x.LastForce), up));
+                                    bUp.Add(Vector3.Dot(hull.StockBuoyancy + hull.Sum(x => x.LastHydrostaticForce), up));
+                                    wetL.Add(hull.WettedLength); lim.Add(hull.Limiter);
+                                    if (n % 10 == 0 && V > 0)
+                                    {
+                                        FARAPI.CalculateVesselAeroForces(v, out Vector3 f, out _, h * (float)V, Math.Max(0, v.altitude));
+                                        air.Add(-Vector3.Dot(f, h));
+                                    }
+                                }
+                                n++;
+                                yield return fixedWait;
+                            }
+
+                            foreach (var st in hull.StripData)
+                            {
+                                Vector3 lp = hull.InverseTransformPoint(st.point);
+                                stripCsv.AppendLine(string.Join(",", F(tau), F(cv), F(st.x), F(st.width), F(st.ma), F(st.v), F(st.jump), F(st.load), st.separated ? "1" : "0",
+                                                                F(lp.y), F(lp.z), F(Vector3.Dot(hull.Sum(x => x.LastMomentumForce), up)), F(Vector3.Dot(hull.Sum(x => x.LastCrossflowForce), up)),
+                                                                F(Vector3.Dot(hull.Sum(x => x.LastHydrostaticForce), up)), F(-Vector3.Dot(hull.Sum(x => x.LastFrictionForce), h)),
+                                                                F(-Vector3.Dot(hull.Sum(x => x.LastImpactForce), h))));
+                            }
+                            double R = tow.Average(), dS = draft.Average(), M = mom.Average();
+                            double cM = M / (rho * 9.80665 * body.GeeASL / 1000 * Math.Pow(Beam, 4));
+                            double mModel = cM * 63.6 * Math.Pow(17.0 / 12, 4);
+                            rows.AppendLine(string.Join(",", F(tau), F(cv), F(V), F(R), F(Sd(tow)), F(air.Count > 0 ? air.Average() : 0),
+                                                        F(R / (delta / load)), F(R / delta), F(dS), F(dS / Inch), F(M), F(cM), F(mModel),
+                                                        F(hUp.Average()), F(bUp.Average()), F(wetL.Average()), F(lim.Min())));
+                            if (cv == 0)
+                            {
+                                bool owns = FARDebugValues.hydrodynamics && hull.OwnsBuoyancy;
+                                double meshVolume = hull.MeshVolume;
+                                double hand = ti < restDrafts.Length ? restDrafts[ti] : double.NaN;
+                                ctx.Record($"rest {tau}{at}", $"draft at the step {dS:F3} m (hand {hand:F3}), mass {mass:F3} t, buoyancy {bUp.Average():F2} kN of {delta:F2}, " +
+                                                          $"moment {mModel:F1} lb ft model, " + (owns ? $"mesh volume {meshVolume:F2} m3 (hand {(shell ? "the wall's" : handVolume.ToString("F2"))})" : "stock buoyancy"));
+                                if (owns)
+                                {
+                                    if (!shell)
+                                        if (Math.Abs(meshVolume / handVolume - 1) >= 0.02) missed.Add($"{detail}: mesh volume {meshVolume:F2} m3 not within 2% of {handVolume:F2}");
+                                    if (!double.IsNaN(hand) && Math.Abs(load - 0.221) < 1e-6)
+                                        if (Math.Abs(dS - hand) >= 0.02 * size) missed.Add($"{detail}: rest draft at the step {dS:F4} m not within {0.02 * size:F4} of {hand:F4}");
                                 }
                             }
-                            n++;
-                            yield return fixedWait;
-                        }
-
-                        foreach (var st in hull.StripData)
-                        {
-                            Vector3 lp = hull.InverseTransformPoint(st.point);
-                            stripCsv.AppendLine(string.Join(",", F(tau), F(cv), F(st.x), F(st.width), F(st.ma), F(st.v), F(st.jump), F(st.load), st.separated ? "1" : "0",
-                                                            F(lp.y), F(lp.z), F(Vector3.Dot(hull.Sum(x => x.LastMomentumForce), up)), F(Vector3.Dot(hull.Sum(x => x.LastCrossflowForce), up)),
-                                                            F(Vector3.Dot(hull.Sum(x => x.LastHydrostaticForce), up)), F(-Vector3.Dot(hull.Sum(x => x.LastFrictionForce), h)),
-                                                            F(-Vector3.Dot(hull.Sum(x => x.LastImpactForce), h))));
-                        }
-                        double R = tow.Average(), dS = draft.Average(), M = mom.Average();
-                        double cM = M / (rho * 9.80665 * body.GeeASL / 1000 * Math.Pow(Beam, 4));
-                        double mModel = cM * 63.6 * Math.Pow(17.0 / 12, 4);
-                        rows.AppendLine(string.Join(",", F(tau), F(cv), F(V), F(R), F(Sd(tow)), F(air.Count > 0 ? air.Average() : 0),
-                                                    F(R / (delta / load)), F(R / delta), F(dS), F(dS / Inch), F(M), F(cM), F(mModel),
-                                                    F(hUp.Average()), F(bUp.Average()), F(wetL.Average()), F(lim.Min())));
-                        if (cv == 0)
-                        {
-                            bool owns = FARDebugValues.hydrodynamics && hull.OwnsBuoyancy;
-                            double meshVolume = hull.MeshVolume;
-                            double hand = ti < restDrafts.Length ? restDrafts[ti] : double.NaN;
-                            ctx.Record($"rest {tau}", $"draft at the step {dS:F3} m (hand {hand:F3}), buoyancy {bUp.Average():F2} kN of {delta:F2}, " +
-                                                      $"moment {mModel:F1} lb ft model, " + (owns ? $"mesh volume {meshVolume:F2} m3 (hand {handVolume:F2})" : "stock buoyancy"));
-                            if (owns)
+                            else
                             {
-                                Assert.True(Math.Abs(meshVolume / handVolume - 1) < 0.02, $"mesh volume {meshVolume:F2} m3 within 2% of {handVolume:F2}");
-                                if (!double.IsNaN(hand) && Math.Abs(load - 0.221) < 1e-6)
-                                    Assert.True(Math.Abs(dS - hand) < 0.02 * size, $"rest draft at the step {dS:F4} m within {0.02 * size:F4} of {hand:F4}");
+                                ctx.Record($"trim {tau} C_V {cv}{at}", $"R/Delta {R / delta:F3} (C_R {R / (delta / load):F4}), draft at the step {dS / Inch:F2} in model, " +
+                                                                  $"moment {mModel:F1} lb ft model, hydro up {hUp.Average():F1} kN, buoyancy {bUp.Average():F1}, " +
+                                                                  WetFaces(hull, up, Path.Combine(ctx.ResultsDir, $"wet-up-{v.vesselName}{sfx}-{tau}-{cv}.obj")));
+                                if (!runs.TryGetValue(tau, out var list))
+                                    runs[tau] = list = new List<(double, double, double, double)>();
+                                lodRuns[(detail, tau, cv)] = (R / (delta / load), dS / Inch);
+                                list.Add((cv, R / (delta / load), dS / Inch, mModel));
                             }
                         }
-                        else
+                    }
+                    File.WriteAllText(Path.Combine(ctx.ResultsDir, $"naca-{v.vesselName}{sfx}.csv"), rows.ToString());
+                    File.WriteAllText(Path.Combine(ctx.ResultsDir, $"naca-strips-{v.vesselName}{sfx}.csv"), stripCsv.ToString());
+                    // against TN 470's Table II at the 40 lb load (its printed values), each point's own trim, FAR's run
+                    // interpolated to its C_V: every point's resistance within WideResistance (a share) and step draft
+                    // within WideDraft (model in), and at least TightShare of them within ResistanceTolerance and
+                    // DraftTolerance, asserted at the tank model's size (its Reynolds number, its skin friction: a bigger
+                    // hull's C_R is lower), recorded at any; the trimming moment recorded. (FAR's misses: 5 - 7 deg early
+                    // in planing, C_V 3.2 - 4.4, ~1.25 - 1.3x and riding ~0.3 - 0.45 in deep; 3 deg above C_V 5 ~0.7x)
+                    if (Math.Abs(load - 0.221) < 1e-6)
+                    {
+                        bool asserted = Math.Abs(beam - 17 * 0.0254) < 1e-6;
+                        var cmp = new StringBuilder();
+                        var off = new List<string>();
+                        var wideOff = new List<string>();
+                        double logSum = 0;
+                        int nCmp = 0;
+                        foreach (var tn in Tn470Load40)
                         {
-                            ctx.Record($"trim {tau} C_V {cv}", $"R/Delta {R / delta:F3} (C_R {R / (delta / load):F4}), draft at the step {dS / Inch:F2} in model, " +
-                                                              $"moment {mModel:F1} lb ft model, hydro up {hUp.Average():F1} kN, buoyancy {bUp.Average():F1}");
-                            if (!runs.TryGetValue(tau, out var list))
-                                runs[tau] = list = new List<(double, double, double, double)>();
-                            list.Add((cv, R / (delta / load), dS / Inch, mModel));
+                            if (!runs.TryGetValue(tn.trim, out var list) || list.Count < 2)
+                                continue;
+                            var s = list.OrderBy(x => x.cv).ToList();
+                            int k = s.FindIndex(x => x.cv >= tn.cv);
+                            if (k <= 0)
+                                continue;   // (outside FAR's runs: none extrapolated)
+                            var lo = s[k - 1]; var hi = s[k];
+                            double f = (tn.cv - lo.cv) / (hi.cv - lo.cv);
+                            double cr = lo.cr + f * (hi.cr - lo.cr), dr = lo.draft + f * (hi.draft - lo.draft), mo = lo.moment + f * (hi.moment - lo.moment);
+                            double ratio = cr / tn.cr;
+                            logSum += Math.Log(ratio);
+                            nCmp++;
+                            cmp.Append($"{tn.trim:F0} deg C_V {tn.cv:F2}: C_R {cr:F4}/{tn.cr:F4} ({ratio:F2}x), draft {dr:F2}/{tn.draft:F2} in, moment {mo:F1}/{tn.moment:F1} lb ft; ");
+                            string what = $"{tn.trim:F0} deg C_V {tn.cv:F2} C_R {ratio:F2}x draft {dr - tn.draft:+0.00;-0.00} in";
+                            if (Math.Abs(ratio - 1) > ResistanceTolerance || Math.Abs(dr - tn.draft) > DraftTolerance)
+                                off.Add(what);
+                            if (Math.Abs(ratio - 1) > WideResistance || Math.Abs(dr - tn.draft) > WideDraft)
+                                wideOff.Add(what);
+                        }
+                        ctx.Record("tn470" + at, cmp.ToString());
+                        ctx.Record("tn470 fit" + at, $"{nCmp} points: resistance {Math.Exp(logSum / Math.Max(1, nCmp)):F2}x TN 470's (geometric mean); " +
+                                                $"{off.Count} outside {ResistanceTolerance:P0} / {DraftTolerance:F2} in: {string.Join("; ", off)}");
+                        if (asserted)
+                        {
+                            if (wideOff.Count > 0) missed.Add($"{detail}: resistance within {WideResistance:P0} and step draft within {WideDraft:F2} in of TN 470's at every point ({wideOff.Count} of {nCmp} off: {string.Join("; ", wideOff.Take(8))})");
+                            double tight = 1 - (double)off.Count / Math.Max(1, nCmp);
+                            if (tight < TightShare) missed.Add($"{detail}: at least {TightShare:P0} of TN 470's points within {ResistanceTolerance:P0} and {DraftTolerance:F2} in ({tight:P0}: {off.Count} of {nCmp} off)");
                         }
                     }
                 }
-                File.WriteAllText(Path.Combine(ctx.ResultsDir, $"naca-{v.vesselName}.csv"), rows.ToString());
-                File.WriteAllText(Path.Combine(ctx.ResultsDir, $"naca-strips-{v.vesselName}.csv"), stripCsv.ToString());
-                // against TN 470's Table II at the 40 lb load (its printed values), each point's own trim, FAR's run
-                // interpolated to its C_V: every point's resistance within WideResistance (a share) and step draft
-                // within WideDraft (model in), and at least TightShare of them within ResistanceTolerance and
-                // DraftTolerance, asserted at the tank model's size (its Reynolds number, its skin friction: a bigger
-                // hull's C_R is lower), recorded at any; the trimming moment recorded. (FAR's misses: 5 - 7 deg early
-                // in planing, C_V 3.2 - 4.4, ~1.25 - 1.3x and riding ~0.3 - 0.45 in deep; 3 deg above C_V 5 ~0.7x)
-                if (Math.Abs(load - 0.221) < 1e-6)
+                Assert.True(missed.Count == 0, string.Join("; ", missed));
+                // each level's C_R within 10% and step draft within 0.15 in (model) of the finest's (the last level's), or of
+                // its at the next C_V either side: where the flow has two steady states (the shell at 9 deg past C_V 5.5,
+                // its afterbody in the wake or clear of it: C_R 0.049 or 0.058) a level may change over a speed later
+                if (details.Length > 1)
                 {
-                    bool asserted = Math.Abs(beam - 17 * 0.0254) < 1e-6;
-                    var cmp = new StringBuilder();
-                    var off = new List<string>();
-                    var wideOff = new List<string>();
-                    double logSum = 0;
-                    int nCmp = 0;
-                    foreach (var tn in Tn470Load40)
+                    int finest = details[details.Length - 1];
+                    bool Alike((double cr, double draft) x, (double cr, double draft) f) =>
+                        Math.Abs(x.cr - f.cr) <= 0.1 * Math.Abs(f.cr) + 0.001 && Math.Abs(x.draft - f.draft) <= 0.15;
+                    var lodLines = new StringBuilder($"against {finest} points per ring: ");
+                    var lodOff = new List<string>();
+                    foreach (int d in details.Take(details.Length - 1))
                     {
-                        if (!runs.TryGetValue(tn.trim, out var list) || list.Count < 2)
-                            continue;
-                        var s = list.OrderBy(x => x.cv).ToList();
-                        int k = s.FindIndex(x => x.cv >= tn.cv);
-                        if (k <= 0)
-                            continue;   // (outside FAR's runs: none extrapolated)
-                        var lo = s[k - 1]; var hi = s[k];
-                        double f = (tn.cv - lo.cv) / (hi.cv - lo.cv);
-                        double cr = lo.cr + f * (hi.cr - lo.cr), dr = lo.draft + f * (hi.draft - lo.draft), mo = lo.moment + f * (hi.moment - lo.moment);
-                        double ratio = cr / tn.cr;
-                        logSum += Math.Log(ratio);
-                        nCmp++;
-                        cmp.Append($"{tn.trim:F0} deg C_V {tn.cv:F2}: C_R {cr:F4}/{tn.cr:F4} ({ratio:F2}x), draft {dr:F2}/{tn.draft:F2} in, moment {mo:F1}/{tn.moment:F1} lb ft; ");
-                        string what = $"{tn.trim:F0} deg C_V {tn.cv:F2} C_R {ratio:F2}x draft {dr - tn.draft:+0.00;-0.00} in";
-                        if (Math.Abs(ratio - 1) > ResistanceTolerance || Math.Abs(dr - tn.draft) > DraftTolerance)
-                            off.Add(what);
-                        if (Math.Abs(ratio - 1) > WideResistance || Math.Abs(dr - tn.draft) > WideDraft)
-                            wideOff.Add(what);
+                        double logSum = 0, worstDraft = 0;
+                        int n = 0, shifted = 0;
+                        foreach (var kv in lodRuns.Where(k => k.Key.Item1 == d))
+                        {
+                            if (!lodRuns.TryGetValue((finest, kv.Key.Item2, kv.Key.Item3), out var f))
+                                continue;
+                            var x = kv.Value;
+                            logSum += Math.Log(x.cr / f.cr);
+                            n++;
+                            worstDraft = Math.Max(worstDraft, Math.Abs(x.draft - f.draft));
+                            if (Alike(x, f))
+                                continue;
+                            int ci = Array.IndexOf(cvs, kv.Key.Item3);
+                            bool near = new[] { ci - 1, ci + 1 }.Any(j => j >= 0 && j < cvs.Length &&
+                                                                      lodRuns.TryGetValue((finest, kv.Key.Item2, cvs[j]), out var g) && Alike(x, g));
+                            if (near)
+                                shifted++;
+                            else
+                                lodOff.Add($"{d} at {kv.Key.Item2:F0} deg C_V {kv.Key.Item3:F2}: C_R {x.cr / f.cr:F2}x, draft {x.draft - f.draft:+0.00;-0.00} in");
+                        }
+                        lodLines.Append($"{d}: C_R {Math.Exp(logSum / Math.Max(1, n)):F3}x (geometric mean of {n}), step draft up to {worstDraft:F2} in off" +
+                                        $"{(shifted > 0 ? $", {shifted} alike only a C_V step on" : "")}; ");
                     }
-                    ctx.Record("tn470", cmp.ToString());
-                    ctx.Record("tn470 fit", $"{nCmp} points: resistance {Math.Exp(logSum / Math.Max(1, nCmp)):F2}x TN 470's (geometric mean); " +
-                                            $"{off.Count} outside {ResistanceTolerance:P0} / {DraftTolerance:F2} in: {string.Join("; ", off)}");
-                    if (asserted)
-                    {
-                        Assert.True(wideOff.Count == 0, $"resistance within {WideResistance:P0} and step draft within {WideDraft:F2} in of TN 470's " +
-                                                        $"Table II at every point ({wideOff.Count} of {nCmp} off: {string.Join("; ", wideOff.Take(8))})");
-                        double tight = 1 - (double)off.Count / Math.Max(1, nCmp);
-                        Assert.True(tight >= TightShare, $"at least {TightShare:P0} of TN 470's points within {ResistanceTolerance:P0} and " +
-                                                         $"{DraftTolerance:F2} in ({tight:P0}: {off.Count} of {nCmp} off)");
-                    }
+                    ctx.Record("details", lodLines.ToString());
+                    Assert.True(lodOff.Count == 0, $"each collider detail's C_R within 10% and step draft within 0.15 in of the finest's, at its C_V or the next ({lodOff.Count} off: " +
+                                                   string.Join("; ", lodOff.Take(8)) + ")");
                 }
                 ctx.Record("bend", $"the joints bent the hull up to {bendDeg:F3} deg, {bendM * 1000:F1} mm " +
                                    (rigid ? "in a step (put back every step)" : "(left free)"));
@@ -372,6 +450,51 @@ namespace FerramAerospaceResearch.KspTests
         };
 
         // the hull's collider mesh in the hull's frame (what FAR's water forces see), for checking against the lines
+        // the wetted surface the water model takes its flow on (its wet polygons): the friction's area (LastWettedArea),
+        // and the polygons' area facing down (|n.up| > 0.3, the bottom), sideways and up (a shell's inner floor and walls
+        // would be up and sideways: they must be dry)
+        private static string WetFaces(HullParts hull, Vector3 up, string upObj = null)
+        {
+            double down = 0, side = 0, upward = 0, wetted = 0;
+            var obj = upObj != null ? new StringBuilder() : null;
+            int objVerts = 0;
+            foreach (FARAeroComponents.PartHydrodynamics h in hull.Hydro)
+            {
+                wetted += h.LastWettedArea;
+                int at = 0;
+                for (int k = 0; k < h.PolyCounts.Count; k++)
+                {
+                    int c = h.PolyCounts[k];
+                    Vector3 a2 = Vector3.zero;
+                    for (int j = 1; j + 1 < c; j++)
+                        a2 += Vector3.Cross(h.PolyVerts[at + j] - h.PolyVerts[at], h.PolyVerts[at + j + 1] - h.PolyVerts[at]);
+                    double area = 0.5 * a2.magnitude, nu = Vector3.Dot(h.PolyNormals[k], up);
+                    if (nu < -0.3)
+                        down += area;
+                    else if (nu > 0.3)
+                    {
+                        upward += area;
+                        if (obj != null)
+                        {
+                            for (int j = 0; j < c; j++)
+                            {
+                                Vector3 q = hull.InverseTransformPoint(h.PolyVerts[at + j]);
+                                obj.AppendLine($"v {F(q.x)} {F(q.y)} {F(q.z)}");
+                            }
+                            obj.AppendLine("f " + string.Join(" ", Enumerable.Range(objVerts + 1, c)));
+                            objVerts += c;
+                        }
+                    }
+                    else
+                        side += area;
+                    at += c;
+                }
+            }
+            if (obj != null && objVerts > 0)
+                File.WriteAllText(upObj, obj.ToString());
+            return $"wetted {wetted:F2} m2 (polygons facing down {down:F2}, sideways {side:F2}, up {upward:F2})";
+        }
+
         private static void DumpObj(HullParts hull, string path, bool collider)
         {
             var sb = new StringBuilder();

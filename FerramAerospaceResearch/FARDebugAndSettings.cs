@@ -298,10 +298,24 @@ namespace FerramAerospaceResearch
 
             bool hydro = OptionToggle(FARDebugValues.hydrodynamics,
                                       "Hydrodynamics",
-                                      "Water forces from each part's shape in the water: buoyancy from its pressure, planing, a submerged hull's flow; foils in the water's density.",
+                                      "Water forces from each part's shape in the water: planing, a submerged hull's flow, its buoyancy as set below; foils in the water's density.",
                                       "The water as thick air: the aero forces scaled by the submerged drag and lift multipliers, stock buoyancy (old behavior).");
             if (hydro != FARDebugValues.hydrodynamics)
                 FARDebugValues.hydrodynamics = hydro;
+
+            bool shape = OptionToggle(FARDebugValues.shapeBuoyancy,
+                                      "Buoyancy from shape",
+                                      "A part's buoyancy from the water's pressure on its closed shape (with the air a hull of plates encloses), stock's held to what its shape displaces, a planing hull's lifted share fading with speed.",
+                                      "Stock buoyancy as it is, for every part (old behavior); the hydrodynamics' planing and flow forces are kept.");
+            if (shape != FARDebugValues.shapeBuoyancy)
+                FARDebugValues.shapeBuoyancy = shape;
+
+            bool wash = OptionToggle(FARDebugValues.propwash,
+                                     "Propeller slipstream",
+                                     "Wing panels and control surfaces behind a propeller fly in its slipstream: a tail keeps its authority and pitch damping at low speed.",
+                                     "The free stream only, behind propellers too (old behavior).");
+            if (wash != FARDebugValues.propwash)
+                FARDebugValues.propwash = wash;
 
             if (GUILayout.Button("Close"))
                 modelOptions = false;
@@ -712,6 +726,16 @@ namespace FerramAerospaceResearch
             else
                 FARDebugValues.hydrodynamics = FARSettings.Hydrodynamics;
 
+            if (node.HasValue("shapeBuoyancy") && bool.TryParse(node.GetValue("shapeBuoyancy"), out tmp))
+                FARDebugValues.shapeBuoyancy = tmp;
+            else
+                FARDebugValues.shapeBuoyancy = true;
+
+            if (node.HasValue("propwash") && bool.TryParse(node.GetValue("propwash"), out tmp))
+                FARDebugValues.propwash = tmp;
+            else
+                FARDebugValues.propwash = true;
+
             if (node.HasValue("debugTools") && bool.TryParse(node.GetValue("debugTools"), out tmp))
                 FARDebugValues.DebugTools = tmp;
             else
@@ -741,6 +765,8 @@ namespace FerramAerospaceResearch
             node.AddValue("wholeWingAspectRatio", FARDebugValues.wholeWingAspectRatio);
             node.AddValue("linearFlapLift", FARDebugValues.linearFlapLift);
             node.AddValue("hydrodynamics", FARDebugValues.hydrodynamics);
+            node.AddValue("shapeBuoyancy", FARDebugValues.shapeBuoyancy);
+            node.AddValue("propwash", FARDebugValues.propwash);
             node.AddValue("debugTools", FARDebugValues.DebugTools);
 
             FARActionGroupConfiguration.SaveConfiguration();
@@ -781,6 +807,16 @@ namespace FerramAerospaceResearch
         // a control surface hinged behind a wing: its section's added lift in proportion to its deflection (FARWingInteraction
         // ClIncrementFromRear times cos AoA); off: times sin AoA, as before. Set in the model options window
         public static bool linearFlapLift = true;
+
+        // with hydrodynamics: a part's buoyancy from its shape (PartHydrodynamics: the pressure on a closed mesh, stock's
+        // held to what an open one displaces, the planing hull's hydrostatic share fading with speed; and, with or without
+        // hydrodynamics, stock's held to the drag cube's box, FARAeroPartModule.HoldStockDisplacement); off: stock's as it
+        // is. Set in the model options window, kept per save
+        public static bool shapeBuoyancy = true;
+
+        // the slipstream of the vessel's propellers on its wing panels and control surfaces (FARAeroComponents.Propwash);
+        // off: the free stream only. Set in the model options window, kept per save
+        public static bool propwash = true;
 
         // water forces from each part's geometry (PartHydrodynamics); off: the water share of the aero force, scaled by
         // stock's submerged drag and lift scalars, as before. Set in the model options window, kept per save; a save

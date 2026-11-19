@@ -9,14 +9,20 @@ forward of station 12). The step is two stations 0.1 in apart, the sternpost lik
 line, bow at its top end.
 
     python naca_11a.py           writes NACA 11-A.craft beside this script (2 m beam)
+    python naca_11a.py shell     writes NACA 11-A Shell.craft: the 2 m hull with its deck caved in, a SHELL_WALL wall (each
+                                 section but the bow's, the stern's and the sternpost's the wall alone, solid 0.1 in from them): an open hull, one closed mesh
     python naca_11a.py model     writes NACA 11-A Model.craft: the tank model's own size (17 in beam), to tow it at the
                                  tank's Reynolds number
     import naca_11a              STATIONS (x from F.P. in; keel depth below the base line; half-section points as
                                  (half-breadth, depth below the base line), keel first, base line last), SCALE
 """
+import math
 import os
+import re
 import sys
 
+SHELL_WALL = 0.02       # m, the shell's wall (python naca_11a.py shell)
+SHELL_DENSITY = 2.15    # t/m3, FARTestBallast's dryDensity (mods/FARTestFloatplane/ProceduralBallast.cfg)
 BEAM_M = 2.0
 MODEL_BEAM_IN = 17.0
 SCALE = BEAM_M / MODEL_BEAM_IN * 1.0      # m per model inch (the 2 m hull)
@@ -70,11 +76,58 @@ def unit_section(keel, half):
     return right + left, wide
 
 
+def shell_section(keel, half, t):
+    """The section as a hull with its deck caved in (an open boat's): the outer line from the deck's edge on one side
+    round the keel to the other's, then back along the inner wall, the outer line moved in by t (model in; mitred at the
+    corners), so the section is the wall alone. In the Spine's unit box as unit_section's, counter-clockwise."""
+    # (x the half-breadth, y up from the base line)
+    outer = [(-p[0], -p[1]) for p in reversed(half)] + [(p[0], -p[1]) for p in half[1:]]
+    dedup = [outer[0]]
+    for p in outer[1:]:
+        if abs(p[0] - dedup[-1][0]) + abs(p[1] - dedup[-1][1]) > 1e-6:
+            dedup.append(p)
+    outer = dedup
+
+    def normal(a, b):
+        # the inside of the path (the hollow): the direction a to b turned 90 deg counter-clockwise
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        n = math.hypot(dx, dy)
+        return (-dy / n, dx / n)
+
+    segs = [normal(a, b) for a, b in zip(outer, outer[1:])]
+    inner = []
+    for i, p in enumerate(outer):
+        if i == 0:
+            n = segs[0]
+            q = (p[0] + t * n[0], p[1] + t * n[1])
+        elif i == len(outer) - 1:
+            n = segs[-1]
+            q = (p[0] + t * n[0], p[1] + t * n[1])
+        else:
+            n1, n2 = segs[i - 1], segs[i]
+            k = t / max(0.2, 1 + n1[0] * n2[0] + n1[1] * n2[1])
+            q = (p[0] + k * (n1[0] + n2[0]), p[1] + k * (n1[1] + n2[1]))
+        inner.append(q)
+    inner[0] = (inner[0][0], 0.0)
+    inner[-1] = (inner[-1][0], 0.0)
+    poly = outer + list(reversed(inner))
+    area = 0.5 * sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(poly, poly[1:] + poly[:1]))
+    if area < 0:
+        poly.reverse()
+    wide = max(p[0] for p in half)
+    return [(x / wide, 1 + 2 * y / keel) for x, y in poly], wide, abs(area)
+
+
 def main():
-    model = len(sys.argv) > 1 and sys.argv[1] == "model"
+    args = sys.argv[1:]
+    model = "model" in args
+    shell = "shell" in args
     scale = 0.0254 if model else SCALE
-    ship = "NACA 11-A Model" if model else "NACA 11-A"
+    ship = ("NACA 11-A Model" if model else "NACA 11-A") + (" Shell" if shell else "")
     size = "the tank model's own size, 17 in beam" if model else "scaled to a 2 m beam"
+    if shell:
+        size += (", its deck caved in: a %.0f mm wall (each section but the bow's and the stern's the wall alone), an "
+                 "open hull" % (SHELL_WALL * 1000))
     here = os.path.dirname(os.path.abspath(__file__))
     src = open(os.path.join(here, "Planing Box.craft"), encoding="utf-8-sig").read()
     src = src.replace("ship = Planing Box", "ship = " + ship)
@@ -88,8 +141,31 @@ def main():
     part_scale = 0.1 if model else 1.0
     node = scale / part_scale
     sections, nodes = [], []
-    for i, (name, x, keel, half) in enumerate(STATIONS):
-        pts, wide = unit_section(keel, half)
+    wall = []    # (x in, the section's wall area in2) for the shell's volume
+    # (the sternpost's two stations solid too: its main bottom a post 0.2 in wide, too narrow for a wall each side, a
+    # bulkhead there)
+    stations = [(name, x, keel, half, shell and 0 < i < len(STATIONS) - 1 and not name.startswith("sternpost"))
+                for i, (name, x, keel, half) in enumerate(STATIONS)]
+    if shell:
+        # where a wall station meets a solid one, the wall's own section solid 0.1 in toward it (as the step's two
+        # stations): the Spine matches two sections' points by arc length, and a wall's outline (out and back) lofted
+        # into a solid one crosses its own walls all the way between them, a hole through the hull
+        ends = []
+        for (n0, x0, k0, h0, s0), (n1, x1, k1, h1, s1) in zip(stations, stations[1:]):
+            if s0 and not s1:
+                ends.append((n0 + " bulkhead", x0 + 0.1, k0, h0, False))
+            elif s1 and not s0:
+                ends.append((n1 + " bulkhead", x1 - 0.1, k1, h1, False))
+        stations = sorted(stations + ends, key=lambda st: st[1])
+    for i, (name, x, keel, half, walled) in enumerate(stations):
+        if walled:
+            pts, wide, a = shell_section(keel, half, SHELL_WALL / scale)
+            wall.append((x, a))
+        else:
+            pts, wide = unit_section(keel, half)
+            if shell:
+                full = [(p[0], -p[1]) for p in half] + [(-p[0], -p[1]) for p in reversed(half[1:])]
+                wall.append((x, abs(0.5 * sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(full, full[1:] + full[:1])))))
         sec = "NACA11A_%02d" % i
         sections.append("\t\tCROSS_SECTION\n\t\t{\n\t\t\tname = %s\n" % sec +
                         "".join("\t\t\tv = %.5f,%.5f\n" % p for p in pts) + "\t\t}\n")
@@ -104,6 +180,14 @@ def main():
     start = src.index("\tMODULE\n\t{\n\t\tname = ProceduralShapePolygon")
     end = src.index("\tMODULE\n\t{\n\t\tname = TankContentSwitcher")
     src = src[:start] + spine + src[end:]
+    if shell:
+        # the wall weighs nothing as a fuel tank (31 kg): the test mods' FARTestBallast tank type
+        # (mods/FARTestFloatplane/ProceduralBallast.cfg: SHELL_DENSITY t/m3), the hull ~3.2 t (its ends solid)
+        src, n = re.subn(r"(?m)^(\t\ttankType = ).*$", r"\g<1>FARTestBallast", src)
+        assert n == 1, "tankType"
+        src = re.sub(r"(?ms)^\tRESOURCE\n\t\{\n.*?^\t\}\n", "", src)
+        vol = sum((b[0] - a[0]) * (a[1] + b[1]) / 2 for a, b in zip(wall, wall[1:])) * scale ** 3
+        print("the shell's wall: %.3f m3, %.2f t at %g t/m3" % (vol, vol * SHELL_DENSITY, SHELL_DENSITY))
     open(os.path.join(here, ship + ".craft"), "w", encoding="utf-8", newline="\n").write(src)
     print("wrote %s.craft: %.3f m long, %d stations" % (ship, length, len(STATIONS)))
 

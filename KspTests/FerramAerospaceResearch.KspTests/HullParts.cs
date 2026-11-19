@@ -101,6 +101,28 @@ namespace FerramAerospaceResearch.KspTests
             return hulls[0];
         }
 
+        /// <summary>
+        /// The vessel as one hull of any parts (a skin of plates, not pieces on one axis) in its root part's frame, the
+        /// hull's frame origin at offset in it: the root turned as a one-part hull is (crafts/naca_11a_pw.py's strut).
+        /// Its length along the root's y from every part's collider.
+        /// </summary>
+        public static HullParts Framed(Vessel v, Vector3 offset)
+        {
+            Part root = v.rootPart;
+            Transform rt = root.transform;
+            float lo = float.MaxValue, hi = float.MinValue;
+            foreach (Part p in v.parts)
+                foreach (MeshCollider mc in p.GetComponentsInChildren<MeshCollider>())
+                    if (mc.sharedMesh != null)
+                        foreach (Vector3 w in mc.sharedMesh.vertices)
+                        {
+                            float y = rt.InverseTransformPoint(mc.transform.TransformPoint(w)).y;
+                            lo = Math.Min(lo, y);
+                            hi = Math.Max(hi, y);
+                        }
+            return new HullParts(root, v.parts.ToArray(), offset, hi - lo);
+        }
+
         // the water on its parts (FAR's PartHydrodynamics; zero for a part with none)
         public IEnumerable<PartHydrodynamics> Hydro =>
             Parts.Select(p => p.Modules.GetModule<FARAeroPartModule>()?.Hydrodynamics).Where(h => h != null);
@@ -337,14 +359,18 @@ namespace FerramAerospaceResearch.KspTests
     {
         /// <summary>
         /// The water tests' instance: AJE and Firespitter for the C172's engine and prop, TimeControl for the hyper-warp,
-        /// CustomProceduralParts for the Spine hulls (built from its repository at the commit with the Spine collider
-        /// fixes the hulls' statics were checked with), FARTestFloatplane for the test parts.
+        /// CustomProceduralParts for the Spine hulls (CustomProceduralPartsPinned: its Spine collider of convex pieces, up
+        /// colliderPoints a ring, 24 unless a test sets it (ColliderDetail), and a concave section's convex parts each, which
+        /// a hull's two walls (NACA 11-A Shell) need), FARTestFloatplane for the test parts. To test a CustomProceduralParts
+        /// checkout, put its GameData's path (..\..\..\CustomProceduralParts\GameData\CustomProceduralParts, beside this
+        /// repository) in its place.
         /// </summary>
-        public const string WaterMods = @"AdvancedJetEngine;Firespitter;TimeControl;" + CustomProceduralParts + ";" +
+        public const string WaterMods = "AdvancedJetEngine;Firespitter;TimeControl;" + CustomProceduralPartsPinned + ";" +
                                         @"..\FerramAerospaceResearch.KspTests.Run\mods\FARTestFloatplane";
 
-        public const string CustomProceduralParts =
-            "https://github.com/chambem42/CustomProceduralParts@891b6adba8f80a0238a5ba8c3b0cfcfe668a3248/GameData/CustomProceduralParts" +
+        /// <summary>CustomProceduralParts' repository at a commit, built from its source.</summary>
+        public const string CustomProceduralPartsPinned =
+            "https://github.com/chambem42/CustomProceduralParts@b03d4398aba8c1c176b2cd401d9d0b671cc275da/GameData/CustomProceduralParts" +
             "?build=Source/CustomProceduralParts.csproj";
 
         /// <summary>
@@ -361,9 +387,14 @@ namespace FerramAerospaceResearch.KspTests
         /// </summary>
         public const string RoughMods = WaterMods + @";Scatterer;Scatterer-config;..\FerramAerospaceResearch.KspTests.Run\mods\FARTestScattererRough";
 
-        public static void Hyper(TestContext ctx, bool on)
+        /// <summary>
+        /// Hyper-warp on at parameter hyperWarp (default defaultRate), or off. A tow that holds its hull every physics step
+        /// (its attitude and speed put back each step, measured over game time) runs the same steps at any rate: 16. One
+        /// whose craft flies itself (an autopilot that may act once a frame) changes with it: 4.
+        /// </summary>
+        public static void Hyper(TestContext ctx, bool on, double defaultRate = 4)
         {
-            double rate = ctx.ParamDouble("hyperWarp", 4);
+            double rate = ctx.ParamDouble("hyperWarp", defaultRate);
             if (!on || rate <= 1)
             {
                 Flight.HyperWarpOff();
@@ -375,23 +406,26 @@ namespace FerramAerospaceResearch.KspTests
 
     /// <summary>
     /// The water model's switches a test can set (parameter waterDamping: stock, explicit or none, the wet parts' stock
-    /// water drag and angular drag: PartHydrodynamics.WaterDamping), put back after it.
+    /// water drag and angular drag: PartHydrodynamics.WaterDamping; byDefault: the test's own when not given), put back
+    /// after it.
     /// </summary>
     internal static class WaterParams
     {
         private static PartHydrodynamics.WaterDampingMode? dampingWas;
         private static bool? linearFlapWas;
         private static double? recoveryWas, crossflowWas, stripWas, fadeWas, faceWas;
-        private static bool? wholeWingWas;
+        private static bool? wholeWingWas, propwashWas, shapeBuoyancyWas;
         // any other of the model's constants (parameter hd.<name>, a public static double of PartHydrodynamics): as they were
         private static readonly Dictionary<System.Reflection.FieldInfo, double> constantsWas = new Dictionary<System.Reflection.FieldInfo, double>();
 
-        public static void Apply(TestContext ctx)
+        public static void Apply(TestContext ctx, PartHydrodynamics.WaterDampingMode? byDefault = null)
         {
             dampingWas ??= PartHydrodynamics.WaterDamping;
             string p = ctx.Param("waterDamping");
             if (!string.IsNullOrEmpty(p))
                 PartHydrodynamics.WaterDamping = (PartHydrodynamics.WaterDampingMode)Enum.Parse(typeof(PartHydrodynamics.WaterDampingMode), p, true);
+            else if (byDefault.HasValue)
+                PartHydrodynamics.WaterDamping = byDefault.Value;
             ctx.Record("waterDamping", PartHydrodynamics.WaterDamping.ToString());
             // FAR's linear flap lift (FARDebugValues.linearFlapLift; parameter linearFlapLift=true/false)
             linearFlapWas ??= FARDebugValues.linearFlapLift;
@@ -441,6 +475,18 @@ namespace FerramAerospaceResearch.KspTests
                 ctx.Record("hd." + f.Name, x.ToString(System.Globalization.CultureInfo.InvariantCulture));
             }
             // FAR's whole-wing aspect ratio (FARDebugValues.wholeWingAspectRatio; parameter wholeWingAspectRatio=true/false)
+            // the propellers' slipstream on the wing panels (parameter propwash=true/false)
+            propwashWas ??= FARDebugValues.propwash;
+            string pw = ctx.Param("propwash");
+            if (!string.IsNullOrEmpty(pw))
+                FARDebugValues.propwash = bool.Parse(pw);
+            ctx.Record("propwash", FARDebugValues.propwash.ToString());
+            // buoyancy from the parts' shapes (parameter shapeBuoyancy=true/false; false: stock's as it is)
+            shapeBuoyancyWas ??= FARDebugValues.shapeBuoyancy;
+            string sb = ctx.Param("shapeBuoyancy");
+            if (!string.IsNullOrEmpty(sb))
+                FARDebugValues.shapeBuoyancy = bool.Parse(sb);
+            ctx.Record("shapeBuoyancy", FARDebugValues.shapeBuoyancy.ToString());
             wholeWingWas ??= FARDebugValues.wholeWingAspectRatio;
             string ww = ctx.Param("wholeWingAspectRatio");
             if (!string.IsNullOrEmpty(ww) && FARDebugValues.wholeWingAspectRatio != bool.Parse(ww))
@@ -452,6 +498,12 @@ namespace FerramAerospaceResearch.KspTests
 
         public static void Restore()
         {
+            if (propwashWas.HasValue)
+                FARDebugValues.propwash = propwashWas.Value;
+            propwashWas = null;
+            if (shapeBuoyancyWas.HasValue)
+                FARDebugValues.shapeBuoyancy = shapeBuoyancyWas.Value;
+            shapeBuoyancyWas = null;
             foreach (var kv in constantsWas)
                 kv.Key.SetValue(null, kv.Value);
             constantsWas.Clear();

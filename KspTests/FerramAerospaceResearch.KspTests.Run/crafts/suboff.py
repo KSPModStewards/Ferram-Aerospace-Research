@@ -71,6 +71,19 @@ FIN_TE = 13.146284 * FT                    # m from the nose: the root's trailin
 FIN_INSET = 0.005                          # m: the root inside the hull
 
 
+# B9's paint on these surfaces, set: the donor craft's own (the Cessna's) may be repainted
+B9_PAINT = [("sharedMaterialST", "1")] + [("sharedMaterial" + s, "4") for s in ("SB", "ET", "EL")] + [
+    ("sharedColor%s%s" % (s, k), v) for s in ("ST", "SB", "ET", "EL")
+    for k, v in (("Opacity", "0"), ("Hue", "0.100000001"), ("Saturation", "0.75"), ("Brightness", "0.600000024"))]
+
+
+def b9_paint(b):
+    """a B9 surface's block b with B9_PAINT's paint"""
+    for key, val in B9_PAINT:
+        b = set_field(b, key, val)
+    return b
+
+
 def craft_z(x_m):
     """craft z of a point x m from the nose (the hull's middle at z 0, its nose at +LENGTH/2)"""
     return LENGTH / 2 - x_m
@@ -95,7 +108,7 @@ def fin(donor, pid, out, hull_name):
                      ("aeroStatMidChordSweep", 0), ("aeroStatTaperRatio", FIN_CHORD[1] / FIN_CHORD[0]), ("maxdeflect", 0),
                      ("pitchaxis", 0), ("yawaxis", 0), ("rollaxis", 0)):
         b = set_field(b, key, "%g" % val)
-    return b
+    return b9_paint(b)
 
 
 SAIL_LE, SAIL_CHORD, SAIL_SPAN = 3.033 * FT, 1.208 * FT, 0.729 * FT    # Roddy Table 1
@@ -119,7 +132,7 @@ def sail(donor, pid, hull_name):
                      ("aeroStatMidChordSweep", 0), ("aeroStatTaperRatio", 1), ("maxdeflect", 0),
                      ("pitchaxis", 0), ("yawaxis", 0), ("rollaxis", 0)):
         b = set_field(b, key, "%g" % val)
-    return b
+    return b9_paint(b)
 
 
 def with_appendages(src, ship, description, fins, with_sail):

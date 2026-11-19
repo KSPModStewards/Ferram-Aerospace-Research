@@ -50,13 +50,22 @@ FLOAT_CUTS = ("3", "10 fwd")
 # the game) at its stern, below its deck: from the float's middle at the deck, craft axes (m)
 WATER_RUDDER_AT = (0.0, -0.138, -2.400)                  # split floats: cut at these stations (the bow piece, forebody, afterbody)
 MAC = 58.8 * IN                               # the 172's (its leading edge the wing's root leading edge)
-ENGINE_S = 0.40                               # m aft of the nose: the engine part inside the cowling
+# the engine part ENGINE_S aft of the drawing's nose, ENGINE_Y from the fuselage's axis (craft y): on the cowling's face
+# (planecraft's nose_cut leaves off what lies ahead of 0.55 m, nose_cone closes the face with a blunt cone), at its
+# middle, as placed by hand in the game
+ENGINE_S = 0.571
+ENGINE_Y = -0.100
 STRUT = (0.10, 0.04)                          # m: a strut's chord and thickness
 WING_Z_MIN = -1.0                             # craft z: the wing's panels lie ahead of it, the tail's well aft
 # the wing's lift struts as the three-view draws them (planecraft specs/c172float.json): the wing end 2.29 m out (front
 # view) at station 1.98 m (side view, from the spinner), the body end at station 1.88, 0.41 m below the body's axis (side
 # view), where the drawing's strut meets the lower fuselage: on the Spine's side there (fuselage_side), 1 cm inside it
 LIFT_STRUT = dict(wing_y=2.29, wing_s=1.98, body_s=1.88, body_z=-0.41)
+# ... the struts raised this far (m) as placed by hand in the game: their ends into the fuselage's side
+LIFT_STRUT_RAISE = 0.0077
+# the paint (c172_paint.json, from a craft painted in the game: extract_paint in the session's tools): the B9 panels'
+# colours and materials by airframe part id, ProceduralParts' legacy texture sets (the fuselage by id, the floats)
+PAINT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "c172_paint.json")
 SPEC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "planecraft", "specs",
                     "c172float.json")
 WING_ROOT_CHORD = 1.634                       # m: the drawing's root chord (build.py's root strip)
@@ -93,8 +102,9 @@ RO_AVIONICS_T = 1.5
 RO_AVGAS_KG_L = 0.719
 EMPTY_RO_KG = 448.0
 # the RO parts weigh differently (lighter floats, the RealFuels tanks): the fuel tank this much further forward (m) for
-# the C.G. (FloatplaneTests "cg error"; the procedural avionics 16 kg in the nose where the probe core was 60)
-RO_TANK_SHIFT = 0.085
+# the C.G. (FloatplaneTests "cg error"; the procedural avionics 16 kg in the nose where the probe core was 60); 0.8 cm
+# less for the engine on the cowling's face (ENGINE_S: RO's heavier tank moves less for it; worked out, not measured)
+RO_TANK_SHIFT = 0.077
 RO_MFT = """	MODULE
 	{
 		name = ModuleFuelTanks
@@ -147,8 +157,9 @@ VALVE_MODULE = """	MODULE
 # hinges, and its CG sits further aft; the split floats' pieces carry their mass further forward. Each 3.1 cm more for
 # the drain valve: physicsless, its 10 kg rides at the fuselage's CoM, 1.5 m aft of the CG (hinged: as built 1.483).
 # Hinged 2.0 cm more for the water rudders on the floats' sterns (1.0 cm aft), 3.0 cm less for the overload's longer, heavier
-# tank (1.6 cm forward); split hinged the split floats' 2.7 cm less
-TANK_SHIFT = {"plain": 0.052, "hinged": 0.081, "split": 0.025, "split hinged": 0.054}
+# tank (1.6 cm forward); split hinged the split floats' 2.7 cm less. Hinged 4.7 cm more (split 4.6) for the engine on
+# the cowling's face, 17 cm further aft (ENGINE_S)
+TANK_SHIFT = {"plain": 0.052, "hinged": 0.128, "split": 0.025, "split hinged": 0.100}
 # the fuel tank's cylinder inside the cabin (build.py sizes it 0.63 x 2.36 m, 0.1 m above the axis: its front end came
 # out through the windshield): TANK_LENGTH long, as wide as keeps its volume, its centre TANK_Y above the fuselage axis
 # (the cabin, stations 1.2 - 3.2 m, is 1.07 m wide and 1.2 m tall); its centre along the fuselage, and so the C.G., kept.
@@ -194,9 +205,10 @@ def spine_nodes(block):
     return sorted(nodes), length
 
 
-def fuselage_at(nodes, length, y0, z):
-    """the fuselage's bottom and centre heights (craft y) at craft z, the root lying local z down at height y0"""
-    p = z / length + 0.5
+def fuselage_at(nodes, length, y0, z, z0=0.0):
+    """the fuselage's bottom and centre heights (craft y) at craft z, the root lying local z down at height y0, its
+    middle at craft z0"""
+    p = (z - z0) / length + 0.5
     pos = [n[0] for n in nodes]
     size_v = np.interp(p, pos, [n[2] for n in nodes])
     off = np.interp(p, pos, [n[3] for n in nodes])
@@ -248,9 +260,9 @@ def frame_q(y_axis, fwd=(0.0, 0.0, 1.0)):
     return q
 
 
-def fuselage_side(nodes, length, y0, z, y):
-    """the fuselage's half-width at craft z and height y: the Spine's elliptical section there"""
-    p = z / length + 0.5
+def fuselage_side(nodes, length, y0, z, y, z0=0.0):
+    """the fuselage's half-width at craft z and height y: the Spine's elliptical section there (its middle at craft z0)"""
+    p = (z - z0) / length + 0.5
     pos = [n[0] for n in nodes]
     w, h, off = (np.interp(p, pos, [n[k] for n in nodes]) for k in (1, 2, 3))
     u = (y - (y0 - off)) / (h / 2)
@@ -534,6 +546,24 @@ WATER_RUDDERS = re.findall(r"(?m)^PART\n\{\n.*?^\}\n", open(os.path.join(os.path
                            "c172_water_rudders.part"), encoding="utf-8").read(), re.S)
 
 
+def paint(blocks):
+    """the craft painted as c172_paint.json has it (B9 panels by part id; ProceduralParts' legacy textures)"""
+    if not os.path.exists(PAINT):
+        return blocks
+    p = json.load(open(PAINT, encoding="utf-8"))
+    out = []
+    for b in blocks:
+        pid = cio.part_id(b).rsplit("_", 1)[1]
+        for k, v in p["b9"].get(pid, {}).items():
+            b = cio.set_mod(b, "WingProcedural", k, v)
+        tex = p["textures"].get("float" if "name = EDO57B5_" in b else pid)
+        if tex and "\t\tname = ProceduralPart\n" in b:
+            b = cio.set_mod(b, "ProceduralPart", "textureSet", tex)
+            b = cio.set_mod(b, "ProceduralPart", "forceLegacyTextures", "True")
+        out.append(b)
+    return out
+
+
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
     flags = set(sys.argv[2:])
@@ -571,20 +601,25 @@ def main():
 
     fus = parts[0]
     fus_name = cio.part_id(fus)
-    y0 = float(re.search(r"(?m)^\tpos = (.*)$", fus).group(1).split(",")[1])
+    _, y0, z0 = (float(v) for v in re.search(r"(?m)^\tpos = (.*)$", fus).group(1).split(","))
     nodes, length = spine_nodes(fus)
+    spec = json.load(open(SPEC, encoding="utf-8"))
+    # the drawing's nose (the stations' zero): the Spine's front, or ahead of it what nose_cut left off, less the cone
+    cut = float(spec.get("nose_cut", 0.0))
+    nose = z0 + length / 2 + (cut - float(spec.get("nose_cone", 0.0)) if cut > 0 else 0.0)
     le_z = wing_root_le(parts)
     z_cg = le_z - CG_MAC * MAC
-    print(f"fuselage {length:.2f} m, nose at z {length / 2:+.3f}; wing root leading edge at z {le_z:+.3f} "
-          f"({length / 2 - le_z:.3f} m aft of the nose); CG ({CG_MAC:.1%} MAC) at z {z_cg:+.3f}")
-    fus_pose = (fus_name, np.array([0.0, y0, 0.0]), Q_FUSE)
+    print(f"fuselage {length:.2f} m, its middle at z {z0:+.3f}, front at z {z0 + length / 2:+.3f}, the drawing's nose at "
+          f"z {nose:+.3f}; wing root leading edge at z {le_z:+.3f} ({nose - le_z:.3f} m aft of the nose); CG "
+          f"({CG_MAC:.1%} MAC) at z {z_cg:+.3f}")
+    fus_pose = (fus_name, np.array([0.0, y0, z0]), Q_FUSE)
+    at = lambda z: fuselage_at(nodes, length, y0, z, z0)
     new, links = [], []
     pid = 4100000000
 
     # the engine inside the cowling
-    zn = length / 2 - ENGINE_S
-    _, yc = fuselage_at(nodes, length, y0, zn)
-    epos = np.array([0.0, yc, zn])
+    zn = nose - ENGINE_S
+    epos = np.array([0.0, y0 + ENGINE_Y, zn])
     pid += 1
     ename = "FARTest.O320E2D_%d" % pid
     new.append(ENGINE_BLOCK % dict(name=ename, pid=pid, pos=cio.fmt(epos), rot=cio.fmt(Q_FUSE), parent=fus_name,
@@ -593,13 +628,14 @@ def main():
     links.append(ename)
 
     # the wing's lift struts, from the fuselage's side to 2 cm into the wing's lower surface
-    spec = json.load(open(SPEC, encoding="utf-8"))
     ls = LIFT_STRUT
     for side in (1, -1):
-        top = np.array([side * ls["wing_y"], 0.0, length / 2 - ls["wing_s"]])
+        top = np.array([side * ls["wing_y"], 0.0, nose - ls["wing_s"]])
         top[1] = wing_lower(spec, y0, le_z, top[0], top[2]) + 0.02
-        bz = length / 2 - ls["body_s"]
-        bot = np.array([side * (fuselage_side(nodes, length, y0, bz, y0 + ls["body_z"]) - 0.01), y0 + ls["body_z"], bz])
+        bz = nose - ls["body_s"]
+        bot = np.array([side * (fuselage_side(nodes, length, y0, bz, y0 + ls["body_z"], z0) - 0.01), y0 + ls["body_z"], bz])
+        top[1] += LIFT_STRUT_RAISE
+        bot[1] += LIFT_STRUT_RAISE
         d = top - bot
         pid += 1
         sname = "proceduralStructural_%d" % pid
@@ -613,7 +649,7 @@ def main():
     # the floats: the step STEP_AFT_OF_CG aft of the CG, the deck DECK_BELOW_BELLY below the belly there
     s = edo_float
     z_step = z_cg - STEP_AFT_OF_CG
-    belly, _ = fuselage_at(nodes, length, y0, z_step)
+    belly, _ = at(z_step)
     deck = belly - DECK_BELOW_BELLY
     float_len = s.LENGTH_IN * s.SX
     z_float = z_step + (s.STEP_X_IN / s.LENGTH_IN - 0.5) * float_len      # the spine's middle
@@ -626,7 +662,7 @@ def main():
         # front strut over the float's forward third, rear strut near the step; both from the belly to the deck
         struts = []
         for zs in (z_step + 0.35 * float_len, z_step - 0.05):
-            b_belly, _ = fuselage_at(nodes, length, y0, zs)
+            b_belly, _ = at(zs)
             top, bot = b_belly + 0.05, deck
             spos = np.array([x * 0.5, (top + bot) / 2, zs])      # the struts lean out to the floats: at mid-height
             pid += 1
@@ -703,7 +739,7 @@ def main():
                   for r in ("LiquidFuel", "Oxidizer"))
     k = fus.rstrip().rindex("}")
     parts[0] = fus[:k] + res + fus[k:]
-    belly, _ = fuselage_at(nodes, length, y0, z_cg)
+    belly, _ = at(z_cg)
     vpos = np.array([0.0, belly + 0.01, z_cg])
     pid += 1
     vname = "ReleaseValve_%d" % pid
@@ -723,6 +759,7 @@ def main():
           f"drain valve at y {vpos[1]:.3f} z {z_cg:+.3f} on the tank, {rate:.2f} %/s")
 
     parts[0] = cio.add_links(parts[0], links)
+    parts, new = paint(parts), paint(new)
     if ro:
         out = ro_variant(head, parts + new, GROSS_KG - EMPTY_RO_KG, OVER_KG, fus_pose)
         print(f"RO: {RO_TANK} fuselage (empty) and fuel tank ({GROSS_KG - EMPTY_RO_KG:.0f} kg AvGas, {OVER_KG:.0f} kg "

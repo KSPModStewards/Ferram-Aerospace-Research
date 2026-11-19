@@ -245,7 +245,7 @@ def surface(donor, pid, out, hull_name, x_le, span, chord, axes, maxdeflect):
                      ("aeroStatMidChordSweep", 0), ("aeroStatTaperRatio", chord[1] / chord[0]), ("maxdeflect", maxdeflect),
                      ("pitchaxis", pitch), ("yawaxis", yaw), ("rollaxis", roll)):
         b = set_field(b, key, "%g" % val)
-    return b
+    return suboff.b9_paint(b)
 
 
 def main(prop=False):

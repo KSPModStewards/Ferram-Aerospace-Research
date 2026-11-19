@@ -129,8 +129,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
             return true;
         }
 
-        /// <summary>Whether the ray from o along d meets a triangle (not skip) beyond 0.1 mm.</summary>
-        public bool AnyHit(Vector3 o, Vector3 d, int skip)
+        /// <summary>Whether the ray from o along d meets a triangle (not skip) beyond 0.1 mm (and within tMax, d's length a unit).</summary>
+        public bool AnyHit(Vector3 o, Vector3 d, int skip, float tMax = float.PositiveInfinity)
         {
             if (a.Length == 0)
                 return false;
@@ -146,13 +146,17 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     for (int i = first[node], end = first[node] + count[node]; i < end; i++)
                     {
                         int j = order[i];
-                        if (j != skip && Ray(o, d, a[j], e1[j], e2[j], out float t) && t > 1e-4f)
+                        if (j != skip && Ray(o, d, a[j], e1[j], e2[j], out float t) && t > 1e-4f && t < tMax)
                             return true;
                     }
                     continue;
                 }
                 int l = left[node], r = right[node];
                 float tl = Enter(l, o, inv), tr = Enter(r, o, inv);
+                if (tl > tMax)
+                    tl = float.PositiveInfinity;
+                if (tr > tMax)
+                    tr = float.PositiveInfinity;
                 // the nearer one popped first
                 if (tl <= tr)
                 {

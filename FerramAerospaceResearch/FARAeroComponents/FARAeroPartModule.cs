@@ -188,6 +188,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
         public Vector3 worldSpaceHydroForce;
         private PartHydrodynamics hydrodynamics;
         internal PartHydrodynamics Hydrodynamics => hydrodynamics;
+        // its water model, made now if it has none yet (a dry part's mesh: what closes a hull in above the water)
+        internal PartHydrodynamics EnsureHydrodynamics() => hydrodynamics ??= new PartHydrodynamics(part);
 
         private ProjectedArea projectedArea;
         private double partStressMaxY = double.MaxValue;
@@ -566,6 +568,10 @@ namespace FerramAerospaceResearch.FARAeroComponents
         // stock's buoyancy scaled down from part.buoyancy's prefab value (HoldStockDisplacement; false: as it is)
         private bool buoyancyScaled;
 
+        // the part's cfg buoyancy, before HoldStockDisplacement scaled it (PartHydrodynamics takes it over from this:
+        // the scaled value made its pressure buoyancy on a B9 panel a thousandth of the water it displaces)
+        internal float CfgBuoyancy => buoyancyScaled && part.partInfo?.partPrefab != null ? part.partInfo.partPrefab.buoyancy : part.buoyancy;
+
         /// <summary>
         /// Stock's buoyancy held to the part's drag cube's box. Stock's displacement is that box's volume times its faces'
         /// areas over the box's (each 1 for a box), and a procedural part's areas can be its prefab's while its size is its
@@ -578,6 +584,14 @@ namespace FerramAerospaceResearch.FARAeroComponents
         {
             PartBuoyancy pb = part.partBuoyancy;
             Part prefab = part.partInfo?.partPrefab;
+            // (buoyancy from shape off: stock's as it is, the prefab's given back)
+            if (!FARDebugValues.shapeBuoyancy)
+            {
+                if (buoyancyScaled && prefab != null)
+                    part.buoyancy = prefab.buoyancy;
+                buoyancyScaled = false;
+                return;
+            }
             if (pb == null || prefab == null || vessel == null || vessel.mainBody == null || !vessel.mainBody.ocean ||
                 vessel.altitude > 5000 || hydrodynamics != null && hydrodynamics.StockBuoyancy >= 0)
                 return;
@@ -712,7 +726,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
             // water: a light panel (a B9 panel at 7 kg/m2 against FAR's stock wings' 40) lost most of its speed in a
             // step just touching a wave, its joint snapping it and the plane back (a 23 - 50 g jolt, the wing off the
             // water the next step)
-            if (part.submergedPortion > 0 && LegacyWingModel != null && part.rb != null)
+            // (a hull plate is a hull's: its water damped as theirs, below)
+            if (part.submergedPortion > 0 && LegacyWingModel != null && !LegacyWingModel.IsHullPlate && part.rb != null)
             {
                 hackWaterDragVal = 0;
                 part.rb.drag = 0;

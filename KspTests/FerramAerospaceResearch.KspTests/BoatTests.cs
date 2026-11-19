@@ -161,33 +161,231 @@ namespace FerramAerospaceResearch.KspTests
                 LaunchSite = "Runway", TimeoutSec = 1200)]
         public static IEnumerator Boat_JetRunSingle(TestContext ctx) => JetRun(ctx);
 
-        private static IEnumerator JetRun(TestContext ctx)
+        /// <summary>Boat_JetRun's run of Bonnie: a 70 m Spine V-hull (procedural, ~950 t with its fuel and ore keel), two
+        /// gas turbine generators driving two 800 kN propellers (Kerbal Powers Naval, from CKAN with KSPCommunityPartModules
+        /// for its turbine's converter; mods/FARTestFloatplane/KerbalPowersNaval.cfg mends its engine type).</summary>
+        [UITest(Kind = "Measure", Explicit = true, Mods = Mods + ";KerbalPowersNaval;KSPCommunityPartModules", StartsAt = StartState.Flight,
+                Craft = "Bonnie", CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 1200)]
+        public static IEnumerator Boat_RunBonnie(TestContext ctx) => JetRun(ctx, 0.5);   // (straight to the water: a V hull on the runway rolls over)
+
+        private static IEnumerator JetRun(TestContext ctx, double settleSec = 5)
         {
             double phaseSec = ctx.ParamDouble("phaseSec", 30);
             double[] pitches = ctx.ParamList("pitches", "0+-0.5+0.5").Select(s => double.Parse(s, CultureInfo.InvariantCulture)).ToArray();
             WaterParams.Apply(ctx);
-            bool crashWas = CheatOptions.NoCrashDamage;
+            bool crashWas = CheatOptions.NoCrashDamage, jointsWas = CheatOptions.UnbreakableJoints;
+            // at once: a heavy boat (Bonnie, ~900 t) settling onto the runway can break its joints or burst a part
+            CheatOptions.NoCrashDamage = true;
+            CheatOptions.UnbreakableJoints = true;
+            GameObject recorderGo = null;
+            Action<int> setView = null;
+            Action<Vector3> aimView = null;
+            GameObject anchorGo = null;
+            var limits = new List<(ModuleEngines e, float was)>();
+            bool hyper = ctx.Param("hyperWarp") != null;
             try
             {
-                yield return Wait.Seconds(5);
+                // each part's offset from the root and its joint, now and after it is put on the water (a part coming loose)
+                void Parts(string when)
+                {
+                    Vessel pv = FlightGlobals.ActiveVessel;
+                    ctx.Record($"parts {when}", string.Join("; ", pv.parts.Select(q =>
+                        $"{q.partInfo.name} {(q.transform.position - pv.rootPart.transform.position).magnitude:F1} m{(q.attachJoint != null ? $" joint {(q.attachJoint.Joint != null ? "ok" : "none")}" : "")}")));
+                }
+                // (the cheat's flag alone leaves the joints already made breakable: the cheats menu also sets each one)
+                foreach (Part q in FlightGlobals.ActiveVessel.parts)
+                    q.attachJoint?.SetUnbreakable(true, q.rigidAttachment);
+                Parts("at start");
+                // (noon=true: the clock moved on to when the sun stands highest over the water site, hour by hour over a
+                // day, the craft held on rails meanwhile; for demos lit from above)
+                if (ctx.Param("noon") == "true")
+                    yield return Noon(ctx);
+                yield return Wait.Seconds(settleSec);
+                Parts("after 5 s");
                 Vessel v = FlightGlobals.ActiveVessel;
-                CheatOptions.NoCrashDamage = true;
                 string said = null;
                 yield return FarWaterTools.PutOnWater(s => said = s);
+                Parts("placed");
                 v = FlightGlobals.ActiveVessel;
                 yield return Wait.GameSeconds(5);
+                Parts("5 s on the water");
                 ctx.Record("on the water", $"{said}; {v.situation}, {v.srfSpeed:F2} m/s, mass {v.GetTotalMass():F2} t, {v.parts.Count} parts");
+
+                // (record=true: a video, frames/NNNNN.jpg at 1/30 s of game time each, the camera camAngle deg aft of
+                // abeam, camPitch deg down, camDistance m off, the UI hidden)
+                if (ctx.Param("record") == "true")
+                {
+                    FlightCamera cam = FlightCamera.fetch;
+                    cam.setModeImmediate(FlightCamera.Modes.FREE);   // (AUTO turns to chase its velocity as it speeds up, the pitch drifting)
+                    cam.minPitch = -0.5f;
+                    cam.minDistance = Mathf.Min(cam.minDistance, 5f);   // (a big craft's is ~its size: the close views)
+                    cam.SetDistanceImmediate((float)ctx.ParamDouble("camDistance", 40));
+                    float camPitch = (float)(ctx.ParamDouble("camPitch", 25) * Mathf.Deg2Rad);
+                    Vector3 up0 = v.upAxis, h0 = Vector3.ProjectOnPlane(v.ReferenceTransform.up, up0).normalized;
+                    Vector3 look = Quaternion.AngleAxis((float)ctx.ParamDouble("camAngle", 135), up0) * Vector3.Cross(up0, h0).normalized;
+                    float a0 = 0, a1 = 0;
+                    for (int pass = 0; pass < 2; pass++)
+                    {
+                        for (int i = 0; i < 10; i++)
+                        {
+                            cam.camHdg = pass * 0.5f;
+                            cam.camPitch = camPitch;
+                            yield return null;
+                        }
+                        float a = Vector3.SignedAngle(look, Vector3.ProjectOnPlane(cam.transform.forward, up0).normalized, up0) * Mathf.Deg2Rad;
+                        if (pass == 0) a0 = a;
+                        else a1 = a;
+                    }
+                    float slope = Mathf.DeltaAngle(a0 * Mathf.Rad2Deg, a1 * Mathf.Rad2Deg) * Mathf.Deg2Rad / 0.5f;
+                    cam.camHdg = Math.Abs(slope) > 0.2f ? -a0 / slope : 0;
+                    cam.camPitch = camPitch;
+                    GameEvents.onHideUI.Fire();
+                    string frames = Path.Combine(ctx.ResultsDir, "frames");
+                    Directory.CreateDirectory(frames);
+                    recorderGo = new GameObject("JetRunRecorder");
+                    var rec = recorderGo.AddComponent<PlaningVideoTests.Recorder>();
+                    rec.Dir = frames;
+                    Time.captureFramerate = Math.Max(1, (int)ctx.ParamDouble("fps", 30));   // (fewer: a quicker run, a choppier video)
+
+                    // (views=cycle: the camera cycles every viewSec (default 7) through the first view, the same turned 180 deg
+                    // about the craft, high over the stern looking down, and low straight on from the stern, each
+                    // aimed at a point that far behind the craft along its course (back x camDistance): the quarter
+                    // views put the craft to one side and its wake across the frame, the top view over the stern;
+                    // each switch's frame in frames/views.txt)
+                    // (views=demo: instead, low from astern at the waterline looking at the stern, low off the starboard
+                    // bow looking back at it, and high ahead of the bow looking down along the deck: the waterline's
+                    // foam and splash at the hull, the bow wave, the wake behind)
+                    string views = ctx.Param("views");
+                    // (views=deck: one view, from ~12 m over the stern looking aft along the wake, its pivot on the sea
+                    // 1.25 camDistance behind the CoM: a passenger's view of the wake off a ferry's stern; camDistance ~115)
+                    if (views == "cycle" || views == "demo" || views == "deck")
+                    {
+                        float dist0 = (float)ctx.ParamDouble("camDistance", 40), pitch0 = camPitch * Mathf.Rad2Deg;
+                        Vector3 bowQuarter = Quaternion.AngleAxis(-30, up0) * -h0;   // (looking back at the bow from ahead, off its starboard side)
+                        var cycle = views == "deck"
+                            ? new (string name, Vector3 look, float pitch, float dist, float back)[] { ("aft-deck", -h0, 6f, 1f, 1.25f) }
+                            : views == "demo"
+                            ? new (string name, Vector3 look, float pitch, float dist, float back)[]
+                            {
+                                ("stern-low", h0, 2f, 0.2f, 0.25f),
+                                ("bow-low", bowQuarter, 5f, 0.17f, -0.25f),
+                                ("top-bow", -h0, 55f, 0.5f, -0.1f),
+                            }
+                            : new (string name, Vector3 look, float pitch, float dist, float back)[]
+                            {
+                                ("quarter", look, pitch0, 1f, 0.3f),
+                                ("quarter-opposite", -look, pitch0, 1f, 0.3f),   // (the first view turned 180 deg about the craft)
+                                ("top-stern", h0, 62f, 1.1f, 0.3f),
+                                ("stern", h0, 9f, 0.9f, 0f),
+                            };
+                        anchorGo = new GameObject("JetRunCameraAnchor");
+                        var anchor = anchorGo.AddComponent<CameraAnchor>();
+                        anchor.Vessel = v;
+                        anchor.Heading = h0;
+                        cam.SetTargetTransform(anchorGo.transform);
+                        var log = new StringBuilder();
+                        string logPath = Path.Combine(frames, "views.txt");
+                        // (each view turns with the course: in a turn it keeps its place about the craft and the wake behind)
+                        int current = 0;
+                        aimView = course =>
+                        {
+                            var c = cycle[current % cycle.Length];
+                            float turned = course.sqrMagnitude > 0 ? Vector3.SignedAngle(h0, course, up0) : 0;
+                            float delta = (Vector3.SignedAngle(look, c.look, up0) + turned) * Mathf.Deg2Rad;
+                            cam.camHdg = Math.Abs(slope) > 0.2f ? (delta - a0) / slope : 0;
+                        };
+                        // (where the last view's camera and its pivot ended up, about the CoM: m ahead, to starboard, up)
+                        string Where(Vector3 p)
+                        {
+                            Vector3 r = p - v.CoM, side = Vector3.Cross(up0, h0).normalized;
+                            return $"{Vector3.Dot(r, h0):F0}/{Vector3.Dot(r, -side):F0}/{Vector3.Dot(r, up0):F0}";
+                        }
+                        setView = i =>
+                        {
+                            if (i > 0)
+                                log.AppendLine($"  (camera at {Where(cam.transform.position)}, pivot {Where(cam.GetPivot().position)}, target {Where(anchorGo.transform.position)}; distance {cam.Distance:F0})");
+                            current = i;
+                            var c = cycle[i % cycle.Length];
+                            Vector3 vel = Vector3.ProjectOnPlane(v.srf_velocity, up0);
+                            aimView(vel.magnitude > 1 ? vel.normalized : Vector3.zero);
+                            cam.camPitch = c.pitch * Mathf.Deg2Rad;
+                            cam.minDistance = Mathf.Min(cam.minDistance, 5f);
+                            cam.SetDistanceImmediate(dist0 * c.dist);
+                            anchor.Back = c.back * dist0;
+                            anchor.Height = views == "deck" ? 0f : views == "demo" && c.pitch < 20 ? 1.5f : float.NaN;   // (the low views: 1.5 m above the sea)
+                            log.AppendLine($"{rec.Frame} {c.name}");
+                            File.WriteAllText(logPath, log.ToString());
+                        };
+                        setView(0);
+                    }
+                }
+
+                // (hyperWarp=N: physics hyper-warp at N x, physics accuracy kept)
+                if (hyper)
+                    TestWarp.Hyper(ctx, true);
+                var fixedWait = new WaitForFixedUpdate();
+                double viewSec = ctx.ParamDouble("viewSec", 7), nextView = Planetarium.GetUniversalTime() + viewSec;
+                int viewIdx = 1;
+                // (restSec=S: first S s adrift with the engines off, the camera cycling: the hull's own heave and roll at the waterline)
+                double restSec = ctx.ParamDouble("restSec", 0);
+                if (restSec > 0)
+                {
+                    double tr = Planetarium.GetUniversalTime();
+                    ctx.Record("rest", $"{restSec:F0} s adrift from frame {(recorderGo != null ? recorderGo.GetComponent<PlaningVideoTests.Recorder>().Frame : -1)}");
+                    // (its heave and rocking once a second: a hull at rest should settle)
+                    var motion = new List<string>();
+                    double nextMotion = 0;
+                    while (Planetarium.GetUniversalTime() - tr < restSec)
+                    {
+                        yield return fixedWait;
+                        double tm = Planetarium.GetUniversalTime() - tr;
+                        if (tm >= nextMotion)
+                        {
+                            motion.Add($"{tm:F0}s {v.verticalSpeed:+0.00;-0.00} m/s {v.angularVelocity.magnitude * Mathf.Rad2Deg:F2} deg/s");
+                            nextMotion += 1;
+                        }
+                        if (setView != null && Planetarium.GetUniversalTime() >= nextView)
+                        {
+                            setView(viewIdx++);
+                            nextView += viewSec;
+                        }
+                    }
+                    ctx.Record("rest motion", string.Join(", ", motion));
+                }
 
                 var engines = v.parts.SelectMany(q => q.Modules.GetModules<ModuleEngines>()).ToList();
                 foreach (ModuleEngines e in engines)
                     e.Activate();
+                // (the generators feeding electric propellers)
+                var generators = v.parts.SelectMany(q => q.Modules.GetModules<ModuleResourceConverter>()).ToList();
+                foreach (ModuleResourceConverter c in generators)
+                    c.StartResourceConverter();
                 Ctrl.Attach();
-                Ctrl.SetThrottle(1);
+                // (throttle=X: the throttle the runs go at, default 1)
+                Ctrl.SetThrottle((float)ctx.ParamDouble("throttle", 1));
+                bool reported = false;
                 var csv = new StringBuilder("t,pitch_in,V_ms,trim_deg,roll_deg,thrust_kN,water_fwd_kN,momentum_fwd_kN,friction_fwd_kN,impact_fwd_kN,crossflow_fwd_kN,hydrostatic_fwd_kN,foil_fwd_kN,water_up_kN," +
-                                            "wing_fwd_kN,voxel_fwd_kN,gravity_fwd_kN,ma_fwd_kN,residual_kN,alt_m,vs_ms\n");
+                                            "wing_fwd_kN,voxel_fwd_kN,gravity_fwd_kN,ma_fwd_kN,residual_kN,alt_m,vs_ms,heading_deg,drift_deg\n");
                 Vector3 velWas = v.srf_velocity;
-                var fixedWait = new WaitForFixedUpdate();
                 double t0 = Planetarium.GetUniversalTime();
+                // (the water model's time per physics step over the run, and the frame time: hydro=false runs it without)
+                if (ctx.Param("hydro") != null)
+                    FARDebugValues.hydrodynamics = ctx.Param("hydro") != "false";
+                FARAeroComponents.PartHydrodynamics.ResetProfile();
+                int profFrames0 = Time.frameCount;
+                float profWall0 = Time.realtimeSinceStartup;
+                // (turnAfter=S: after S s, yaw at turnYaw (default 1: right; -1 left) and the engines on the inside of the
+                // turn limited to turnThrust % (default 100: the rudder alone) for the rest of the run: its wake bends behind it)
+                double turnAfter = ctx.ParamDouble("turnAfter", double.NaN), turnHdg = double.NaN, turned = 0, hdgWas = 0;
+                Vector3 hRef = Vector3.ProjectOnPlane(v.ReferenceTransform.up, v.upAxis).normalized;
+                double Heading() => Vector3.SignedAngle(hRef, Vector3.ProjectOnPlane(v.ReferenceTransform.up, v.upAxis), v.upAxis);
+                // its drift (sideslip): the heading's angle from its course, + nose right of it (none when barely moving)
+                double Drift()
+                {
+                    Vector3 course = Vector3.ProjectOnPlane(v.srf_velocity, v.upAxis);
+                    return course.magnitude < 1 ? 0 : Vector3.SignedAngle(course, Vector3.ProjectOnPlane(v.ReferenceTransform.up, v.upAxis), v.upAxis);
+                }
+                double driftMax = 0;
                 foreach (double pin in pitches)
                 {
                     Ctrl.Pitch = (float)pin;
@@ -196,6 +394,40 @@ namespace FerramAerospaceResearch.KspTests
                     while (Planetarium.GetUniversalTime() - ts < phaseSec)
                     {
                         yield return fixedWait;
+                        if (!double.IsNaN(turnAfter) && double.IsNaN(turnHdg) && Planetarium.GetUniversalTime() - t0 >= turnAfter)
+                        {
+                            float yaw = (float)ctx.ParamDouble("turnYaw", 1), inner = (float)ctx.ParamDouble("turnThrust", 100);
+                            Ctrl.Yaw = yaw;
+                            foreach (ModuleEngines e in engines)
+                            {
+                                float side = Vector3.Dot(e.part.transform.position - v.CoM, v.ReferenceTransform.right);
+                                if (inner < 100 && Math.Abs(side) > 0.2f && Math.Sign(side) == Math.Sign(yaw))
+                                {
+                                    limits.Add((e, e.thrustPercentage));
+                                    e.thrustPercentage = inner;
+                                }
+                            }
+                            turnHdg = hdgWas = Heading();
+                            ctx.Record("turn", $"at t {Planetarium.GetUniversalTime() - t0:F1} s, {v.srfSpeed:F1} m/s: yaw {yaw:+0.0;-0.0}, {limits.Count} engines inside the turn at {inner:F0} %");
+                        }
+                        if (!double.IsNaN(turnHdg))
+                        {
+                            double hNow = Heading();
+                            driftMax = Math.Max(driftMax, Math.Abs(Drift()));
+                            turned += Mathf.DeltaAngle((float)hdgWas, (float)hNow);   // (past 180 deg too)
+                            hdgWas = hNow;
+                        }
+                        if (setView != null && Planetarium.GetUniversalTime() >= nextView)
+                        {
+                            setView(viewIdx++);
+                            nextView += viewSec;
+                        }
+                        else if (aimView != null)
+                        {
+                            Vector3 vel = Vector3.ProjectOnPlane(v.srf_velocity, v.upAxis);
+                            if (vel.magnitude > 1)
+                                aimView(vel.normalized);
+                        }
                         Vector3 up = v.upAxis, dir = ((Vector3)v.srf_velocity).normalized;
                         double V = v.srfSpeed;
                         double trim = Math.Asin(Mathf.Clamp(Vector3.Dot(v.ReferenceTransform.up, up), -1, 1)) * 180 / Math.PI;
@@ -221,6 +453,20 @@ namespace FerramAerospaceResearch.KspTests
                                           $"{(wf != Vector3.zero ? $", foil {Vector3.Dot(wf, dir):+0.0;-0.0}" : "")}) up {Vector3.Dot((hq?.LastForce ?? Vector3.zero) + (hq?.LastHydrostaticForce ?? Vector3.zero) + wf, up):F1}");
                         }
                         double t = Planetarium.GetUniversalTime() - t0;
+                        // (once, 8 s in: each engine's thrust, its push along the craft's forward axis (+1: straight
+                        // ahead), its thrust's depth; the electric charge left and the generators' state)
+                        if (!reported && t >= 8)
+                        {
+                            reported = true;
+                            double ec = v.parts.Sum(q => q.Resources.Contains("ElectricCharge") ? q.Resources["ElectricCharge"].amount : 0);
+                            ctx.Record("engines", string.Join("; ", engines.Select(e =>
+                            {
+                                var tts = e.thrustTransforms.Where(x => x).ToList();
+                                Vector3 push = tts.Aggregate(Vector3.zero, (a, x) => a - x.forward);
+                                double depth = tts.Count > 0 ? tts.Average(x => FlightGlobals.getAltitudeAtPos(x.position)) : double.NaN;
+                                return $"{e.part.partInfo.name} {e.finalThrust:F0} kN fwd {Vector3.Dot(push.normalized, v.ReferenceTransform.up):+0.00;-0.00} (its own up {Vector3.Dot(push.normalized, e.part.transform.up):+0.00;-0.00}) at {depth:F1} m ({e.status})";
+                            })) + $"; EC {ec:F0}; generators: {string.Join(", ", generators.Select(c => c.status))}");
+                        }
                         // the balance along its course: its mass times its acceleration against every force known
                         Vector3 wing = Vector3.zero, voxel = Vector3.zero;
                         foreach (Part q in v.parts)
@@ -246,7 +492,7 @@ namespace FerramAerospaceResearch.KspTests
                         csv.AppendLine(string.Join(",", F(t), F(pin), F(V), F(trim), F(roll), F(thrust), F(Vector3.Dot(all + foil, dir)), F(Vector3.Dot(mom, dir)),
                                                    F(Vector3.Dot(fr, dir)), F(Vector3.Dot(imp, dir)), F(Vector3.Dot(cf, dir)), F(Vector3.Dot(hs, dir)),
                                                    F(Vector3.Dot(foil, dir)), F(Vector3.Dot(all + foil, up)),
-                                                   F(Vector3.Dot(wing, dir)), F(Vector3.Dot(voxel, dir)), F(g), F(ma), F(ma - known), F(v.altitude), F(v.verticalSpeed)));
+                                                   F(Vector3.Dot(wing, dir)), F(Vector3.Dot(voxel, dir)), F(g), F(ma), F(ma - known), F(v.altitude), F(v.verticalSpeed), F(Heading()), F(Drift())));
                         if (V > vMax)
                         {
                             vMax = V;
@@ -258,17 +504,156 @@ namespace FerramAerospaceResearch.KspTests
                     }
                     ctx.Record($"pitch {pin:+0.0;-0.0}", $"{v.srfSpeed:F1} m/s at the end; fastest {atMax}");
                 }
+                {
+                    double tick = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                    long steps = Math.Max(1, FARAeroComponents.PartHydrodynamics.ProfileSteps);
+                    double wall = Time.realtimeSinceStartup - profWall0;
+                    ctx.Record("frame", $"{wall * 1000 / Math.Max(1, Time.frameCount - profFrames0):F1} ms a frame ({Time.frameCount - profFrames0} frames, {wall:F1} s); hydrodynamics {FARDebugValues.hydrodynamics}");
+                    ctx.Record("water model", $"{(FARAeroComponents.PartHydrodynamics.ProfileGatherTicks + FARAeroComponents.PartHydrodynamics.ProfileSolveTicks) * tick / steps:F2} ms a step: " +
+                                              $"gather {FARAeroComponents.PartHydrodynamics.ProfileGatherTicks * tick / steps:F2} ms, " +
+                                              $"solve {FARAeroComponents.PartHydrodynamics.ProfileSolveTicks * tick / steps:F2} ms (lee {FARAeroComponents.PartHydrodynamics.ProfileLeeTicks * tick / steps:F2} ms, " +
+                                              $"{FARAeroComponents.PartHydrodynamics.ProfileLeeRays / steps} rays; pieces {FARAeroComponents.PartHydrodynamics.ProfilePieceTicks * tick / steps:F2} ms; " +
+                                              $"strips and impact {FARAeroComponents.PartHydrodynamics.ProfileImpactTicks * tick / steps:F2} ms), " +
+                                              $"contacts {FARAeroComponents.PartHydrodynamics.ProfileContactTicks * tick / steps:F2} ms, mesh {FARAeroComponents.PartHydrodynamics.ProfileMeshTicks * tick / steps:F2} ms; " +
+                                              $"{FARAeroComponents.PartHydrodynamics.ProfilePolygons / steps} polygons, {FARAeroComponents.PartHydrodynamics.ProfileTrianglesTested / steps} triangles tested; " +
+                                              $"{FARAeroComponents.PartHydrodynamics.ProfileShadowBuilds} closed-in rebuilds ({FARAeroComponents.PartHydrodynamics.ProfileShadowTicks * tick:F0} ms all); {steps} steps");
+                }
+                if (!double.IsNaN(turnHdg))
+                    ctx.Record("turned", $"{turned:+0.0;-0.0} deg since the turn began, {v.srfSpeed:F1} m/s at the end; drift {Drift():+0.0;-0.0} deg at the end, up to {driftMax:F1} deg");
                 File.WriteAllText(Path.Combine(ctx.ResultsDir, "jetboat.csv"), csv.ToString());
+
+                // (stopSec=S: then the engines cut, the rudder centred, and S s more (the camera still cycling) as it comes
+                // to rest and its wake runs on without it; stopBrake=B m/s^2 more deceleration while it still moves (a
+                // sea anchor's stand-in: a heavy hull alone coasts on for a minute), default 0)
+                double stopSec = ctx.ParamDouble("stopSec", 0);
+                if (stopSec > 0)
+                {
+                    Ctrl.SetThrottle(0);
+                    Ctrl.Yaw = 0;
+                    Ctrl.Pitch = 0;
+                    foreach (ModuleEngines e in engines)
+                        e.Shutdown();
+                    double brake = ctx.ParamDouble("stopBrake", 0), tStop = Planetarium.GetUniversalTime(), stoppedAt = double.NaN, nextLog = 0;
+                    var speeds = new List<string>();
+                    // (its heave and pitch as it comes to rest, twice a second for 12 s: what the wave sim takes as its push)
+                    var motion = new List<string>();
+                    double nextMotion = 0, altWas = v.altitude;
+                    ctx.Record("stop", $"at t {tStop - t0:F1} s, {v.srfSpeed:F1} m/s, EC {v.parts.Sum(q => q.Resources.Contains("ElectricCharge") ? q.Resources["ElectricCharge"].amount : 0):F0}, frame {(recorderGo != null ? recorderGo.GetComponent<PlaningVideoTests.Recorder>().Frame : -1)}");
+                    while (Planetarium.GetUniversalTime() - tStop < stopSec)
+                    {
+                        yield return fixedWait;
+                        double ts = Planetarium.GetUniversalTime() - tStop;
+                        // (the root's rigidbody: srf_velocity is only refreshed once a frame, several physics steps under hyper-warp)
+                        Vector3 vel = Vector3.ProjectOnPlane(v.rootPart.Rigidbody.velocity + (Vector3)Krakensbane.GetFrameVelocity(), v.upAxis);
+                        if (brake > 0 && vel.magnitude > 0.05f)
+                            v.ChangeWorldVelocity(-vel.normalized * Mathf.Min(vel.magnitude, (float)(brake * TimeWarp.fixedDeltaTime)));
+                        if (double.IsNaN(stoppedAt) && vel.magnitude < 0.3f)
+                            stoppedAt = ts;
+                        if (ts >= nextLog)
+                        {
+                            speeds.Add($"{ts:F0}s {vel.magnitude:F1}");
+                            nextLog += 2;
+                        }
+                        if (ts >= nextMotion && ts < 12)
+                        {
+                            Vector3 w = v.angularVelocity;
+                            motion.Add($"{ts:F1}s {vel.magnitude:F1} m/s vs {v.verticalSpeed:+0.00;-0.00} pitch {w.x * Mathf.Rad2Deg:+0.0;-0.0} roll {w.y * Mathf.Rad2Deg:+0.0;-0.0} deg/s");
+                            nextMotion += 0.5;
+                        }
+                        if (setView != null && Planetarium.GetUniversalTime() >= nextView)
+                        {
+                            setView(viewIdx++);
+                            nextView += viewSec;
+                        }
+                    }
+                    ctx.Record("stop motion", string.Join(", ", motion));
+                    ctx.Record("stopped", $"{(double.IsNaN(stoppedAt) ? "still moving" : $"under 0.3 m/s {stoppedAt:F1} s after the stop")}, {v.srfSpeed:F2} m/s at the end; m/s: {string.Join(", ", speeds)}");
+                }
             }
             finally
             {
+                if (recorderGo != null)
+                {
+                    UnityEngine.Object.Destroy(recorderGo);
+                    Time.captureFramerate = 0;
+                    GameEvents.onShowUI.Fire();
+                }
+                if (anchorGo != null)
+                {
+                    if (FlightGlobals.ActiveVessel != null)
+                        FlightCamera.fetch.SetTargetVessel(FlightGlobals.ActiveVessel);
+                    UnityEngine.Object.Destroy(anchorGo);
+                }
+                if (hyper)
+                    TestWarp.Hyper(ctx, false);
+                foreach (var (e, was) in limits)
+                    if (e != null)
+                        e.thrustPercentage = was;
                 Ctrl.Pitch = 0;
+                Ctrl.Yaw = 0;
                 Ctrl.SetThrottle(0);
                 CheatOptions.NoCrashDamage = crashWas;
+                CheatOptions.UnbreakableJoints = jointsWas;
                 WaterParams.Restore();
             }
         }
 
+        /// <summary>The clock moved on to when the sun stands highest over the water site, hour by hour over a day, the
+        /// active vessel held on rails meanwhile: for demos lit from above. Or, given sunElevation (deg), to the morning
+        /// before that when the sun stands that high (its hour angle taken as 90 deg less the height: the site's on the
+        /// equator, the axis untilted).</summary>
+        internal static IEnumerator Noon(TestContext ctx)
+        {
+            Vessel nv = FlightGlobals.ActiveVessel;
+            nv.GoOnRails();
+            CelestialBody nb = nv.mainBody;
+            (double lat, double lon) = FarWaterTools.WaterSite(nb);
+            double day = nb.solarDayLength > 0 ? nb.solarDayLength : nb.rotationPeriod;
+            double ut0 = Planetarium.GetUniversalTime(), bestUt = ut0, bestEl = -90;
+            for (int hh = 0; hh < 48; hh++)
+            {
+                Planetarium.SetUniversalTime(ut0 + hh * day / 48);
+                yield return Wait.Frames(2);
+                Vector3d upAt = nb.GetSurfaceNVector(lat, lon);
+                double el = 90 - Vector3d.Angle(upAt, (Planetarium.fetch.Sun.position - nb.position).normalized);
+                if (el > bestEl)
+                {
+                    bestEl = el;
+                    bestUt = Planetarium.GetUniversalTime();
+                }
+            }
+            double target = ctx.ParamDouble("sunElevation", double.NaN);
+            if (!double.IsNaN(target) && target < bestEl)
+                bestUt -= (bestEl - target) / 360 * day;
+            Planetarium.SetUniversalTime(bestUt);
+            yield return Wait.Frames(2);
+            Vector3d upNow = nb.GetSurfaceNVector(lat, lon);
+            bestEl = 90 - Vector3d.Angle(upNow, (Planetarium.fetch.Sun.position - nb.position).normalized);
+            ctx.Record("time of day", $"UT {bestUt:F0} s: the sun {bestEl:F0} deg up at {lat:F2} N {lon:F2} E");
+        }
+
         private static string F(double x) => x.ToString("G5", CultureInfo.InvariantCulture);
+
+        /// <summary>The recording camera's target: Back m behind the vessel's centre of mass along its course (its
+        /// heading at the start until it makes way), kept level with it.</summary>
+        internal class CameraAnchor : MonoBehaviour
+        {
+            public Vessel Vessel;
+            public Vector3 Heading;
+            public float Back;
+            public float Height = float.NaN;   // (m above the sea, if set: a low camera kept out of the water)
+
+            private void Update()   // (after physics, before the camera's LateUpdate)
+            {
+                if (Vessel == null)
+                    return;
+                Vector3 up = Vessel.upAxis, vel = Vector3.ProjectOnPlane(Vessel.srf_velocity, up);
+                Vector3 h = vel.magnitude > 1 ? vel.normalized : Vector3.ProjectOnPlane(Heading, up).normalized;
+                transform.position = Vessel.CoM - h * Back;
+                if (!float.IsNaN(Height))
+                    transform.position += up * (Height - (float)FlightGlobals.getAltitudeAtPos(transform.position, Vessel.mainBody));
+                transform.rotation = Vessel.transform.rotation;
+            }
+        }
     }
 }

@@ -696,60 +696,30 @@ namespace ferram4
             RaycastHit[] sortedHits = SortHitsByDistance(hits);
             foreach (RaycastHit h in sortedHits)
             {
-                bool gotSomething = false;
-                if (h.collider == null)
+                if (h.collider == null || h.distance <= 0)
                     continue;
-                foreach (Part p in vesselPartList)
+                // the part the collider belongs to (its nearest Part up the hierarchy), not a match against a cached
+                // collider list: a part that rebuilds its colliders (a CustomProceduralParts Spine's convex pieces)
+                // leaves FARPartModule.PartColliders holding the destroyed ones, and part.collider is only its first
+                Part p = h.collider.GetComponentInParent<Part>();
+                if (p == null || p == parentWingPart || !vesselPartList.Contains(p))
+                    continue;
+
+                if (firstHit)
                 {
-                    if (p == null || p == parentWingPart)
-                        continue;
+                    exposure -= exposureDecreasePerHit;
+                    firstHit = false;
+                }
 
-                    var farModule = p.GetComponent<FARPartModule>();
-
-                    Collider[] colliders;
-
-                    if (!(farModule is null))
+                var hitModule = p.GetComponent<FARWingAerodynamicModel>();
+                if (hitModule != null)
+                {
+                    double tmp = Math.Abs(Vector3.Dot(p.transform.forward, parentWingPart.partTransform.forward));
+                    if (tmp > wingInteractionFactor + 0.01)
                     {
-                        colliders = farModule.PartColliders;
-                        if (colliders == null)
-                        {
-                            farModule.TriggerPartColliderUpdate();
-                            colliders = farModule.PartColliders;
-                        }
+                        wingInteractionFactor = tmp;
+                        wingHit = hitModule;
                     }
-                    else
-                    {
-                        colliders = new[] {p.collider};
-                    }
-
-                    // ReSharper disable once LoopCanBeConvertedToQuery -> closure
-                    foreach (Collider collider in colliders)
-                        if (h.collider == collider && h.distance > 0)
-                        {
-                            if (firstHit)
-                            {
-                                exposure -= exposureDecreasePerHit;
-                                firstHit = false;
-                            }
-
-                            var hitModule = p.GetComponent<FARWingAerodynamicModel>();
-                            if (hitModule != null)
-                            {
-                                double tmp =
-                                    Math.Abs(Vector3.Dot(p.transform.forward, parentWingPart.partTransform.forward));
-                                if (tmp > wingInteractionFactor + 0.01)
-                                {
-                                    wingInteractionFactor = tmp;
-                                    wingHit = hitModule;
-                                }
-                            }
-
-                            gotSomething = true;
-                            break;
-                        }
-
-                    if (gotSomething)
-                        break;
                 }
             }
 

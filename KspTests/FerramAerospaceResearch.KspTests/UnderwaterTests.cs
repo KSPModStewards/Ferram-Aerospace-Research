@@ -160,304 +160,368 @@ namespace FerramAerospaceResearch.KspTests
                 // its CoM at its middle (where a body of revolution's buoyancy acts), or at a reference's moment point
                 hull.SetCoM(v, new Vector3(0, (float)refForward, 0));
 
-                var csv = new StringBuilder("V_ms,aoa_deg,up_kN,lift_kN,drag_kN,pitch_kNm,surface,buoyancy_kN,submerged\n");
-                var results = new Dictionary<(double, double), (double up, double drag, double pitch)>();
-                double buoyancyKN = double.NaN, surface = double.NaN;
-                var fixedWait = new WaitForFixedUpdate();
-                foreach (double U in speeds)
-                    foreach (double aoa in aoas)
-                    {
-                        Flight.PointAtAoA(aoa, h, up);
-                        yield return fixedWait;
-                        v.SetPosition(v.vesselTransform.position + (Vector3d)up * (-depth - v.altitude));
-                        RigidVessel.Set(v, h * (float)U, Vector3.zero);
-                        var ups = new List<double>(); var drags = new List<double>(); var pitches = new List<double>();
-                        double t0 = Planetarium.GetUniversalTime();
-                        while (Planetarium.GetUniversalTime() - t0 < 2.5)
+                // at each collider detail (ColliderDetail): the sweep, its checks and its reference, each level's
+                // forces held to the finest's after
+                int[] details = ColliderDetail.Levels(ctx, "12+24+48", v);
+                var keptMissed = new List<int>(); var oddMissed = new List<int>(); var alikeMissed = new List<int>(); var meetsMissed = new List<int>();
+                var levels = new List<(int detail, double[] loads, double yv, double nv, double xp, double volume, int tris)>();
+                foreach (int detail in details)
+                {
+                    yield return ColliderDetail.Set(ctx, v, detail);
+                    // the frame where the hull is now: a level's tows carry it a km or more round the planet, its up turned with it
+                    up = v.upAxis;
+                    h = Vector3.ProjectOnPlane(h, up).normalized;
+                    side = Vector3.Cross(up, h).normalized;
+                    // hyper-warped (parameter hyperWarp; the hull held every step: the same run, sooner)
+                    TestWarp.Hyper(ctx, true, 16);
+                    string at = details.Length > 1 ? $" @{detail}" : "", sfx = details.Length > 1 ? $"-{detail}" : "";
+                    var csv = new StringBuilder("V_ms,aoa_deg,up_kN,lift_kN,drag_kN,pitch_kNm,surface,buoyancy_kN,submerged\n");
+                    var results = new Dictionary<(double, double), (double up, double drag, double pitch)>();
+                    double buoyancyKN = double.NaN, surface = double.NaN;
+                    var fixedWait = new WaitForFixedUpdate();
+                    foreach (double U in speeds)
+                        foreach (double aoa in aoas)
                         {
-                            yield return fixedWait;
-                            if (Planetarium.GetUniversalTime() - t0 > 1)
-                            {
-                                (Vector3 f, Vector3 m) = Loads(v, hull);
-                                ups.Add(Vector3.Dot(f, up));
-                                drags.Add(-Vector3.Dot(f, h));
-                                pitches.Add(-Vector3.Dot(m, side));     // nose up +
-                                if (double.IsNaN(surface))
-                                {
-                                    object hr = hull.Hydro.FirstOrDefault()?.Hull;
-                                    FieldInfo sf = hr?.GetType().GetField("Surface");
-                                    surface = sf != null ? (double)sf.GetValue(hr) : -1;
-                                }
-                            }
                             Flight.PointAtAoA(aoa, h, up);
-                            RigidVessel.Set(v, h * (float)U, Vector3.zero);
-                        }
-                        if (double.IsNaN(buoyancyKN))
-                            buoyancyKN = rho * g * hull.MeshVolume / 1000;
-                        double upKN = ups.Average(), dragKN = drags.Average(), pitch = pitches.Average();
-                        results[(U, aoa)] = (upKN, dragKN, pitch);
-                        csv.AppendLine(string.Join(",", F(U), F(aoa), F(upKN), F(upKN - buoyancyKN), F(dragKN), F(pitch), F(surface), F(buoyancyKN),
-                                                   F(hull.Submerged)));
-                    }
-                File.WriteAllText(Path.Combine(ctx.ResultsDir, "submerged.csv"), csv.ToString());
-
-                // yawed: the nose turned toward the right (side) by the angle, the flow along h as before
-                var yawCsv = new StringBuilder("V_ms,yaw_deg,side_kN,yaw_kNm\n");
-                var yawed = new Dictionary<(double, double), (double side, double yaw)>();
-                Vector3 yawAxis = Vector3.Cross(h, side);   // a moment along it turns the nose toward the right
-                foreach (double U in speeds)
-                    foreach (double b in yaws)
-                    {
-                        Vector3 nose = h * (float)Math.Cos(b * Math.PI / 180) + side * (float)Math.Sin(b * Math.PI / 180);
-                        Flight.PointAtAoA(0, h, up);
-                        v.SetRotation(Quaternion.FromToRotation(h, nose) * v.transform.rotation);
-                        yield return fixedWait;
-                        v.SetPosition(v.vesselTransform.position + (Vector3d)up * (-depth - v.altitude));
-                        RigidVessel.Set(v, h * (float)U, Vector3.zero);
-                        var sides = new List<double>(); var yms = new List<double>();
-                        double t0 = Planetarium.GetUniversalTime();
-                        while (Planetarium.GetUniversalTime() - t0 < 2.5)
-                        {
                             yield return fixedWait;
-                            if (Planetarium.GetUniversalTime() - t0 > 1)
+                            v.SetPosition(v.vesselTransform.position + (Vector3d)up * (-depth - v.altitude));
+                            RigidVessel.Set(v, h * (float)U, Vector3.zero);
+                            var ups = new List<double>(); var drags = new List<double>(); var pitches = new List<double>();
+                            double t0 = Planetarium.GetUniversalTime();
+                            while (Planetarium.GetUniversalTime() - t0 < 2.5)
                             {
-                                (Vector3 f, Vector3 m) = Loads(v, hull);
-                                sides.Add(Vector3.Dot(f, side));
-                                yms.Add(Vector3.Dot(m, yawAxis));
+                                yield return fixedWait;
+                                if (Planetarium.GetUniversalTime() - t0 > 1)
+                                {
+                                    (Vector3 f, Vector3 m) = Loads(v, hull);
+                                    ups.Add(Vector3.Dot(f, up));
+                                    drags.Add(-Vector3.Dot(f, h));
+                                    pitches.Add(-Vector3.Dot(m, side));     // nose up +
+                                    if (double.IsNaN(surface))
+                                    {
+                                        object hr = hull.Hydro.FirstOrDefault()?.Hull;
+                                        FieldInfo sf = hr?.GetType().GetField("Surface");
+                                        surface = sf != null ? (double)sf.GetValue(hr) : -1;
+                                    }
+                                }
+                                Flight.PointAtAoA(aoa, h, up);
+                                RigidVessel.Set(v, h * (float)U, Vector3.zero);
                             }
+                            if (double.IsNaN(buoyancyKN))
+                                buoyancyKN = rho * g * hull.MeshVolume / 1000;
+                            double upKN = ups.Average(), dragKN = drags.Average(), pitch = pitches.Average();
+                            results[(U, aoa)] = (upKN, dragKN, pitch);
+                            csv.AppendLine(string.Join(",", F(U), F(aoa), F(upKN), F(upKN - buoyancyKN), F(dragKN), F(pitch), F(surface), F(buoyancyKN),
+                                                       F(hull.Submerged)));
+                        }
+                    File.WriteAllText(Path.Combine(ctx.ResultsDir, $"submerged{sfx}.csv"), csv.ToString());
+
+                    // yawed: the nose turned toward the right (side) by the angle, the flow along h as before
+                    var yawCsv = new StringBuilder("V_ms,yaw_deg,side_kN,yaw_kNm\n");
+                    var yawed = new Dictionary<(double, double), (double side, double yaw)>();
+                    Vector3 yawAxis = Vector3.Cross(h, side);   // a moment along it turns the nose toward the right
+                    foreach (double U in speeds)
+                        foreach (double b in yaws)
+                        {
+                            Vector3 nose = h * (float)Math.Cos(b * Math.PI / 180) + side * (float)Math.Sin(b * Math.PI / 180);
                             Flight.PointAtAoA(0, h, up);
                             v.SetRotation(Quaternion.FromToRotation(h, nose) * v.transform.rotation);
-                            RigidVessel.Set(v, h * (float)U, Vector3.zero);
-                        }
-                        yawed[(U, b)] = (sides.Average(), yms.Average());
-                        yawCsv.AppendLine(string.Join(",", F(U), F(b), F(sides.Average()), F(yms.Average())));
-                    }
-                File.WriteAllText(Path.Combine(ctx.ResultsDir, "submerged-yaw.csv"), yawCsv.ToString());
-
-                // turning: straight and level on its course at the fastest speed, turning at r' (r = r' U / L about the
-                // vertical, its nose toward the right for r' > 0), its attitude put back every step
-                var turning = new Dictionary<double, (double side, double yaw)>();
-                if (rates.Length > 0 && reference is { } rRef)
-                {
-                    double U = speeds.Max();
-                    foreach (double rp in rates)
-                    {
-                        float omega = (float)(rp * U / rRef.L);
-                        Flight.PointAtAoA(0, h, up);
-                        yield return fixedWait;
-                        v.SetPosition(v.vesselTransform.position + (Vector3d)up * (-depth - v.altitude));
-                        RigidVessel.Set(v, h * (float)U, up * omega);
-                        var sides = new List<double>(); var yms = new List<double>();
-                        double t0 = Planetarium.GetUniversalTime();
-                        while (Planetarium.GetUniversalTime() - t0 < 2.5)
-                        {
                             yield return fixedWait;
-                            if (Planetarium.GetUniversalTime() - t0 > 1)
+                            v.SetPosition(v.vesselTransform.position + (Vector3d)up * (-depth - v.altitude));
+                            RigidVessel.Set(v, h * (float)U, Vector3.zero);
+                            var sides = new List<double>(); var yms = new List<double>();
+                            double t0 = Planetarium.GetUniversalTime();
+                            while (Planetarium.GetUniversalTime() - t0 < 2.5)
                             {
-                                (Vector3 f, Vector3 m) = Loads(v, hull);
-                                sides.Add(Vector3.Dot(f, side));
-                                yms.Add(Vector3.Dot(m, yawAxis));
+                                yield return fixedWait;
+                                if (Planetarium.GetUniversalTime() - t0 > 1)
+                                {
+                                    (Vector3 f, Vector3 m) = Loads(v, hull);
+                                    sides.Add(Vector3.Dot(f, side));
+                                    yms.Add(Vector3.Dot(m, yawAxis));
+                                }
+                                Flight.PointAtAoA(0, h, up);
+                                v.SetRotation(Quaternion.FromToRotation(h, nose) * v.transform.rotation);
+                                RigidVessel.Set(v, h * (float)U, Vector3.zero);
                             }
+                            yawed[(U, b)] = (sides.Average(), yms.Average());
+                            yawCsv.AppendLine(string.Join(",", F(U), F(b), F(sides.Average()), F(yms.Average())));
+                        }
+                    File.WriteAllText(Path.Combine(ctx.ResultsDir, $"submerged-yaw{sfx}.csv"), yawCsv.ToString());
+
+                    // turning: straight and level on its course at the fastest speed, turning at r' (r = r' U / L about the
+                    // vertical, its nose toward the right for r' > 0), its attitude put back every step
+                    var turning = new Dictionary<double, (double side, double yaw)>();
+                    if (rates.Length > 0 && reference is { } rRef)
+                    {
+                        double U = speeds.Max();
+                        foreach (double rp in rates)
+                        {
+                            float omega = (float)(rp * U / rRef.L);
                             Flight.PointAtAoA(0, h, up);
+                            yield return fixedWait;
                             v.SetPosition(v.vesselTransform.position + (Vector3d)up * (-depth - v.altitude));
                             RigidVessel.Set(v, h * (float)U, up * omega);
-                        }
-                        turning[rp] = (sides.Average(), yms.Average());
-                    }
-                }
-                // pitching: the same, turned about its side axis (nose up for q' > 0: q = q' U / L), its up force and
-                // pitching moment (nose up +)
-                var pitching = new Dictionary<double, (double up, double pitch)>();
-                if (rates.Length > 0 && reference is { } qRef && vertical != null)
-                {
-                    double U = speeds.Max();
-                    foreach (double qp in rates)
-                    {
-                        float omega = (float)(qp * U / qRef.L);
-                        Flight.PointAtAoA(0, h, up);
-                        yield return fixedWait;
-                        v.SetPosition(v.vesselTransform.position + (Vector3d)up * (-depth - v.altitude));
-                        RigidVessel.Set(v, h * (float)U, -side * omega);
-                        var ups = new List<double>(); var pms = new List<double>();
-                        double t0 = Planetarium.GetUniversalTime();
-                        while (Planetarium.GetUniversalTime() - t0 < 2.5)
-                        {
-                            yield return fixedWait;
-                            if (Planetarium.GetUniversalTime() - t0 > 1)
+                            var sides = new List<double>(); var yms = new List<double>();
+                            double t0 = Planetarium.GetUniversalTime();
+                            while (Planetarium.GetUniversalTime() - t0 < 2.5)
                             {
-                                (Vector3 f, Vector3 m) = Loads(v, hull);
-                                ups.Add(Vector3.Dot(f, up));
-                                pms.Add(-Vector3.Dot(m, side));
+                                yield return fixedWait;
+                                if (Planetarium.GetUniversalTime() - t0 > 1)
+                                {
+                                    (Vector3 f, Vector3 m) = Loads(v, hull);
+                                    sides.Add(Vector3.Dot(f, side));
+                                    yms.Add(Vector3.Dot(m, yawAxis));
+                                }
+                                Flight.PointAtAoA(0, h, up);
+                                v.SetPosition(v.vesselTransform.position + (Vector3d)up * (-depth - v.altitude));
+                                RigidVessel.Set(v, h * (float)U, up * omega);
                             }
+                            turning[rp] = (sides.Average(), yms.Average());
+                        }
+                    }
+                    // pitching: the same, turned about its side axis (nose up for q' > 0: q = q' U / L), its up force and
+                    // pitching moment (nose up +)
+                    var pitching = new Dictionary<double, (double up, double pitch)>();
+                    if (rates.Length > 0 && reference is { } qRef && vertical != null)
+                    {
+                        double U = speeds.Max();
+                        foreach (double qp in rates)
+                        {
+                            float omega = (float)(qp * U / qRef.L);
                             Flight.PointAtAoA(0, h, up);
+                            yield return fixedWait;
                             v.SetPosition(v.vesselTransform.position + (Vector3d)up * (-depth - v.altitude));
                             RigidVessel.Set(v, h * (float)U, -side * omega);
-                        }
-                        pitching[qp] = (ups.Average(), pms.Average());
-                    }
-                }
-                // its foils as FAR's wing model sees them
-                var foils = v.parts.Select(q => q.Modules.GetModule<ferram4.FARWingAerodynamicModel>()).Where(w => w != null).ToList();
-                if (foils.Count > 0)
-                    ctx.Record("foils", $"wholeWingAspectRatio {FARDebugValues.wholeWingAspectRatio}: " + string.Join("; ", foils.Select(w =>
-                        $"{Vector3.Dot(w.part.transform.position - hull.Position, up):+0.00;-0.00} up {Vector3.Dot(w.part.transform.position - hull.Position, side):+0.00;-0.00} right: " +
-                        $"S {w.S:F4} m2, b/2 {w.b_2_actual:F3}, MAC {w.MAC_actual:F3}, AR {w.EffectiveAR:F2}")));
-                ctx.Record("body", $"volume {hull.MeshVolume:F3} m3: buoyancy {buoyancyKN:F2} kN; surface factor {surface:F2} (0: wholly submerged)");
-
-                // buoyancy kept at speed; lift and pitching moment odd in the angle
-                var lines = new StringBuilder();
-                bool kept = true, odd = true;
-                foreach (double U in speeds)
-                {
-                    if (results.TryGetValue((U, 0), out var z))
-                    {
-                        double share = z.up / buoyancyKN;
-                        kept &= Math.Abs(share - 1) < 0.03;
-                        lines.Append($"{U:F0} m/s: up {share:P1} of the buoyancy at 0 deg, drag {z.drag:F2} kN; ");
-                    }
-                    // the flow's share: each angle's value at rest (the hydrostatics: the CoM is not at the center of
-                    // buoyancy, so pitching it turns the buoyancy's moment, alike either way) taken off
-                    if (U == 0)
-                        continue;
-                    foreach (double a in aoas.Where(a => a > 0))
-                        if (results.TryGetValue((U, a), out var p) && results.TryGetValue((U, -a), out var n) && results.TryGetValue((U, 0), out var c) &&
-                            results.TryGetValue((0, a), out var p0) && results.TryGetValue((0, -a), out var n0) && results.TryGetValue((0, 0), out var c0))
-                        {
-                            double lp = (p.up - p0.up) - (c.up - c0.up), ln = (n.up - n0.up) - (c.up - c0.up);
-                            double mp = (p.pitch - p0.pitch) - (c.pitch - c0.pitch), mn = (n.pitch - n0.pitch) - (c.pitch - c0.pitch);
-                            double tolL = 0.15 * Math.Max(Math.Abs(lp), Math.Abs(ln)) + 0.05, tolM = 0.15 * Math.Max(Math.Abs(mp), Math.Abs(mn)) + 0.05;
-                            odd &= Math.Abs(lp + ln) < tolL && Math.Abs(mp + mn) < tolM;
-                            lines.Append($"+-{a:F0} deg lift {lp:F2}/{ln:F2} kN, moment {mp:F2}/{mn:F2} kN m; ");
-                        }
-                }
-                ctx.Record("results", lines.ToString());
-
-                // yaw against pitch: the flow's side force and yawing moment (at rest's taken off) beside its lift and
-                // pitching moment at the same angle
-                var yawLines = new StringBuilder();
-                bool alike = true;
-                int compared = 0;
-                foreach (double U in speeds.Where(u => u > 0))
-                    foreach (double b in yaws.Where(b => b > 0))
-                        if (yawed.TryGetValue((U, b), out var yp) && yawed.TryGetValue((U, -b), out var yn) &&
-                            yawed.TryGetValue((0, b), out var yp0) && yawed.TryGetValue((0, -b), out var yn0) &&
-                            results.TryGetValue((U, b), out var p) && results.TryGetValue((U, -b), out var n) && results.TryGetValue((U, 0), out var c) &&
-                            results.TryGetValue((0, b), out var p0) && results.TryGetValue((0, -b), out var n0) && results.TryGetValue((0, 0), out var c0))
-                        {
-                            // odd parts: (+ - -) / 2, rest taken off
-                            double sideF = ((yp.side - yp0.side) - (yn.side - yn0.side)) / 2, yawM = ((yp.yaw - yp0.yaw) - (yn.yaw - yn0.yaw)) / 2;
-                            double lift = ((p.up - p0.up) - (n.up - n0.up)) / 2, pitchM = ((p.pitch - p0.pitch) - (n.pitch - n0.pitch)) / 2;
-                            bool ok = Math.Abs(sideF - lift) < 0.15 * Math.Abs(lift) + 0.05 && Math.Abs(yawM - pitchM) < 0.15 * Math.Abs(pitchM) + 0.05;
-                            alike &= ok;
-                            compared++;
-                            yawLines.Append($"{U:F0} m/s {b:F0} deg: side {sideF:F2} kN (lift {lift:F2}), yaw {yawM:F2} kN m (pitch {pitchM:F2}){(ok ? "" : " OFF")}; ");
-                        }
-                ctx.Record("yaw", compared > 0 ? yawLines.ToString() : "(no yaw angle also pitched: none compared)");
-                Assert.True(kept, "the buoyancy kept at every speed, level (within 3%)");
-                Assert.True(odd, "the lift and pitching moment at +a and -a mirror images (within 15%)");
-
-                // against a captive-model test, at the fastest speed: each yaw angle's odd part, fitted as
-                // -Y' = Y'v s + Y'v|v| s^2 and -N' = N'v s + N'v|v| s^2 (s = sin of the yaw: v = -U s, the flow from its left
-                // with its nose turned right), its linear derivatives and its forces at the test's large drift angle
-                bool meets = true;
-                if (reference is { } rf)
-                {
-                    double U = speeds.Max(), q = 0.5 * rho * U * U;
-                    var refLines = new StringBuilder();
-                    double s2 = 0, s3 = 0, s4 = 0, sy = 0, s2y = 0, sn = 0, s2n = 0;
-                    foreach (double b in yaws.Where(b => b > 0))
-                        if (yawed.TryGetValue((U, b), out var yp) && yawed.TryGetValue((U, -b), out var yn) &&
-                            yawed.TryGetValue((0, b), out var yp0) && yawed.TryGetValue((0, -b), out var yn0))
-                        {
-                            double sb = Math.Sin(b * Math.PI / 180);
-                            double y = -((yp.side - yp0.side) - (yn.side - yn0.side)) / 2 * 1000 / (q * rf.L * rf.L);
-                            double nn = -((yp.yaw - yp0.yaw) - (yn.yaw - yn0.yaw)) / 2 * 1000 / (q * rf.L * rf.L * rf.L);
-                            s2 += sb * sb; s3 += sb * sb * sb; s4 += sb * sb * sb * sb;
-                            sy += sb * y; s2y += sb * sb * y; sn += sb * nn; s2n += sb * sb * nn;
-                            refLines.Append($"{b:F0} deg: -Y' {y:E3}, -N' {nn:E3}; ");
-                        }
-                    double det = s2 * s4 - s3 * s3;
-                    double yv = (sy * s4 - s2y * s3) / det, yvv = (s2 * s2y - s3 * sy) / det;
-                    double nv = (sn * s4 - s2n * s3) / det, nvv = (s2 * s2n - s3 * sn) / det;
-                    double sd = double.IsNaN(rf.drift) ? 0 : Math.Sin(rf.drift * Math.PI / 180);
-                    double yd = -(yv * sd + yvv * sd * sd), nd = -(nv * sd + nvv * sd * sd);
-                    double xp = results.TryGetValue((U, 0), out var z0) ? -z0.drag * 1000 / (q * rf.L * rf.L) : double.NaN;
-                    // rotary: the odd part of each rate's side force and moment, a line through none
-                    double yr = double.NaN, nr = double.NaN;
-                    if (turning.Count > 0)
-                    {
-                        double rr = 0, ry = 0, rn = 0;
-                        foreach (double rp in rates.Where(x => x > 0))
-                            if (turning.TryGetValue(rp, out var tp) && turning.TryGetValue(-rp, out var tn))
+                            var ups = new List<double>(); var pms = new List<double>();
+                            double t0 = Planetarium.GetUniversalTime();
+                            while (Planetarium.GetUniversalTime() - t0 < 2.5)
                             {
-                                double y = (tp.side - tn.side) / 2 * 1000 / (q * rf.L * rf.L), nn = (tp.yaw - tn.yaw) / 2 * 1000 / (q * rf.L * rf.L * rf.L);
-                                rr += rp * rp; ry += rp * y; rn += rp * nn;
-                                refLines.Append($"r' {rp:F2}: Y'r {y / rp:F6}, N'r {nn / rp:F6}; ");
-                            }
-                        yr = ry / rr;
-                        nr = rn / rr;
-                        refLines.Append($"rotary: Y'r {yr:F6} (test {rf.yr:F6}, {yr / rf.yr:F2}x), N'r {nr:F6} (test {rf.nr:F6}, {nr / rf.nr:F2}x); ");
-                    }
-                    refLines.Append($"fit: Y'v {yv:F6} (test {rf.yv:F6}, {yv / rf.yv:F2}x), Y'v|v| {yvv:F5}, N'v {nv:F6} (test {rf.nv:F6}, {nv / rf.nv:F2}x), " +
-                                    $"N'v|v| {nvv:F5}; at {rf.drift:F2} deg Y' {yd:E3} (test {rf.yd:E3}, {yd / rf.yd:F2}x), N' {nd:E3} (test {rf.nd:E3}, {nd / rf.nd:F2}x); " +
-                                    $"X' {xp:E3} (test {rf.x:E3}, {xp / rf.x:F2}x)");
-                    ctx.Record("reference", refLines.ToString());
-
-                    // the vertical plane: each pitch angle's odd part (rest taken off) fitted as Z' = Z'w s + Z'w|w| s^2
-                    // and M' likewise (s = sin of the angle: w = U s; Z down, M nose up), and the pitch arm's Z'q and
-                    // M'q; the stability indices from them (m' = 2 V / L^3, its CG at the moments' point:
-                    // Gh = 1 - N'v (Y'r - m') / (Y'v N'r), Gv = 1 - (Z'q + m') M'w / (Z'w M'q))
-                    if (vertical is { } vt)
-                    {
-                        var vLines = new StringBuilder();
-                        double a2 = 0, a3 = 0, a4 = 0, az = 0, a2z = 0, am = 0, a2m = 0;
-                        foreach (double a in aoas.Where(a => a > 0))
-                            if (results.TryGetValue((U, a), out var p) && results.TryGetValue((U, -a), out var n) &&
-                                results.TryGetValue((0, a), out var p0) && results.TryGetValue((0, -a), out var n0))
-                            {
-                                double sa = Math.Sin(a * Math.PI / 180);
-                                double z = -((p.up - p0.up) - (n.up - n0.up)) / 2 * 1000 / (q * rf.L * rf.L);
-                                double mm = ((p.pitch - p0.pitch) - (n.pitch - n0.pitch)) / 2 * 1000 / (q * rf.L * rf.L * rf.L);
-                                a2 += sa * sa; a3 += sa * sa * sa; a4 += sa * sa * sa * sa;
-                                az += sa * z; a2z += sa * sa * z; am += sa * mm; a2m += sa * sa * mm;
-                                vLines.Append($"{a:F0} deg: Z' {z:E3}, M' {mm:E3}; ");
-                            }
-                        double vdet = a2 * a4 - a3 * a3;
-                        double zw = (az * a4 - a2z * a3) / vdet, mw = (am * a4 - a2m * a3) / vdet;
-                        double zq = double.NaN, mq = double.NaN;
-                        if (pitching.Count > 0)
-                        {
-                            double qq = 0, qz = 0, qm = 0;
-                            foreach (double qp in rates.Where(x => x > 0))
-                                if (pitching.TryGetValue(qp, out var pp) && pitching.TryGetValue(-qp, out var pn))
+                                yield return fixedWait;
+                                if (Planetarium.GetUniversalTime() - t0 > 1)
                                 {
-                                    double z = -(pp.up - pn.up) / 2 * 1000 / (q * rf.L * rf.L), mm = (pp.pitch - pn.pitch) / 2 * 1000 / (q * rf.L * rf.L * rf.L);
-                                    qq += qp * qp; qz += qp * z; qm += qp * mm;
-                                    vLines.Append($"q' {qp:F2}: Z'q {z / qp:F6}, M'q {mm / qp:F6}; ");
+                                    (Vector3 f, Vector3 m) = Loads(v, hull);
+                                    ups.Add(Vector3.Dot(f, up));
+                                    pms.Add(-Vector3.Dot(m, side));
                                 }
-                            zq = qz / qq;
-                            mq = qm / qq;
+                                Flight.PointAtAoA(0, h, up);
+                                v.SetPosition(v.vesselTransform.position + (Vector3d)up * (-depth - v.altitude));
+                                RigidVessel.Set(v, h * (float)U, -side * omega);
+                            }
+                            pitching[qp] = (ups.Average(), pms.Average());
                         }
-                        double mp = 2 * hull.MeshVolume / (rf.L * rf.L * rf.L);
-                        double gh = 1 - nv * (yr - mp) / (yv * nr), ghT = 1 - rf.nv * (rf.yr - mp) / (rf.yv * rf.nr);
-                        double gv = 1 - (zq + mp) * mw / (zw * mq), gvT = 1 - (vt.zq + mp) * vt.mw / (vt.zw * vt.mq);
-                        vLines.Append($"fit: Z'w {zw:F6} (test {vt.zw:F6}, {zw / vt.zw:F2}x), M'w {mw:F6} (test {vt.mw:F6}, {mw / vt.mw:F2}x), " +
-                                      $"Z'q {zq:F6} (test {vt.zq:F6}, {zq / vt.zq:F2}x), M'q {mq:F6} (test {vt.mq:F6}, {mq / vt.mq:F2}x); " +
-                                      $"m' {mp:F5}: Gh {gh:F2} (test's {ghT:F2}), Gv {gv:F2} (test's {gvT:F2})");
-                        ctx.Record("vertical", vLines.ToString());
                     }
-                    // (a reference too near none for a ratio is recorded only)
-                    double Ratio(double a, double b) => Math.Abs(b) < 2e-4 ? double.NaN : a / b;
-                    // the rotary derivatives recorded, not asserted (FAR's yaw damping is short of Roddy's: 0.6 - 0.8 of it)
-                    meets = !assertReference || new[] { Ratio(yv, rf.yv), Ratio(nv, rf.nv), Ratio(xp, rf.x), Ratio(yd, rf.yd), Ratio(nd, rf.nd) }
-                        .Where(r => !double.IsNaN(r)).All(r => Math.Abs(r - 1) < 0.3);
+                    // its foils as FAR's wing model sees them
+                    var foils = v.parts.Select(q => q.Modules.GetModule<ferram4.FARWingAerodynamicModel>()).Where(w => w != null).ToList();
+                    if (foils.Count > 0)
+                        ctx.Record("foils" + at, $"wholeWingAspectRatio {FARDebugValues.wholeWingAspectRatio}: " + string.Join("; ", foils.Select(w =>
+                            $"{Vector3.Dot(w.part.transform.position - hull.Position, up):+0.00;-0.00} up {Vector3.Dot(w.part.transform.position - hull.Position, side):+0.00;-0.00} right: " +
+                            $"S {w.S:F4} m2, b/2 {w.b_2_actual:F3}, MAC {w.MAC_actual:F3}, AR {w.EffectiveAR:F2}")));
+                    ctx.Record("body" + at, $"volume {hull.MeshVolume:F3} m3: buoyancy {buoyancyKN:F2} kN; surface factor {surface:F2} (0: wholly submerged)");
+
+                    // buoyancy kept at speed; lift and pitching moment odd in the angle
+                    var lines = new StringBuilder();
+                    bool kept = true, odd = true;
+                    foreach (double U in speeds)
+                    {
+                        if (results.TryGetValue((U, 0), out var z))
+                        {
+                            double share = z.up / buoyancyKN;
+                            kept &= Math.Abs(share - 1) < 0.03;
+                            lines.Append($"{U:F0} m/s: up {share:P1} of the buoyancy at 0 deg, drag {z.drag:F2} kN; ");
+                        }
+                        // the flow's share: each angle's value at rest (the hydrostatics: the CoM is not at the center of
+                        // buoyancy, so pitching it turns the buoyancy's moment, alike either way) taken off
+                        if (U == 0)
+                            continue;
+                        foreach (double a in aoas.Where(a => a > 0))
+                            if (results.TryGetValue((U, a), out var p) && results.TryGetValue((U, -a), out var n) && results.TryGetValue((U, 0), out var c) &&
+                                results.TryGetValue((0, a), out var p0) && results.TryGetValue((0, -a), out var n0) && results.TryGetValue((0, 0), out var c0))
+                            {
+                                double lp = (p.up - p0.up) - (c.up - c0.up), ln = (n.up - n0.up) - (c.up - c0.up);
+                                double mp = (p.pitch - p0.pitch) - (c.pitch - c0.pitch), mn = (n.pitch - n0.pitch) - (c.pitch - c0.pitch);
+                                double tolL = 0.15 * Math.Max(Math.Abs(lp), Math.Abs(ln)) + 0.05, tolM = 0.15 * Math.Max(Math.Abs(mp), Math.Abs(mn)) + 0.05;
+                                odd &= Math.Abs(lp + ln) < tolL && Math.Abs(mp + mn) < tolM;
+                                lines.Append($"+-{a:F0} deg lift {lp:F2}/{ln:F2} kN, moment {mp:F2}/{mn:F2} kN m; ");
+                            }
+                    }
+                    ctx.Record("results" + at, lines.ToString());
+
+                    // yaw against pitch: the flow's side force and yawing moment (at rest's taken off) beside its lift and
+                    // pitching moment at the same angle
+                    var yawLines = new StringBuilder();
+                    bool alike = true;
+                    int compared = 0;
+                    foreach (double U in speeds.Where(u => u > 0))
+                        foreach (double b in yaws.Where(b => b > 0))
+                            if (yawed.TryGetValue((U, b), out var yp) && yawed.TryGetValue((U, -b), out var yn) &&
+                                yawed.TryGetValue((0, b), out var yp0) && yawed.TryGetValue((0, -b), out var yn0) &&
+                                results.TryGetValue((U, b), out var p) && results.TryGetValue((U, -b), out var n) && results.TryGetValue((U, 0), out var c) &&
+                                results.TryGetValue((0, b), out var p0) && results.TryGetValue((0, -b), out var n0) && results.TryGetValue((0, 0), out var c0))
+                            {
+                                // odd parts: (+ - -) / 2, rest taken off
+                                double sideF = ((yp.side - yp0.side) - (yn.side - yn0.side)) / 2, yawM = ((yp.yaw - yp0.yaw) - (yn.yaw - yn0.yaw)) / 2;
+                                double lift = ((p.up - p0.up) - (n.up - n0.up)) / 2, pitchM = ((p.pitch - p0.pitch) - (n.pitch - n0.pitch)) / 2;
+                                bool ok = Math.Abs(sideF - lift) < 0.15 * Math.Abs(lift) + 0.05 && Math.Abs(yawM - pitchM) < 0.15 * Math.Abs(pitchM) + 0.05;
+                                alike &= ok;
+                                compared++;
+                                yawLines.Append($"{U:F0} m/s {b:F0} deg: side {sideF:F2} kN (lift {lift:F2}), yaw {yawM:F2} kN m (pitch {pitchM:F2}){(ok ? "" : " OFF")}; ");
+                            }
+                    ctx.Record("yaw" + at, compared > 0 ? yawLines.ToString() : "(no yaw angle also pitched: none compared)");
+                    if (!kept) keptMissed.Add(detail);
+                    if (!odd) oddMissed.Add(detail);
+
+                    // against a captive-model test, at the fastest speed: each yaw angle's odd part, fitted as
+                    // -Y' = Y'v s + Y'v|v| s^2 and -N' = N'v s + N'v|v| s^2 (s = sin of the yaw: v = -U s, the flow from its left
+                    // with its nose turned right), its linear derivatives and its forces at the test's large drift angle
+                    bool meets = true;
+                    (double yv, double nv, double xp) refFit = (double.NaN, double.NaN, double.NaN);
+                    if (reference is { } rf)
+                    {
+                        double U = speeds.Max(), q = 0.5 * rho * U * U;
+                        var refLines = new StringBuilder();
+                        double s2 = 0, s3 = 0, s4 = 0, sy = 0, s2y = 0, sn = 0, s2n = 0;
+                        foreach (double b in yaws.Where(b => b > 0))
+                            if (yawed.TryGetValue((U, b), out var yp) && yawed.TryGetValue((U, -b), out var yn) &&
+                                yawed.TryGetValue((0, b), out var yp0) && yawed.TryGetValue((0, -b), out var yn0))
+                            {
+                                double sb = Math.Sin(b * Math.PI / 180);
+                                double y = -((yp.side - yp0.side) - (yn.side - yn0.side)) / 2 * 1000 / (q * rf.L * rf.L);
+                                double nn = -((yp.yaw - yp0.yaw) - (yn.yaw - yn0.yaw)) / 2 * 1000 / (q * rf.L * rf.L * rf.L);
+                                s2 += sb * sb; s3 += sb * sb * sb; s4 += sb * sb * sb * sb;
+                                sy += sb * y; s2y += sb * sb * y; sn += sb * nn; s2n += sb * sb * nn;
+                                refLines.Append($"{b:F0} deg: -Y' {y:E3}, -N' {nn:E3}; ");
+                            }
+                        double det = s2 * s4 - s3 * s3;
+                        double yv = (sy * s4 - s2y * s3) / det, yvv = (s2 * s2y - s3 * sy) / det;
+                        double nv = (sn * s4 - s2n * s3) / det, nvv = (s2 * s2n - s3 * sn) / det;
+                        double sd = double.IsNaN(rf.drift) ? 0 : Math.Sin(rf.drift * Math.PI / 180);
+                        double yd = -(yv * sd + yvv * sd * sd), nd = -(nv * sd + nvv * sd * sd);
+                        double xp = results.TryGetValue((U, 0), out var z0) ? -z0.drag * 1000 / (q * rf.L * rf.L) : double.NaN;
+                        // rotary: the odd part of each rate's side force and moment, a line through none
+                        double yr = double.NaN, nr = double.NaN;
+                        if (turning.Count > 0)
+                        {
+                            double rr = 0, ry = 0, rn = 0;
+                            foreach (double rp in rates.Where(x => x > 0))
+                                if (turning.TryGetValue(rp, out var tp) && turning.TryGetValue(-rp, out var tn))
+                                {
+                                    double y = (tp.side - tn.side) / 2 * 1000 / (q * rf.L * rf.L), nn = (tp.yaw - tn.yaw) / 2 * 1000 / (q * rf.L * rf.L * rf.L);
+                                    rr += rp * rp; ry += rp * y; rn += rp * nn;
+                                    refLines.Append($"r' {rp:F2}: Y'r {y / rp:F6}, N'r {nn / rp:F6}; ");
+                                }
+                            yr = ry / rr;
+                            nr = rn / rr;
+                            refLines.Append($"rotary: Y'r {yr:F6} (test {rf.yr:F6}, {yr / rf.yr:F2}x), N'r {nr:F6} (test {rf.nr:F6}, {nr / rf.nr:F2}x); ");
+                        }
+                        refLines.Append($"fit: Y'v {yv:F6} (test {rf.yv:F6}, {yv / rf.yv:F2}x), Y'v|v| {yvv:F5}, N'v {nv:F6} (test {rf.nv:F6}, {nv / rf.nv:F2}x), " +
+                                        $"N'v|v| {nvv:F5}; at {rf.drift:F2} deg Y' {yd:E3} (test {rf.yd:E3}, {yd / rf.yd:F2}x), N' {nd:E3} (test {rf.nd:E3}, {nd / rf.nd:F2}x); " +
+                                        $"X' {xp:E3} (test {rf.x:E3}, {xp / rf.x:F2}x)");
+                        ctx.Record("reference" + at, refLines.ToString());
+
+                        // the vertical plane: each pitch angle's odd part (rest taken off) fitted as Z' = Z'w s + Z'w|w| s^2
+                        // and M' likewise (s = sin of the angle: w = U s; Z down, M nose up), and the pitch arm's Z'q and
+                        // M'q; the stability indices from them (m' = 2 V / L^3, its CG at the moments' point:
+                        // Gh = 1 - N'v (Y'r - m') / (Y'v N'r), Gv = 1 - (Z'q + m') M'w / (Z'w M'q))
+                        if (vertical is { } vt)
+                        {
+                            var vLines = new StringBuilder();
+                            double a2 = 0, a3 = 0, a4 = 0, az = 0, a2z = 0, am = 0, a2m = 0;
+                            foreach (double a in aoas.Where(a => a > 0))
+                                if (results.TryGetValue((U, a), out var p) && results.TryGetValue((U, -a), out var n) &&
+                                    results.TryGetValue((0, a), out var p0) && results.TryGetValue((0, -a), out var n0))
+                                {
+                                    double sa = Math.Sin(a * Math.PI / 180);
+                                    double z = -((p.up - p0.up) - (n.up - n0.up)) / 2 * 1000 / (q * rf.L * rf.L);
+                                    double mm = ((p.pitch - p0.pitch) - (n.pitch - n0.pitch)) / 2 * 1000 / (q * rf.L * rf.L * rf.L);
+                                    a2 += sa * sa; a3 += sa * sa * sa; a4 += sa * sa * sa * sa;
+                                    az += sa * z; a2z += sa * sa * z; am += sa * mm; a2m += sa * sa * mm;
+                                    vLines.Append($"{a:F0} deg: Z' {z:E3}, M' {mm:E3}; ");
+                                }
+                            double vdet = a2 * a4 - a3 * a3;
+                            double zw = (az * a4 - a2z * a3) / vdet, mw = (am * a4 - a2m * a3) / vdet;
+                            double zq = double.NaN, mq = double.NaN;
+                            if (pitching.Count > 0)
+                            {
+                                double qq = 0, qz = 0, qm = 0;
+                                foreach (double qp in rates.Where(x => x > 0))
+                                    if (pitching.TryGetValue(qp, out var pp) && pitching.TryGetValue(-qp, out var pn))
+                                    {
+                                        double z = -(pp.up - pn.up) / 2 * 1000 / (q * rf.L * rf.L), mm = (pp.pitch - pn.pitch) / 2 * 1000 / (q * rf.L * rf.L * rf.L);
+                                        qq += qp * qp; qz += qp * z; qm += qp * mm;
+                                        vLines.Append($"q' {qp:F2}: Z'q {z / qp:F6}, M'q {mm / qp:F6}; ");
+                                    }
+                                zq = qz / qq;
+                                mq = qm / qq;
+                            }
+                            double mp = 2 * hull.MeshVolume / (rf.L * rf.L * rf.L);
+                            double gh = 1 - nv * (yr - mp) / (yv * nr), ghT = 1 - rf.nv * (rf.yr - mp) / (rf.yv * rf.nr);
+                            double gv = 1 - (zq + mp) * mw / (zw * mq), gvT = 1 - (vt.zq + mp) * vt.mw / (vt.zw * vt.mq);
+                            vLines.Append($"fit: Z'w {zw:F6} (test {vt.zw:F6}, {zw / vt.zw:F2}x), M'w {mw:F6} (test {vt.mw:F6}, {mw / vt.mw:F2}x), " +
+                                          $"Z'q {zq:F6} (test {vt.zq:F6}, {zq / vt.zq:F2}x), M'q {mq:F6} (test {vt.mq:F6}, {mq / vt.mq:F2}x); " +
+                                          $"m' {mp:F5}: Gh {gh:F2} (test's {ghT:F2}), Gv {gv:F2} (test's {gvT:F2})");
+                            ctx.Record("vertical" + at, vLines.ToString());
+                        }
+                        // (a reference too near none for a ratio is recorded only)
+                        double Ratio(double a, double b) => Math.Abs(b) < 2e-4 ? double.NaN : a / b;
+                        // the rotary derivatives recorded, not asserted (FAR's yaw damping is short of Roddy's: 0.6 - 0.8 of it)
+                        refFit = (yv, nv, xp);
+                        meets = !assertReference || new[] { Ratio(yv, rf.yv), Ratio(nv, rf.nv), Ratio(xp, rf.x), Ratio(yd, rf.yd), Ratio(nd, rf.nd) }
+                            .Where(r => !double.IsNaN(r)).All(r => Math.Abs(r - 1) < 0.3);
+                    }
+                    if (!(alike || !symmetric)) alikeMissed.Add(detail);
+                    if (!meets) meetsMissed.Add(detail);
+
+                    // its loads to hold to the other levels': the flow's drag at the fastest speed, and the odd parts
+                    // (at rest's taken off) of its lift and pitching moment at the largest angle and of its side force
+                    // and yawing moment at the largest yaw
+                    double Um = speeds.Max(), aMax = aoas.Max(), bMax = yaws.Max();
+                    (double up, double drag, double pitch) R(double u, double x) => results.TryGetValue((u, x), out var e) ? e : (0, 0, 0);
+                    (double side, double yaw) Y(double u, double x) => yawed.TryGetValue((u, x), out var e) ? e : (0, 0);
+                    var loads = new[]
+                    {
+                        R(Um, 0).drag - R(0, 0).drag,
+                        ((R(Um, aMax).up - R(0, aMax).up) - (R(Um, -aMax).up - R(0, -aMax).up)) / 2,
+                        ((R(Um, aMax).pitch - R(0, aMax).pitch) - (R(Um, -aMax).pitch - R(0, -aMax).pitch)) / 2,
+                        ((Y(Um, bMax).side - Y(0, bMax).side) - (Y(Um, -bMax).side - Y(0, -bMax).side)) / 2,
+                        ((Y(Um, bMax).yaw - Y(0, bMax).yaw) - (Y(Um, -bMax).yaw - Y(0, -bMax).yaw)) / 2,
+                    };
+                    levels.Add((detail, loads, refFit.yv, refFit.nv, refFit.xp, hull.MeshVolume, hull.Hydro.Sum(x => x.MeshTriangles)));
                 }
 
-                Assert.True(alike || !symmetric, "the side force and yawing moment at a sideslip its lift and pitching moment at that angle (within 15%)");
-                Assert.True(meets, "Y'v, N'v, X' and the drift angle's Y' and N' within 30% of the captive-model test's");
+                // each level's loads within 10% of the finest's (the last level's; 10 N, 10 N m: noise)
+                bool consistent = true;
+                if (levels.Count > 1)
+                {
+                    string[] names = { "drag", "lift", "pitch", "side", "yaw" };
+                    var finest = levels[levels.Count - 1];
+                    var lodLines = new StringBuilder($"against {finest.detail} points per ring at {speeds.Max():F2} m/s ({aoas.Max():F0} deg, yaw {yaws.Max():F0} deg): ");
+                    foreach (var lv in levels)
+                    {
+                        lodLines.Append($"{lv.detail}: {lv.tris} tris, {lv.volume:F4} m3");
+                        for (int k = 0; k < names.Length; k++)
+                        {
+                            double x = lv.loads[k], f = finest.loads[k];
+                            bool ok = Math.Abs(x - f) <= 0.1 * Math.Abs(f) + 0.01;
+                            consistent &= ok;
+                            lodLines.Append($", {names[k]} {x:F3}{(Math.Abs(f) > 1e-6 ? $" ({x / f:F2}x)" : "")}{(ok ? "" : " OFF")}");
+                        }
+                        if (!double.IsNaN(lv.yv))
+                            lodLines.Append($", Y'v {lv.yv:F6} N'v {lv.nv:F6} X' {lv.xp:E3}");
+                        lodLines.Append("; ");
+                    }
+                    ctx.Record("details", lodLines.ToString());
+                }
+                string Missed(List<int> l) => l.Count == 0 ? "" : $" (missed at {string.Join(", ", l)} points per ring)";
+                Assert.True(keptMissed.Count == 0, "the buoyancy kept at every speed, level (within 3%)" + Missed(keptMissed));
+                Assert.True(oddMissed.Count == 0, "the lift and pitching moment at +a and -a mirror images (within 15%)" + Missed(oddMissed));
+                Assert.True(alikeMissed.Count == 0, "the side force and yawing moment at a sideslip its lift and pitching moment at that angle (within 15%)" + Missed(alikeMissed));
+                Assert.True(meetsMissed.Count == 0, "Y'v, N'v, X' and the drift angle's Y' and N' within 30% of the captive-model test's" + Missed(meetsMissed));
+                Assert.True(consistent, "each collider detail's loads within 10% of the finest's");
             }
             finally
             {
+                TestWarp.Hyper(ctx, false);
                 CheatOptions.NoCrashDamage = crashWas;
                 WaterParams.Restore();
                 if (fadeField != null)

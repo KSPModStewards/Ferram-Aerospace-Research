@@ -78,6 +78,8 @@ namespace FerramAerospaceResearch.KspTests
                 yield return Wait.Seconds(5);
                 CheatOptions.NoCrashDamage = true;
                 Vessel v = FlightGlobals.ActiveVessel;
+                // its Spine collider at a detail (parameter colliderPoints, points per ring; default the craft's: ColliderDetail)
+                yield return ColliderDetail.Set(ctx, v, (int)ctx.ParamDouble("colliderPoints", 0));
                 v.ActionGroups.SetGroup(KSPActionGroup.SAS, false);
                 double dry = SetMass(v, 0);
                 yield return Wait.Frames(2);
@@ -505,6 +507,8 @@ namespace FerramAerospaceResearch.KspTests
                 yield return Wait.Seconds(5);
                 CheatOptions.NoCrashDamage = true;
                 Vessel v = FlightGlobals.ActiveVessel;
+                // its Spine collider at a detail (parameter colliderPoints, points per ring; default the craft's: ColliderDetail)
+                yield return ColliderDetail.Set(ctx, v, (int)ctx.ParamDouble("colliderPoints", 0));
                 v.ActionGroups.SetGroup(KSPActionGroup.SAS, false);
                 double dry = SetMass(v, 0);
                 yield return Wait.Frames(2);

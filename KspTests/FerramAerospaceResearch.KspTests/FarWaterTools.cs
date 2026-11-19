@@ -13,8 +13,9 @@ namespace FerramAerospaceResearch.KspTests
     /// the water as the water tests place their craft. Where it is, if it is over the sea; else at the tests' site (Kerbin:
     /// 0 N 60 W, east of KSC; RSS's Earth: off Cape Canaveral). Placed on rails at 600 m and back off them at rest, its nose
     /// level along its heading (a vessel built upright, from the VAB, stays upright), lowered until its lowest point
-    /// touches the water, held still while the water takes its weight, then let go. The Set Position cheat's ease-in
-    /// (its gravity cut to a tenth until the vessel lands, which on the water it never does) is turned off first.
+    /// touches the water, let down slowly while the water takes its weight until it floats still, then let go. The Set
+    /// Position cheat's ease-in (its gravity cut to a tenth until the vessel lands, which on the water it never does) is
+    /// turned off first: the hold does its job, at full gravity, so it settles at its true draft.
     /// In the test assembly, so it is in any install the tests have been deployed to; shown with FAR's debug tools
     /// (FARDebugValues.DebugTools, the debug options window's "Show Debug and Experimental Tools").
     /// </summary>
@@ -166,33 +167,107 @@ namespace FerramAerospaceResearch.KspTests
             Still(v, 0);
             yield return new WaitForFixedUpdate();
 
-            // its lowest point (its colliders' bounds) at the water
+            // its lowest point (its colliders' own shapes, not their world-axis bounds: those reach metres below a long
+            // hull lying across the world's axes) at the water
+            double low = LowestAltitude(v, body);
+            // (its height: its parts' origins' span above its lowest point)
+            double high = low;
+            foreach (Part p in v.parts)
+                high = Math.Max(high, FlightGlobals.getAltitudeAtPos((Vector3d)p.transform.position, body));
+            if (low < double.MaxValue)
+                v.SetPosition(v.vesselTransform.position - (Vector3d)up * low);
+            Still(v, 0);
+
+            // held while the water takes its weight: let down no faster than 0.5 m/s (0.15 of its height a second, a big
+            // hull's: a ship's 4.4 m draft took 9 s at 0.5), its drift and spin damped, until
+            // it floats still (or sinks steadily, a sub with its ballast in), or has stopped going down (no new low for
+            // 1.5 s: a hull riding waves bobs about its draft, never still; held to 20 s, its heave clamped and its roll
+            // damped all the while), or 20 s, then let go
+            double t0 = Planetarium.GetUniversalTime(), quiet = 0, lowest = double.MaxValue, sinceLow = 0;
+            float maxDown = low < double.MaxValue ? Mathf.Max(0.5f, 0.15f * (float)(high - low)) : 0.5f;
+            while (true)
+            {
+                yield return new WaitForFixedUpdate();
+                v = FlightGlobals.ActiveVessel;
+                Hold(v, maxDown);
+                double t = Planetarium.GetUniversalTime() - t0;
+                quiet = v.Splashed && Math.Abs(v.verticalSpeed) < 0.15 ? quiet + TimeWarp.fixedDeltaTime : 0;
+                if (v.altitude < lowest - 0.05)
+                {
+                    lowest = v.altitude;
+                    sinceLow = 0;
+                }
+                else if (v.Splashed)
+                    sinceLow += TimeWarp.fixedDeltaTime;
+                if (t > 2 && (quiet > 1.5 || sinceLow > 1.5) || t > 20)
+                    break;
+            }
+            say($"FAR test: {v.vesselName} on the water at {lat:F2}, {lon:F2}{(here ? " (where it was)" : "")}, held {Planetarium.GetUniversalTime() - t0:F1} s");
+        }
+
+        /// <summary>The altitude of the vessel's lowest collider point (its boxes', spheres', capsules' and meshes' own shapes).</summary>
+        internal static double LowestAltitude(Vessel v, CelestialBody body)
+        {
             double low = double.MaxValue;
+            void At(Vector3 w) => low = Math.Min(low, FlightGlobals.getAltitudeAtPos((Vector3d)w, body));
+            Vector3 down = -(Vector3)v.upAxis;
             foreach (Part p in v.parts)
                 foreach (Collider c in p.GetComponentsInChildren<Collider>())
                 {
                     if (!c.enabled || c.isTrigger)
                         continue;
-                    Bounds b = c.bounds;
-                    for (int i = 0; i < 8; i++)
+                    Transform t = c.transform;
+                    switch (c)
                     {
-                        Vector3 corner = b.center + Vector3.Scale(b.extents, new Vector3((i & 1) == 0 ? -1 : 1, (i & 2) == 0 ? -1 : 1, (i & 4) == 0 ? -1 : 1));
-                        low = Math.Min(low, FlightGlobals.getAltitudeAtPos((Vector3d)corner, body));
+                        case BoxCollider b:
+                            for (int i = 0; i < 8; i++)
+                                At(t.TransformPoint(b.center + Vector3.Scale(b.size * 0.5f, new Vector3((i & 1) == 0 ? -1 : 1, (i & 2) == 0 ? -1 : 1, (i & 4) == 0 ? -1 : 1))));
+                            break;
+                        case SphereCollider s:
+                        {
+                            Vector3 ls = t.lossyScale;
+                            At(t.TransformPoint(s.center) + down * s.radius * Mathf.Max(Mathf.Abs(ls.x), Mathf.Abs(ls.y), Mathf.Abs(ls.z)));
+                            break;
+                        }
+                        case CapsuleCollider k:
+                        {
+                            Vector3 ls = t.lossyScale;
+                            float r = k.radius * Mathf.Max(Mathf.Abs(ls.x), Mathf.Abs(ls.y), Mathf.Abs(ls.z));
+                            Vector3 axis = k.direction == 0 ? Vector3.right : k.direction == 1 ? Vector3.up : Vector3.forward;
+                            float half = Mathf.Max(0, k.height * 0.5f - k.radius);
+                            At(t.TransformPoint(k.center + axis * half) + down * r);
+                            At(t.TransformPoint(k.center - axis * half) + down * r);
+                            break;
+                        }
+                        case MeshCollider m when m.sharedMesh != null:
+                            foreach (Vector3 vert in m.sharedMesh.vertices)
+                                At(t.TransformPoint(vert));
+                            break;
+                        default:
+                        {
+                            Bounds b = c.bounds;
+                            for (int i = 0; i < 8; i++)
+                                At(b.center + Vector3.Scale(b.extents, new Vector3((i & 1) == 0 ? -1 : 1, (i & 2) == 0 ? -1 : 1, (i & 4) == 0 ? -1 : 1)));
+                            break;
+                        }
                     }
                 }
-            if (low < double.MaxValue)
-                v.SetPosition(v.vesselTransform.position - (Vector3d)up * low);
-            Still(v, 0);
+            return low;
+        }
 
-            // held while the water takes its weight: its motion damped for a few seconds, then let go
-            double t0 = Planetarium.GetUniversalTime();
-            while (Planetarium.GetUniversalTime() - t0 < 4)
-            {
-                yield return new WaitForFixedUpdate();
-                Still(FlightGlobals.ActiveVessel, 0.9f);
-            }
-            v = FlightGlobals.ActiveVessel;
-            say($"FAR test: {v.vesselName} on the water at {lat:F2}, {lon:F2}{(here ? " (where it was)" : "")}");
+        // its fall held to maxDown m/s (no rise faster either), its drift and spin damped
+        private static void Hold(Vessel v, float maxDown)
+        {
+            Vector3 up = v.upAxis;
+            foreach (Part p in v.parts)
+                if (p.Rigidbody != null)
+                {
+                    Vector3 vel = p.Rigidbody.velocity;
+                    float vz = Vector3.Dot(vel, up);
+                    Vector3 side = vel - up * vz;
+                    p.Rigidbody.velocity = side * 0.8f + up * Mathf.Clamp(vz, -maxDown, maxDown);
+                    p.Rigidbody.angularVelocity *= 0.8f;
+                }
         }
 
         // every part's velocity and spin times keep (0: stopped)

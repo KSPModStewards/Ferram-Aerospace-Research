@@ -33,8 +33,9 @@ namespace FerramAerospaceResearch.KspTests
         private const double Lb = 0.45359237e-3;          // t
         private const double GrossT = 2220 * Lb;          // TCDS 3A12: 2220 lb on floats
         // crafts/c172_floatplane.py: the CG station (28.4% MAC, the TCDS seaplane range's middle) along the fuselage
-        // root's local y (craft z), and the float's step keel in the float's frame (local y forward, z up)
-        private const double CgLocalY = 1.499;
+        // root's local y (craft z 1.499, the fuselage's middle at craft z -0.215: planecraft's nose_cut and nose_cone
+        // took 0.43 m off its front), and the float's step keel in the float's frame (local y forward, z up)
+        private const double CgLocalY = 1.499 + 0.215;
         private static readonly Vector3 StepKeel = new Vector3(0, -0.260f, -0.593f);
         // hand statics (scratchpad c172_rest.py): rest trim (deg, bow up) and the step keel's depth (m)
         private const double RestTrim = 3.3, RestStepDraft = 0.384;
@@ -657,6 +658,13 @@ namespace FerramAerospaceResearch.KspTests
             // the attitude held from rotateMph until it flies: under FAR's stall (flaps 10: ~12 deg) and the floats'
             // heels (~10 deg); full aft stick there pulls it to 11-12 deg, onto the heels, and it plows
             double liftoffPitch = ctx.ParamDouble("liftoffPitch", 9);
+            // over the hump the nose held up at humpPitch (deg; 90: the yoke full aft, as before the propeller's slipstream
+            // gave the elevator its authority at hump speeds: full aft then holds it at ~24 deg, plowing at 4 m/s), and on
+            // the step stepPitch held (stepHold=false: the stick eased to stepElevator and left there)
+            double humpPitch = ctx.ParamDouble("humpPitch", 12);
+            bool stepHold = ctx.Param("stepHold") != "false";
+            // the attitude hold's gains (stick per deg of error, per deg s of its integral, per deg/s of pitch rate)
+            double kp = ctx.ParamDouble("pilotKp", 0.05), ki = ctx.ParamDouble("pilotKi", 0.03), kd = ctx.ParamDouble("pilotKd", 0.15);
             const double Mph = 0.44704, Ft = 0.3048;
 
             Hyper(ctx, false);
@@ -682,8 +690,12 @@ namespace FerramAerospaceResearch.KspTests
 
             Vector3 up = v.upAxis;
             Vector3 h0 = Vector3.ProjectOnPlane(p.Root.transform.up, up).normalized;
-            var csv = new StringBuilder("t,x_m,V_ms,IAS_mph,pitch_deg,roll_deg,heading_deg,keel_alt_m,wet,phase,elevator,rpm,thrust_lbf,float_rbDrag,aero_moment_kNm,pitch_rate,aero_lift_kN,aero_drag_kN,water_up_kN,water_drag_kN\n");
+            var csv = new StringBuilder("t,x_m,V_ms,IAS_mph,pitch_deg,roll_deg,heading_deg,keel_alt_m,wet,phase,elevator,rpm,thrust_lbf,float_rbDrag,aero_moment_kNm,pitch_rate,aero_lift_kN,aero_drag_kN,water_up_kN,water_drag_kN," +
+                                    "wm_dyn_kNm,wm_hs_kNm,hs_up_kN,mom_up_kN,cross_up_kN,impact_up_kN,rad_up_kN,limiter,wet_len_m\n");
             string phase = "hump", lastPhase = "hump";
+            StringBuilder stripCsv = ctx.Param("recordStrips") == "true" ? new StringBuilder("t,float,x,arm,width,ma,v,jump,load,separated\n") : null;
+            if (stripCsv != null)
+                FerramAerospaceResearch.FARAeroComponents.PartHydrodynamics.RecordStrips = true;
             double aeroMoment = double.NaN, aeroLift = double.NaN, aeroDrag = double.NaN;
             double t0 = Planetarium.GetUniversalTime(), peak = -90, lastPitch = 0, lastRoll = 0, lastHdg = 0, x = 0, integral = 0;
             int steps = 0;
@@ -727,12 +739,13 @@ namespace FerramAerospaceResearch.KspTests
                 {
                     case "hump":
                         peak = Math.Max(peak, pitch);
-                        target = 90;                                       // the yoke full aft
+                        target = humpPitch;                                // the nose held up (90: the yoke full aft)
                         if (V > 6 && (pitch < peak - 0.5 || V > 10))
                             phase = "step";                                // the bow wave aft: onto the step
                         break;
                     case "step":
-                        target = double.NaN;                               // the stick held, not an attitude
+                        // the planing attitude held (stepHold=false: the stick held, not an attitude)
+                        target = stepHold ? stepPitch : double.NaN;
                         if (double.IsNaN(stepSince))
                             stepSince = t;
                         if (ias >= rotateMs)
@@ -760,7 +773,7 @@ namespace FerramAerospaceResearch.KspTests
                     elevator = 1 + (stepElevator - 1) * ramp;
                 else
                 {
-                    elevator = 0.15 * err + 0.03 * integral - 0.06 * q;
+                    elevator = kp * err + ki * integral - kd * q;
                     if (Math.Abs(elevator) < 1 || Math.Sign(err) != Math.Sign(elevator))
                         integral = Math.Max(-30, Math.Min(30, integral + err * dt));
                 }
@@ -800,15 +813,47 @@ namespace FerramAerospaceResearch.KspTests
                 foreach (HullParts f in p.Floats)
                     water += f.Sum(x => x.LastForce + x.LastHydrostaticForce);
                 Vector3 runDir = Vector3.ProjectOnPlane(v.srf_velocity, up).normalized;
+                // (the water's pitching moment about the CG, nose up +: its dynamic forces' and its hydrostatics'; and the
+                // forces' parts up, the limiter and the wetted length: what drives a porpoise)
+                Vector3 cgNow = WorldCoM(v);
+                double wmDyn = 0, wmHs = 0;
+                foreach (HullParts f in p.Floats)
+                    foreach (var h in f.Hydro)
+                    {
+                        Vector3 r0 = h.part.rb != null ? h.part.rb.worldCenterOfMass - cgNow : Vector3.zero;
+                        wmDyn -= Vector3.Dot(h.LastTorque + Vector3.Cross(r0, h.LastForce), right);
+                        wmHs -= Vector3.Dot(h.LastHydrostaticTorque + Vector3.Cross(r0, h.LastHydrostaticForce), right);
+                    }
+                double Up(Func<FerramAerospaceResearch.FARAeroComponents.PartHydrodynamics, Vector3> g) =>
+                    p.Floats.Sum(f => Vector3.Dot(f.Sum(g), up));
+                double lim = p.Floats.SelectMany(f => f.Hydro).Select(h => h.LastLimiter).DefaultIfEmpty(1).Min();
+                // (recordStrips=true: every float's strips each step, their arm ahead of the CG along the fuselage)
+                if (stripCsv != null)
+                    for (int fi = 0; fi < p.Floats.Length; fi++)
+                    {
+                        var hd0 = p.Floats[fi].Hydro.FirstOrDefault(h => h.Hull != null);
+                        if (hd0 == null)
+                            continue;
+                        foreach (var sd in hd0.LastStripData)
+                            stripCsv.AppendLine(string.Join(",", F(t), fi.ToString(), F(sd.x), F(Vector3.Dot(sd.point - cgNow, fwd)), F(sd.width), F(sd.ma), F(sd.v),
+                                                            F(sd.jump), F(sd.load), sd.separated ? "1" : "0"));
+                    }
                 csv.AppendLine(string.Join(",", F(t), F(x), F(V), F(ias / Mph), F(pitch), F(roll), F(hdg), F(keelAlt), wet ? "1" : "0", phase, F(elevator),
                                            F(p.Get("propRPM")), F(p.Get("propThrust") / 4.448e-3), F(p.Floats.Max(f => f.Ref.rb.drag)), F(aeroMoment), F(q),
-                                           F(aeroLift), F(aeroDrag), F(Vector3.Dot(water, up)), F(-Vector3.Dot(water, runDir))));
+                                           F(aeroLift), F(aeroDrag), F(Vector3.Dot(water, up)), F(-Vector3.Dot(water, runDir)),
+                                           F(wmDyn), F(wmHs), F(Up(h => h.LastHydrostaticForce)), F(Up(h => h.LastMomentumForce)), F(Up(h => h.LastCrossflowForce)),
+                                           F(Up(h => h.LastImpactForce)), F(Up(h => h.LastRadiationForce)), F(lim), F(p.Floats.Max(f => f.WettedLength))));
                 yield return fixedWait;
             }
             Hyper(ctx, false);
             StandardDay(ctx, null);
             WaterParams.Restore();
             File.WriteAllText(Path.Combine(ctx.ResultsDir, $"takeoff-{FlightGlobals.ActiveVessel.vesselName}.csv"), csv.ToString());
+            if (stripCsv != null)
+            {
+                FerramAerospaceResearch.FARAeroComponents.PartHydrodynamics.RecordStrips = false;
+                File.WriteAllText(Path.Combine(ctx.ResultsDir, "takeoff-strips.csv"), stripCsv.ToString());
+            }
             Ctrl.SetThrottle(0f);
             Ctrl.Neutral();
             if (p.Floats.Any(f => f.Parts.Length > 1))
@@ -821,14 +866,17 @@ namespace FerramAerospaceResearch.KspTests
         private static string F(double x) => x.ToString("G5", CultureInfo.InvariantCulture);
 
         /// <summary>
-        /// A video of the hinged craft as it loads (frames/NNNNN.jpg, one per 1/30 s of game time, and demo.csv): the
-        /// fuselage full of LFO (crafts/c172_floatplane.py FUSELAGE_TANK), 2618 lb, 398 over the gross and the C.G. aft.
-        /// Full throttle on the water with the stick at overStick: it cannot get over the hump. Then the drain valve
-        /// dumps the fuselage's fuel (2220 lb, C.G. 28.4% MAC) and the stick goes neutral: over the hump and onto the
-        /// step, where the water's drag holds the speed; then full aft stick lifts the bows and it flies. The flight camera
+        /// A video of the hinged craft as it loads (frames/NNNNN.jpg, one per 1/30 s of game time, and demo.csv): 398 lb
+        /// over the gross in the fuel tank (crafts/c172_floatplane.py OVER_KG), 2618 lb, the tank at the C.G. station so
+        /// the C.G. hardly moves (27.6% MAC heavy, 28.4% at the gross): the weight alone. Full throttle on the water: past
+        /// the hump, it cannot accelerate on the step. Then the drain valve dumps the overload (2220 lb) and Takeoff's
+        /// pilot flies it: the nose held at humpPitch
+        /// (default 12 deg) over the hump, stepPitch (6) on the step, liftoffPitch (9) from pullMph until it flies (the
+        /// attitude hold's gains pilotKp / pilotKi / pilotKd as Takeoff's; stepHold=false: the old fixed stick, humpStick
+        /// over the hump, stepStick on the step, full aft from pullMph, which porpoises on the step). The flight camera
         /// abeam (camAngle deg aft of abeam), the UI hidden, an overlay with weight, C.G., speed, thrust and drag.
-        /// Parameters: overStick (-1..1, default 0), overSec (default 30), overLb (the fuselage's fuel, default 398: the
-        /// stock craft's full fuselage), pullMph (the IAS at which the stick goes full aft, default 70; 0: at neutral
+        /// Parameters: overStick (-1..1, default 0), overSec (default 30), overLb (the overload, default 398: the
+        /// craft's fuel load), pullMph (the IAS at which it rotates, default 55 as Takeoff's; 0: on the step
         /// until the speed stops rising, at most neutralSec, default 60), lat and lon (the site; RSS's Earth: off Cape
         /// Canaveral),
         /// flaps (default 0), record (false: no frames, hyper-warped), camDistance, camPitch, camAngle, hyperWarp,
@@ -1125,10 +1173,15 @@ namespace FerramAerospaceResearch.KspTests
         private static IEnumerator Demo(TestContext ctx)
         {
             double overStick = ctx.ParamDouble("overStick", 0), overSec = ctx.ParamDouble("overSec", 30);
-            double neutralSec = ctx.ParamDouble("neutralSec", 60), pullMph = ctx.ParamDouble("pullMph", 70);
-            // after the drain, the yoke at humpStick (full aft) over the hump as the supplement flies it, until the nose
-            // starts down (as Takeoff's pilot), then eased to stepStick over 3 s (neutral; forward lowers the nose onto the
-            // planing attitude)
+            double neutralSec = ctx.ParamDouble("neutralSec", 60), pullMph = ctx.ParamDouble("pullMph", 55);
+            // Takeoff's pilot: the attitudes held over the hump, on the step and from pullMph, and its gains
+            bool stepHold = ctx.Param("stepHold") != "false";
+            double humpPitch = ctx.ParamDouble("humpPitch", 12), stepPitch = ctx.ParamDouble("stepPitch", 6);
+            double liftoffPitch = ctx.ParamDouble("liftoffPitch", 9);
+            double kp = ctx.ParamDouble("pilotKp", 0.05), ki = ctx.ParamDouble("pilotKi", 0.03), kd = ctx.ParamDouble("pilotKd", 0.15);
+            // (stepHold=false) after the drain, the yoke at humpStick (full aft) over the hump as the supplement flies it,
+            // until the nose starts down, then eased to stepStick over 3 s (neutral; forward lowers the nose onto the
+            // planing attitude), full aft from pullMph
             double humpStick = ctx.ParamDouble("humpStick", 1), stepStick = ctx.ParamDouble("stepStick", 0);
             double overT = ctx.ParamDouble("overLb", 398) * Lb;
             int flapSetting = (int)ctx.ParamDouble("flaps", 1);      // the supplement's 10 deg
@@ -1288,12 +1341,27 @@ namespace FerramAerospaceResearch.KspTests
                         nextLog += 10;
                     }
 
-                    // the pilot
-                    double elevator;
+                    // the pilot (stepHold: the attitude held from the start, overweight too: humpPitch until the bow wave
+                    // goes aft, then stepPitch; whether it gets onto the step heavy is the demo's question)
+                    double elevator = 0, target = double.NaN;
+                    if (stepHold && phase != "pull" && phase != "climb" && double.IsNaN(liftoffT))
+                    {
+                        humpPeak = Math.Max(humpPeak, pitch);
+                        if (!overHump && V > 6 && (pitch < humpPeak - 0.5 || V > 10))
+                        {
+                            overHump = true;
+                            overHumpT = t;
+                            integral = 0;
+                            ctx.Record("over the hump", $"t {t:F1} s ({phase}), {ias / Mph:F1} mph IAS, peak pitch {humpPeak:F1} deg, " +
+                                                        $"{v.GetTotalMass() / Lb:F0} lb");
+                        }
+                        target = overHump ? stepPitch : humpPitch;
+                    }
                     switch (phase)
                     {
                         case "overweight":
-                            elevator = overStick;
+                            if (!stepHold)
+                                elevator = overStick;
                             if (inPhase > overSec)
                             {
                                 drain.TurnOnDrain();
@@ -1302,7 +1370,8 @@ namespace FerramAerospaceResearch.KspTests
                             }
                             break;
                         case "drain":
-                            elevator = overStick;
+                            if (!stepHold)
+                                elevator = overStick;
                             // (to the gross: the overload's LiquidFuel gone, or the plane back to its gross weight)
                             if (v.GetTotalMass() <= grossT - overT + 1e-4 || over.amount < 1e-3 || (inPhase > 1 && !drain.IsDraining))
                             {
@@ -1317,9 +1386,13 @@ namespace FerramAerospaceResearch.KspTests
                             {
                                 overHump = true;
                                 overHumpT = t;
+                                integral = 0;
                                 ctx.Record("over the hump", $"t {t:F1} s, {ias / Mph:F1} mph IAS, peak pitch {humpPeak:F1} deg");
                             }
-                            elevator = overHump ? humpStick + (stepStick - humpStick) * Math.Min(1, (t - overHumpT) / 3) : humpStick;
+                            if (stepHold)
+                                target = overHump ? stepPitch : humpPitch;
+                            else
+                                elevator = overHump ? humpStick + (stepStick - humpStick) * Math.Min(1, (t - overHumpT) / 3) : humpStick;
                             if (pullMph <= 0 && inPhase > 15 && gain8 < 0.4 && double.IsNaN(capMph))
                             {
                                 capMph = ias / Mph;
@@ -1329,7 +1402,10 @@ namespace FerramAerospaceResearch.KspTests
                                 phase = "pull";
                             break;
                         case "pull":
-                            elevator = 1;
+                            if (stepHold)
+                                target = liftoffPitch;
+                            else
+                                elevator = 1;
                             break;
                         default:                                       // climbing: 8 deg held
                         {
@@ -1339,6 +1415,14 @@ namespace FerramAerospaceResearch.KspTests
                                 integral = Math.Max(-30, Math.Min(30, integral + err * dt));
                             break;
                         }
+                    }
+                    // attitude hold (Takeoff's): PI on the pitch error with rate damping, the integral held at a stop
+                    if (!double.IsNaN(target))
+                    {
+                        double err = Math.Max(-10, Math.Min(10, target - pitch));
+                        elevator = kp * err + ki * integral - kd * q;
+                        if (Math.Abs(elevator) < 1 || Math.Sign(err) != Math.Sign(elevator))
+                            integral = Math.Max(-30, Math.Min(30, integral + err * dt));
                     }
                     elevator = Mathf.Clamp((float)elevator, -1, 1);
                     Ctrl.Pitch = (float)elevator;
@@ -1401,12 +1485,21 @@ namespace FerramAerospaceResearch.KspTests
                         cam.camHdg = camHdg;
                         cam.camPitch = camPitch;
                         string stick = elevator > 0.98 ? "full aft" : Math.Abs(elevator) < 0.02 ? "neutral" : $"{elevator * 100:+0;-0}%";
-                        string caption = phase switch
+                        string caption = stepHold ? phase switch
                         {
                             "overweight" => inPhase < 12
-                                ? $"Fuselage tank full of fuel: {overT / Lb:F0} lb over max takeoff weight, C.G. far aft. Full power, stick neutral"
+                                ? $"Overloaded: {overT / Lb:F0} lb over max takeoff weight, in the fuel tank at the C.G. Full power"
+                                : "Overweight: past the hump, but it can't accelerate - water drag equals thrust",
+                            "drain" => "Dumping the overload through the drain valve...",
+                            "neutral" => "At max takeoff weight: accelerating on the step",
+                            "pull" => $"Rotate: the nose raised to {liftoffPitch:F0} deg and the floats let go",
+                            _ => "Airborne",
+                        } : phase switch
+                        {
+                            "overweight" => inPhase < 12
+                                ? $"Overloaded: {overT / Lb:F0} lb over max takeoff weight, in the fuel tank at the C.G. Full power, stick neutral"
                                 : "Overweight: nose-high on the float heels, stuck behind the hump - water drag equals thrust",
-                            "drain" => "Dumping the fuselage's fuel through the drain valve...",
+                            "drain" => "Dumping the overload through the drain valve...",
                             "neutral" => double.IsNaN(capMph)
                                 ? (V < 12 ? "At max takeoff weight: over the hump and onto the step" : "On the step, stick neutral")
                                 : $"Stick neutral: too flat to lift off - water and air drag hold it at {capMph:F0} mph",
@@ -1478,6 +1571,7 @@ namespace FerramAerospaceResearch.KspTests
         {
             Vessel v = FlightGlobals.ActiveVessel;
             StandardDay(ctx, v.mainBody);
+            // (the model's own damping, as a player has it: stock's water damping off)
             WaterParams.Apply(ctx);
             var p = new Plane { V = v, Root = v.rootPart };
             p.Engine = v.parts.FirstOrDefault(q => q.Modules.Contains("ModuleEnginesAJEPropeller"));

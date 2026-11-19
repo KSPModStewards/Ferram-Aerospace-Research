@@ -43,6 +43,9 @@ namespace FerramAerospaceResearch.KspTests
 
             bool crashWas = CheatOptions.NoCrashDamage, jointsWas = CheatOptions.UnbreakableJoints;
             float waterDragWas = PhysicsGlobals.BuoyancyWaterDragSlow;
+            // (stock's water drag on the wet parts is what it checks: not the water model's default)
+            PartHydrodynamics.WaterDampingMode dampingWas = PartHydrodynamics.WaterDamping;
+            PartHydrodynamics.WaterDamping = PartHydrodynamics.WaterDampingMode.Stock;
             var harmony = new Harmony(HarmonyId);
             using var exceptions = new ExceptionLog();
             try
@@ -121,6 +124,7 @@ namespace FerramAerospaceResearch.KspTests
                 CheatOptions.NoCrashDamage = crashWas;
                 CheatOptions.UnbreakableJoints = jointsWas;
                 PhysicsGlobals.BuoyancyWaterDragSlow = waterDragWas;
+                PartHydrodynamics.WaterDamping = dampingWas;
             }
         }
 
