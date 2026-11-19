@@ -10,7 +10,6 @@ depend on any of this.
 | `FerramAerospaceResearch.KspTests.MechJeb` | in-game tests that fly on MechJeb; only deployed where MechJeb is installed |
 | `FerramAerospaceResearch.KspTests.RP1` | heating in an RP-1 career; only deployed where RP-1 is installed |
 | `FerramAerospaceResearch.KspTests.Run` | the `dotnet test` project: one test per in-game test |
-| `Coverage/` | for coverage runs only: `FarCoverage.FastVisit`, which stands in for AltCover's recorder and passes on only a point's first visit, and `CovPatch`, which points the instrumented FAR's visit calls at it (the workflow's Windows in-game leg) |
 
 ## Running
 
@@ -41,10 +40,14 @@ the older `Far_*` tests still to be ported. The examples here that name one set 
 
 ## On GitHub Actions
 
-`.github/workflows/tests.yml` runs these and the unit tests on GitHub's runners: five Windows jobs, which also run the
-unit tests and measure FAR's line coverage, and five Linux jobs, the in-game tests dealt between each leg's jobs by
-their timings in earlier runs. A run's page has each leg's test summary and the coverage report; its Artifacts have a
-page of screenshots per leg and every session's results.
+`.github/workflows/tests.yml` runs these and the unit tests on GitHub's runners: it builds FAR once and calls KspTest's
+reusable workflow (`chambem42/KspTest/.github/workflows/ingame.yml@main`, its actions doing the work), five Windows
+jobs, the first of which also runs the unit tests, measuring FAR's line coverage (AltCover, KspTest's `ci/coverage/`),
+and five Linux jobs, the in-game tests dealt between each leg's jobs by their timings in earlier runs.
+`.github/scripts/ci.sh` is FAR's part: the build as the tests' FAR (built against the KspTest submodule) and the unit
+tests. A run's page has each leg's test summary and the coverage report; its Artifacts have a page of screenshots per
+leg and every session's results. `.github/workflows/testing.yml`, run by hand, runs the same on a testing build (master
+with the pull requests labelled `ready-for-testing` merged in) before it publishes it as a prerelease.
 
 The game comes from encrypted archives in a private repository's release, so the in-game jobs need its secrets:
 

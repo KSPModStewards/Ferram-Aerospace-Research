@@ -1,16 +1,19 @@
 name: Testing build
 
-# Publishes master with the open pull requests labelled ready-for-testing merged in, as a GitHub prerelease tagged
-# v<latest stable release, its fourth number counting the testing builds>_testing (v0.17.0.3_testing: the third on
-# 0.17.0.0), the build stamped with that version. Stable releases therefore end in .0 (package.yml checks config.json).
-# CKAN indexes a prerelease with release_status testing, which it offers to players whose stability tolerance for FAR
-# (or all mods) is Testing; the next stable release, numbered higher, replaces it.
+# Run by hand (Actions > Testing build > Run workflow): master with the open pull requests labelled ready-for-testing
+# merged in, built and stamped as a GitHub prerelease's version, its unit and in-game tests run on that build (KspTest's
+# workflow, as tests.yml), and published only if they pass: a prerelease tagged v<latest stable release, its fourth
+# number counting the testing builds>_testing (v0.17.0.3_testing: the third on 0.17.0.0). Stable releases therefore
+# end in .0 (package.yml checks config.json). CKAN indexes a prerelease with release_status testing, which it offers to
+# players whose stability tolerance for FAR (or all mods) is Testing; the next stable release, numbered higher,
+# replaces it.
 #
-# It runs when the label goes on or off a pull request, and when a labelled one gets commits, is reopened or is closed
-# (a merged one only loses the label: master has it). Each run takes every labelled pull request, so a newer run
-# cancels an older one, and none publishes when master and the labelled commits are what the last testing build has.
-# With no pull request labelled, a build of master alone replaces the last testing build (none after a stable release).
-# Run it by hand to rebuild (force: even unchanged).
+# Nothing runs on the labelled pull requests' own events (labels, pushes): their checks and statuses stay their own, and
+# a push to one publishes nothing until the next run. A run publishes nothing when master and the labelled commits are
+# what the last testing build has (force: even so); with no pull request labelled, a build of master alone replaces the
+# last testing build (none after a stable release); dry-run builds and tests it all the same and publishes nothing. The
+# tests post no commit statuses and save no caches: the merge is
+# no commit of the repository's branches.
 #
 # Who: the label counts when the last to put it on has write access. A pull request by someone without write access
 # also needs that person's review of its latest commit, as run-ingame does in tests.yml, so a push after the review
@@ -21,35 +24,33 @@ name: Testing build
 # them, so two conflicting ones go in together through a third that merges both with the conflict resolved.
 #
 # Jobs: collect merges, git only (.github/scripts/testing_merge.sh, from master); build compiles the merge with a
-# read-only token, like a let-in fork pull request in tests.yml, and no cache; publish runs nothing of the pull requests:
-# it pushes the tag (the merge commit) and makes the prerelease. GITHUB_TOKEN cannot push commits changing
-# .github/workflows, so a pull request that does cannot be published this way.
+# read-only token and no cache, and hands the tests the zip's GameData, KSPBurst's Unity packages (the unit tests') and
+# the merge itself (far-ci: ci.sh prepare checks it out from its bundle); ingame tests that build; publish runs nothing
+# of the pull requests: it pushes the tag (the merge commit) and makes the prerelease. GITHUB_TOKEN cannot push commits
+# changing .github/workflows, so a pull request that does cannot be published this way.
 
 on:
-  pull_request_target:
-    types: [labeled, unlabeled, synchronize, reopened, closed]
   workflow_dispatch:
     inputs:
       force:
         description: Publish even if nothing changed since the last testing build
         type: boolean
         default: false
+      dry-run:
+        description: Build and test the merge, changed or not, but publish nothing (no tag, no prerelease)
+        type: boolean
+        default: false
+
+# one testing build at a time, the newest
+concurrency:
+  group: testing-build
+  cancel-in-progress: true
 
 env:
-  LABEL: ready-for-testing # also in collect's if
+  LABEL: ready-for-testing
 
 jobs:
   collect:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event.action == 'labeled' || github.event.action == 'unlabeled') &&
-        github.event.label.name == 'ready-for-testing') ||
-      (github.event.action != 'labeled' && github.event.action != 'unlabeled' &&
-        contains(github.event.pull_request.labels.*.name, 'ready-for-testing'))
-    # one testing build at a time, the newest. Per job, so the pull request events the if drops cancel nothing
-    concurrency:
-      group: testing-build
-      cancel-in-progress: true
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -73,10 +74,7 @@ jobs:
           REPO: ${{ github.repository }}
           BASE: ${{ github.event.repository.default_branch }}
           OUT: ${{ runner.temp }}/testing
-          ACTION: ${{ github.event.action }}
-          PR: ${{ github.event.pull_request.number }}
-          MERGED: ${{ github.event.pull_request.merged }}
-          FORCE: ${{ inputs.force }}
+          FORCE: ${{ inputs.force || inputs.dry-run }}
         run: bash .github/scripts/testing_merge.sh
 
       - uses: actions/upload-artifact@v6
@@ -88,9 +86,6 @@ jobs:
   build:
     needs: collect
     if: needs.collect.outputs.build == 'true'
-    concurrency:
-      group: testing-build
-      cancel-in-progress: true
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -167,11 +162,56 @@ jobs:
           name: FerramAerospaceResearch
           path: ${{ steps.package-mod.outputs.archive }}
 
+      # what the tests take (ci/ in tests.yml's terms, ci.sh): the zip's GameData, the unit tests' KSPBurst Unity
+      # packages, and the merge (its bundle and commit), which ci.sh prepare checks out so the tests are the merge's
+      - name: The tests' artifact
+        env:
+          ARCHIVE: ${{ steps.package-mod.outputs.archive }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/far-ci/GameData" "$RUNNER_TEMP/far-ci/kspburst" "$RUNNER_TEMP/zip"
+          unzip -q "$ARCHIVE" -d "$RUNNER_TEMP/zip"
+          far=$(find "$RUNNER_TEMP/zip" -type d -path '*GameData/FerramAerospaceResearch' | head -n 1)
+          [ -n "$far" ] || { echo "::error::no GameData/FerramAerospaceResearch in $ARCHIVE"; exit 1; }
+          cp -r "$far" "$RUNNER_TEMP/far-ci/GameData/"
+          cp "$KSP_ROOT"/GameData/000_KSPBurst/Plugins/Unity.*.dll "$RUNNER_TEMP/far-ci/kspburst/" ||
+            echo "::warning::no KSPBurst Unity packages: the unit tests that need them fail"
+          bundle="$RUNNER_TEMP/testing/merged.bundle"
+          if [ -f "$bundle" ]; then cp "$bundle" "$RUNNER_TEMP/far-ci/"; fi
+          echo "$TESTING_COMMIT" > "$RUNNER_TEMP/far-ci/commit"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: far-ci
+          path: ${{ runner.temp }}/far-ci
+
+  # the build's unit and in-game tests (KspTest's workflow, as tests.yml): no commit statuses (the merge is no branch's
+  # commit, and the run's own is master's), no caches saved
+  ingame:
+    needs: build
+    uses: chambem42/KspTest/.github/workflows/ingame.yml@main
+    permissions:
+      contents: read
+      pull-requests: write
+      statuses: write
+    secrets: inherit
+    with:
+      test-project: KspTests/FerramAerospaceResearch.KspTests.Run
+      title: FAR testing build tests
+      legs: '["windows", "linux"]'
+      shards: 5
+      artifact: far-ci
+      artifact-path: ci
+      prepare: bash .github/scripts/ci.sh prepare
+      coverage: >-
+        ci/GameData/FerramAerospaceResearch/Plugins/FerramAerospaceResearch.dll
+        ci/GameData/FerramAerospaceResearch/Plugins/FerramAerospaceResearch.Base.dll
+      before: bash .github/scripts/ci.sh unit
+      statuses: false
+      save-caches: false
+
+  # only once the tests passed, and not on a dry run
   publish:
-    needs: [collect, build]
-    concurrency:
-      group: testing-build
-      cancel-in-progress: true
+    needs: [collect, build, ingame]
+    if: ${{ !inputs.dry-run }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
