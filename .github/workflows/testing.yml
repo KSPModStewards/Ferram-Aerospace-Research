@@ -192,7 +192,8 @@ jobs:
       contents: read
       pull-requests: write
       statuses: write
-    secrets: inherit
+      # the job's OIDC token, for KspTest's game broker (the game without secrets)
+      id-token: write
     with:
       test-project: KspTests/FerramAerospaceResearch.KspTests.Run
       title: FAR testing build tests
