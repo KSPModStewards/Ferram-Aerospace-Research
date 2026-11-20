@@ -1358,7 +1358,7 @@ namespace ferram4
             // whether that body is where the wing meets its mirror image (the fuselage on the centerline, not a nacelle
             // out on the wing): only then is a wing of one panel and its mirror one wing through the body
             public bool RootOnCenter;
-            // whether the wing takes in a panel's mirror image: it spans the centerline
+            // whether the wing's lifting panels reach both sides of the centerline: one whole wing (see SpansCenterline)
             public bool Straddles;
             // the area of the control surfaces on this wing (m^2), and, for a wing on a bare body, of the strip of the
             // body between its root and the body's center at the root chord (m^2): both part of the wing's planform
@@ -1414,57 +1414,71 @@ namespace ferram4
                 }
 
                 // every panel reachable through touching panels; then through shielded ones too, but only across a break
-                // along the span (see Bridged), and not to a member's mirror image: the panels inside a fuselage join no
-                // wing to its mirror (that wing is measured through the body, see Measure), where a lifting center
-                // section does
+                // along the span from a member the shielded ones are reached from, and on that member's side of the
+                // centerline (see Bridged): the panels inside a fuselage join no wing to the one on its other side (that
+                // wing is measured through the body, see Measure), where lifting panels across the centerline (a center
+                // section, a belly under the body) make the two one wing
                 g.panels.Add(first);
-                var memberParts = new HashSet<Part> { start.part };
                 var reached = new List<Panel> { first };
-
-                void Join(Panel c)
-                {
-                    g.panels.Add(c);
-                    memberParts.Add(c.Wing.part);
-                    reached.Add(c);
-                }
 
                 for (int i = 0; i < reached.Count; i++)
                     for (int j = candidates.Count - 1; j >= 0; j--)
                         if (Linked(reached[i], candidates[j]))
                         {
-                            Join(candidates[j]);
+                            g.panels.Add(candidates[j]);
+                            reached.Add(candidates[j]);
                             candidates.RemoveAt(j);
                         }
 
                 if (bridges.Count > 0)
                 {
                     // the panels reached so far link to no other candidate (all were tested above): from them only the
-                    // shielded panels; from each shielded panel reached, the member its chain of them starts at
+                    // shielded panels. Each shielded panel reached keeps every member its chains of them start at, so a
+                    // panel beyond it joins if it lies beyond from any of them (the left belly panel under a fuselage
+                    // reaches the left wing past the left root, whichever side the root was reached from first); a
+                    // shielded panel that gains one after its candidates were tried has them tried again
                     int linked = reached.Count;
-                    var origins = new Dictionary<Panel, Panel>();
-                    for (int i = 0; i < reached.Count; i++)
+                    var origins = new Dictionary<Panel, HashSet<Panel>>();
+                    var tried = new HashSet<Panel>();
+                    bool again = true;
+                    while (again)
                     {
-                        Panel from = reached[i];
-                        bool shielded = origins.TryGetValue(from, out Panel origin);
-                        if (i >= linked)
-                            for (int j = candidates.Count - 1; j >= 0; j--)
-                            {
-                                Panel c = candidates[j];
-                                if (!Linked(from, c) || c.Wing.part.symmetryCounterparts.Any(memberParts.Contains) ||
-                                    shielded && !g.Bridged(origin, from, c))
-                                    continue;
-                                Join(c);
-                                candidates.RemoveAt(j);
-                            }
+                        again = false;
+                        for (int i = 0; i < reached.Count; i++)
+                        {
+                            Panel from = reached[i];
+                            bool shielded = origins.TryGetValue(from, out HashSet<Panel> starts);
+                            if (shielded)
+                                tried.Add(from);
+                            if (shielded || i >= linked)
+                                for (int j = candidates.Count - 1; j >= 0; j--)
+                                {
+                                    Panel c = candidates[j];
+                                    if (!Linked(from, c) || shielded && !g.BridgedFromAny(starts, from, c))
+                                        continue;
+                                    g.panels.Add(c);
+                                    reached.Add(c);
+                                    candidates.RemoveAt(j);
+                                }
 
-                        for (int j = bridges.Count - 1; j >= 0; j--)
-                            if (Linked(from, bridges[j]))
+                            foreach (Panel b in bridges)
                             {
-                                origins[bridges[j]] = shielded ? origin : from;
-                                g.bridges.Add(bridges[j]);
-                                reached.Add(bridges[j]);
-                                bridges.RemoveAt(j);
+                                if (b == from || !Linked(from, b))
+                                    continue;
+                                if (!origins.TryGetValue(b, out HashSet<Panel> bStarts))
+                                {
+                                    origins[b] = bStarts = new HashSet<Panel>();
+                                    g.bridges.Add(b);
+                                    reached.Add(b);
+                                }
+                                int had = bStarts.Count;
+                                if (shielded)
+                                    bStarts.UnionWith(starts);
+                                else
+                                    bStarts.Add(from);
+                                again |= bStarts.Count > had && tried.Contains(b);
                             }
+                        }
                     }
                 }
 
@@ -1474,17 +1488,57 @@ namespace ferram4
                     p.Wing.WingInteraction.wingGroup = g;
                 }
 
-                foreach (Panel p in g.panels)
+                g.Straddles = g.SpansCenterline();
+            }
+
+            // how far past the centerline a wing's panels must reach to be across it (m): a root on it is not
+            private const float CenterlineMargin = 0.05f;
+
+            /// <summary>
+            ///     Whether the members, lifting panels joined to each other, reach both sides of the vessel's centerline: the
+            ///     plane between a part and its mirror image (of any member, or of a part it is symmetric with), across the
+            ///     line between them. The wing spans it, one whole wing whichever parts it is made of (two mirror panels, a
+            ///     single center panel, panels under a body). A wing with no mirror image anywhere (a lone fin) spans none
+            /// </summary>
+            private bool SpansCenterline()
+            {
+                foreach (Panel p in panels)
                     foreach (Part mirror in p.Wing.part.symmetryCounterparts)
-                        if (memberParts.Contains(mirror))
-                            g.Straddles = true;
+                    {
+                        if (mirror == null)
+                            continue;
+                        Vector3 a = Frame.InverseTransformPoint(p.Wing.part.partTransform.position);
+                        Vector3 b = Frame.InverseTransformPoint(mirror.partTransform.position);
+                        Vector3 across = a - b;
+                        // mirror images at one point (two centre panels rooted on the centerline) show no direction
+                        if (across.sqrMagnitude < 1e-4f)
+                            continue;
+                        across.Normalize();
+                        float center = Vector3.Dot(0.5f * (a + b), across), lo = float.MaxValue, hi = float.MinValue;
+                        foreach (Panel q in panels)
+                        {
+                            Range(q.Outline, across, out float min, out float max);
+                            lo = Math.Min(lo, min - center);
+                            hi = Math.Max(hi, max - center);
+                        }
+                        return lo < -CenterlineMargin && hi > CenterlineMargin;
+                    }
+                return false;
+            }
+
+            private bool BridgedFromAny(HashSet<Panel> members, Panel bridge, Panel c)
+            {
+                foreach (Panel m in members)
+                    if (Bridged(m, bridge, c))
+                        return true;
+                return false;
             }
 
             /// <summary>
             ///     Whether a shielded panel (a strip under a nacelle or pylon) joins a member to a panel beyond it: the panel
-            ///     lies past the shielded one along the member's span, and on the member's side of the vessel's centerline
-            ///     (through the root part, the frame's origin) unless the member spans it. Not a tail or canard whose root a
-            ///     plate inside the fuselage shares with the wing's, nor the mirror wing of a craft built without symmetry
+            ///     lies past the shielded one along the member's span, and not across the vessel's centerline (through the
+            ///     root part, the frame's origin) from the member, unless the member spans it. Not a tail or canard whose
+            ///     root a plate inside the fuselage shares with the wing's, nor the wing on the other side of the fuselage
             /// </summary>
             private bool Bridged(Panel member, Panel bridge, Panel c)
             {
@@ -1496,7 +1550,8 @@ namespace ferram4
                 if ((b - m) * (x - b) <= 0)
                     return false;
                 Range(member.Outline, s, out float lo, out float hi);
-                return !(lo > 0 && x < 0 || hi < 0 && x > 0);
+                // a root on the centerline is on its own side of it, and so is a panel centered on it
+                return !(lo > -CenterlineMargin && x < -CenterlineMargin || hi < CenterlineMargin && x > CenterlineMargin);
             }
 
             public static Panel MakePanel(FARWingAerodynamicModel w, Transform frame)
