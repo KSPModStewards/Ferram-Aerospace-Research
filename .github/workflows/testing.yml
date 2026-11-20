@@ -162,15 +162,17 @@ jobs:
           name: FerramAerospaceResearch
           path: ${{ steps.package-mod.outputs.archive }}
 
-      # what the tests take (ci/ in tests.yml's terms, ci.sh): the zip's GameData, the unit tests' KSPBurst Unity
-      # packages, and the merge (its bundle and commit), which ci.sh prepare checks out so the tests are the merge's
+      # what the tests take (ci/ in tests.yml's terms, ci.sh): the package's GameData (what goes in the zip players get),
+      # the unit tests' KSPBurst Unity packages, and the merge (its bundle and commit), which ci.sh prepare checks out so
+      # the tests are the merge's. The package is a folder (upload-artifact zips it), or a zip
       - name: The tests' artifact
         env:
           ARCHIVE: ${{ steps.package-mod.outputs.archive }}
         run: |
-          mkdir -p "$RUNNER_TEMP/far-ci/GameData" "$RUNNER_TEMP/far-ci/kspburst" "$RUNNER_TEMP/zip"
-          unzip -q "$ARCHIVE" -d "$RUNNER_TEMP/zip"
-          far=$(find "$RUNNER_TEMP/zip" -type d -path '*GameData/FerramAerospaceResearch' | head -n 1)
+          mkdir -p "$RUNNER_TEMP/far-ci/GameData" "$RUNNER_TEMP/far-ci/kspburst"
+          src="$ARCHIVE"
+          if [ ! -d "$src" ]; then mkdir -p "$RUNNER_TEMP/zip"; unzip -q "$src" -d "$RUNNER_TEMP/zip"; src="$RUNNER_TEMP/zip"; fi
+          far=$(find "$src" -type d -path '*GameData/FerramAerospaceResearch' | head -n 1)
           [ -n "$far" ] || { echo "::error::no GameData/FerramAerospaceResearch in $ARCHIVE"; exit 1; }
           cp -r "$far" "$RUNNER_TEMP/far-ci/GameData/"
           cp "$KSP_ROOT"/GameData/000_KSPBurst/Plugins/Unity.*.dll "$RUNNER_TEMP/far-ci/kspburst/" ||
