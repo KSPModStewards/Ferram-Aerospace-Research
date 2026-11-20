@@ -189,6 +189,24 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         private string _statusMessage = "";
         private CelestialBody _lastBody;
 
+        // The craft as it is now (physical parts, wet mass kg), checked every CraftCheckSeconds while the tab is
+        // open, against the shown map's: a map from another edit (a cached one, or a sweep before the last change)
+        // is flagged rather than passed off as the craft's.
+        private const float CraftCheckSeconds = 0.5f;
+        private int _craftParts;
+        private double _craftMassKg;
+        private float _craftCheckedAt = float.NegativeInfinity;
+        private bool _craftKnown;
+        // the last check's, which the next has to agree with
+        private int _sampleParts = -1;
+        private double _sampleMassKg;
+        private string _staleReason;
+        // the flag's text, and what it was made for
+        private string _staleText;
+        private HeatmapResult _staleFor;
+        private int _staleParts;
+        private double _staleMassKg;
+
         public HeatmapsGUI(
             EditorSimManager simManager,
             GUIDropDown<int> flapSettingDropdown,
@@ -279,6 +297,9 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             SyncAltitudeDefaultsToBody();
             CheckAutoRecalc();
             TryLoadCachedForEditor();
+            // the flag is drawn or not alike in a frame's layout and repaint passes (IMGUI needs the same controls in both)
+            if (Event.current.type == EventType.Layout)
+                _staleReason = StaleReason();
 
             // Title left; "Planet:" label + selector right-justified on the same line.
             GUILayout.BeginHorizontal();
@@ -387,6 +408,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             GUILayout.Space(12); // separate the sweep setup above from the display controls below
 
             DrawHistoryNav();
+            DrawStaleWarning();
 
             // Color-by sits with the zoom/recolour controls: both are display-only, changing how the
             // finished maps are drawn without re-sweeping.
@@ -2404,6 +2426,91 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             _deck.Restore();
             _sweepTask = null;
             _sweep = null;
+        }
+
+        /// <summary>
+        /// Why the shown map is not the craft as it is now (another part count, or another wet mass: a cached sweep
+        /// of an earlier edit, or the craft changed since the sweep), or null when it is.
+        /// </summary>
+        internal string StaleReason()
+        {
+            if (IsSweepRunning || _results == null || _results.Count == 0 || _results[0].PartCount <= 0)
+                return null;
+
+            if (Time.realtimeSinceStartup - _craftCheckedAt >= CraftCheckSeconds)
+            {
+                _craftCheckedAt = Time.realtimeSinceStartup;
+                int parts = CountPhysicalParts();
+                double massKg = CraftMassKg();
+                // taken when two checks running agree: the crew's mass is in their seat's p.mass only from one
+                // FixedUpdate to the next ShipConstruct.UpdateMass (stock's GetTotalMass), and a check between the two
+                // would flag a map that is the craft's
+                if (parts == _sampleParts && !MassDiffers(massKg, _sampleMassKg))
+                {
+                    _craftParts = parts;
+                    _craftMassKg = massKg;
+                    _craftKnown = true;
+                }
+
+                _sampleParts = parts;
+                _sampleMassKg = massKg;
+            }
+
+            if (!_craftKnown)
+                return null;
+
+            HeatmapResult r = _results[0];
+            double mapMassKg = r.SampleMassesKg != null && r.SampleMassesKg.Length > 0
+                                   ? r.SampleMassesKg[r.SampleMassesKg.Length - 1]
+                                   : r.MassKg;
+            if (r.PartCount == _craftParts && !(mapMassKg > 0 && MassDiffers(mapMassKg, _craftMassKg)))
+                return null;
+
+            // the text made again only when what it says changes (this runs every layout pass)
+            if (_staleText == null || !ReferenceEquals(_staleFor, r) || _staleParts != _craftParts ||
+                _staleMassKg != _craftMassKg)
+            {
+                _staleFor = r;
+                _staleParts = _craftParts;
+                _staleMassKg = _craftMassKg;
+                _staleText = Localizer.Format("FARHeatmapsStale",
+                                              r.PartCount.ToString(CultureInfo.InvariantCulture),
+                                              (mapMassKg / 1000).ToString("F2", CultureInfo.InvariantCulture),
+                                              _craftParts.ToString(CultureInfo.InvariantCulture),
+                                              (_craftMassKg / 1000).ToString("F2", CultureInfo.InvariantCulture));
+            }
+
+            return _staleText;
+        }
+
+        // more than a kilogram apart, or (heavy craft) one part in 10^4
+        private static bool MassDiffers(double aKg, double bKg) => Math.Abs(aKg - bKg) > Math.Max(1, 1e-4 * Math.Max(aKg, bKg));
+
+        private void DrawStaleWarning()
+        {
+            if (_staleReason == null)
+                return;
+            // the style's own color: contentColor multiplies the skin's grey label text, which darkens it
+            if (_staleStyle == null)
+            {
+                _staleStyle = new GUIStyle(GUI.skin.label) {fontStyle = FontStyle.Bold, wordWrap = true};
+                _staleStyle.normal.textColor = new Color(1f, 0.85f, 0.2f);
+            }
+
+            GUILayout.Label(_staleReason, _staleStyle);
+        }
+
+        private GUIStyle _staleStyle;
+
+        /// <summary>The editor craft's wet mass (kg), as a sweep weighs it (PerformanceEnvelopeCalculator).</summary>
+        private static double CraftMassKg()
+        {
+            double mass = 0;
+            List<Part> parts = EditorLogic.SortedShipList;
+            if (parts != null)
+                foreach (Part p in parts)
+                    mass += FARAeroUtil.EditorPartMass(p);
+            return mass * 1000;
         }
 
         private static int CountPhysicalParts()

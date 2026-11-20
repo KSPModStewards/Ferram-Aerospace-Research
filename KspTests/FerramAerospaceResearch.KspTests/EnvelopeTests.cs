@@ -115,7 +115,7 @@ namespace FerramAerospaceResearch.KspTests
                             lfKg += res.amount * res.info.density * 1000;
                 ctx.Record("masses", $"samples {string.Join(", ", r.SampleMassesKg.Select(m => Inv(m, "F0")))} kg; dry {r.DryMassKg:F0}, ship {shipKg:F0}, liquid fuel {lfKg:F0}");
                 Assert.Near(r.SampleMassesKg[2], r.MassKg, 1e-6, "the map shown is swept at the full-tank mass");
-                Assert.InRange(0.9 * shipKg, shipKg + 1, r.MassKg, "the full-tank mass against the craft's (kg)");
+                Assert.Near(shipKg, r.MassKg, 1, "the full-tank mass is the craft's, its physicsless parts' too (kg)");
                 Assert.Near(lfKg, r.MassKg - r.DryMassKg, 0.01 * lfKg + 1,
                             "the usable fuel is the liquid fuel the jets burn (not the aerospike's oxidizer) (kg)");
                 Assert.Near(r.DryMassKg + 0.01 * lfKg, r.SampleMassesKg[0], 0.002 * lfKg + 1, "the lightest sample keeps 1% of the fuel (kg)");

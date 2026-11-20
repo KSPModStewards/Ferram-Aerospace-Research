@@ -402,7 +402,7 @@ namespace ferram4
             return new SnapshotState
             {
                 Geom = new FrozenPartTransform(part_transform),
-                RbMass = part.rb != null ? part.rb.mass : part.mass,
+                RbMass = part.rb != null ? part.rb.mass : FARAeroUtil.EditorRigidbodyMass(part),
                 FixedDeltaTime = TimeWarp.fixedDeltaTime,
                 Shielded = isShielded,
                 SubmergedPortion = part.submergedPortion,
@@ -547,7 +547,8 @@ namespace ferram4
             }
 
             SimGeom = new FrozenPartTransform(part_transform);
-            simRbMass = part.rb != null ? part.rb.mass : part.mass;
+            // no rigidbody in the editor: the mass its rigidbody will have in flight
+            simRbMass = part.rb != null ? part.rb.mass : FARAeroUtil.EditorRigidbodyMass(part);
             simFixedDeltaTime = TimeWarp.fixedDeltaTime;
             // the wing group the sweep's workers take their aspect ratio from
             wingInteraction?.ResolveWingGroup();

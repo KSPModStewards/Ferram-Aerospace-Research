@@ -857,14 +857,23 @@ namespace ferram4
             }
 
             Vector3 CoM = Vector3.zero;
-            float mass = 0;
-            foreach (Part p in VesselPartList)
+            if (HighLogic.LoadedSceneIsEditor)
             {
-                CoM += p.transform.position * p.mass;
-                mass += p.mass;
+                // as the editor's analyses take it
+                FARAeroUtil.EditorMassAndCoM(VesselPartList, out Vector3d com);
+                CoM = com;
             }
+            else
+            {
+                float mass = 0;
+                foreach (Part p in VesselPartList)
+                {
+                    CoM += p.transform.position * p.mass;
+                    mass += p.mass;
+                }
 
-            CoM /= mass;
+                CoM /= mass;
+            }
 
             if (HighLogic.LoadedSceneIsEditor && (isFlap || isSpoiler))
                 SetControlStateEditor(CoM, part.partTransform.up, 0, 0, 0, 0, false);
