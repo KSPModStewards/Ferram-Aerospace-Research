@@ -186,7 +186,8 @@ jobs:
           path: ${{ runner.temp }}/far-ci
 
   # the build's unit and in-game tests (KspTest's workflow, as tests.yml): no commit statuses (the merge is no branch's
-  # commit, and the run's own is master's), no caches saved
+  # commit, and the run's own is master's), no caches saved, no coverage (the package has no .pdb files to measure by).
+  # ci.sh's unit tests from the copy prepare leaves in ci/: the workflow's own, whatever the merge has
   ingame:
     needs: build
     uses: chambem42/KspTest/.github/workflows/ingame.yml@main
@@ -204,10 +205,7 @@ jobs:
       artifact: far-ci
       artifact-path: ci
       prepare: bash .github/scripts/ci.sh prepare
-      coverage: >-
-        ci/GameData/FerramAerospaceResearch/Plugins/FerramAerospaceResearch.dll
-        ci/GameData/FerramAerospaceResearch/Plugins/FerramAerospaceResearch.Base.dll
-      before: bash .github/scripts/ci.sh unit
+      before: bash ci/ci.sh unit
       statuses: false
       save-caches: false
 
