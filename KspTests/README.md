@@ -46,8 +46,9 @@ jobs, the first of which also runs the unit tests, measuring FAR's line coverage
 and five Linux jobs, the in-game tests dealt between each leg's jobs by their timings in earlier runs.
 `.github/scripts/ci.sh` is FAR's part: the build as the tests' FAR (built against the KspTest submodule) and the unit
 tests. A run's page has each leg's test summary and the coverage report; its Artifacts have a page of screenshots per
-leg and every session's results. `.github/workflows/testing.yml`, run by hand, runs the same on a testing build (master
-with the pull requests labelled `ready-for-testing` merged in) before it publishes it as a prerelease.
+leg and every session's results. `.github/workflows/testing.yml` (Make Test Release, KspTest's `test-release.yml`),
+run by hand, runs the same on a test release (master with the pull requests labelled `ready-for-testing` merged in)
+before it publishes it as a prerelease.
 
 The game comes from encrypted archives in a private repository's release, so the in-game jobs need its secrets:
 

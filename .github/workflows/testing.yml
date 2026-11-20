@@ -1,39 +1,21 @@
 name: Make Test Release
 
 # Run by hand (Actions > Make Test Release > Run workflow): master with the open pull requests labelled ready-for-testing
-# merged in, built and stamped as a GitHub prerelease's version, its unit and in-game tests run on that build (KspTest's
-# workflow, as tests.yml), and published only if they pass: a prerelease tagged v<latest stable release, its fourth
-# number counting the testing builds>_testing (v0.17.0.3_testing: the third on 0.17.0.0). Stable releases therefore
-# end in .0 (package.yml checks config.json). CKAN indexes a prerelease with release_status testing, which it offers to
-# players whose stability tolerance for FAR (or all mods) is Testing; the next stable release, numbered higher,
-# replaces it.
+# merged in, then collect changes -> build -> run tests -> publish prerelease, through KspTest's workflow
+# (chambem42/KspTest/.github/workflows/test-release.yml, which says how). The prerelease is tagged v<latest stable
+# release, its fourth number counting the test releases>_testing (v0.17.0.3_testing: the third on 0.17.0.0), so stable
+# releases end in .0 (package.yml checks config.json). Its notes list the pull requests and master's changes since the
+# latest stable release.
 #
-# Nothing runs on the labelled pull requests' own events (labels, pushes): their checks and statuses stay their own, and
-# a push to one publishes nothing until the next run. A run publishes nothing when master and the labelled commits are
-# what the last testing build has (force: even so); with no pull request labelled, a build of master alone replaces the
-# last testing build (none after a stable release); dry-run builds and tests it all the same and publishes nothing. The
-# tests post no commit statuses and save no caches: the merge is
-# no commit of the repository's branches.
-#
-# Who: the label counts when the last to put it on has write access. A pull request by someone without write access
-# also needs that person's review of its latest commit, as run-ingame does in tests.yml, so a push after the review
-# takes it out. Those that fail this lose the label, with a comment saying why.
-#
-# Conflicts: lower numbers merge first; one that conflicts stops the run, with a comment on it naming what it conflicts
-# with (once per conflict). A pull request whose commits are all in another labelled one is left out, the other bringing
-# them, so two conflicting ones go in together through a third that merges both with the conflict resolved.
-#
-# Jobs: collect merges, git only (.github/scripts/testing_merge.sh, from master); build compiles the merge with a
-# read-only token and no cache, and hands the tests the zip's GameData, KSPBurst's Unity packages (the unit tests') and
-# the merge itself (far-ci: ci.sh prepare checks it out from its bundle); ingame tests that build; publish runs nothing
-# of the pull requests: it pushes the tag (the merge commit) and makes the prerelease. GITHUB_TOKEN cannot push commits
-# changing .github/workflows, so a pull request that does cannot be published this way.
+# FAR's part: the build's CKAN dependencies, the version stamped (Version.cs, the AssemblyInfos, FAR.version; GitSha the
+# merge's), the package unzipped as the release, and the tests' artifact as tests.yml's (ci.sh): the package's FAR and
+# KSPBurst's Unity packages. The tests run on the stamped build, without coverage (the package has no .pdb files).
 
 on:
   workflow_dispatch:
     inputs:
       force:
-        description: Publish even if nothing changed since the last testing build
+        description: Publish even if nothing changed since the last test release
         type: boolean
         default: false
       dry-run:
@@ -41,228 +23,57 @@ on:
         type: boolean
         default: false
 
-# one testing build at a time, the newest
+# one test release at a time, the newest
 concurrency:
-  group: testing-build
+  group: test-release
   cancel-in-progress: true
 
-env:
-  LABEL: ready-for-testing
-
 jobs:
-  collect:
-    runs-on: ubuntu-24.04
+  release:
+    uses: chambem42/KspTest/.github/workflows/test-release.yml@main
     permissions:
-      contents: read
-      pull-requests: write
-    outputs:
-      build: ${{ steps.merge.outputs.build }}
-      master: ${{ steps.merge.outputs.master }}
-      commit: ${{ steps.merge.outputs.commit }}
-      version: ${{ steps.merge.outputs.version }}
-      tag: ${{ steps.merge.outputs.tag }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          fetch-depth: 0
-          persist-credentials: false
-
-      - id: merge
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          BASE: ${{ github.event.repository.default_branch }}
-          OUT: ${{ runner.temp }}/testing
-          FORCE: ${{ inputs.force || inputs.dry-run }}
-        run: bash .github/scripts/testing_merge.sh
-
-      - uses: actions/upload-artifact@v6
-        if: steps.merge.outputs.build == 'true'
-        with:
-          name: testing-merge
-          path: ${{ runner.temp }}/testing
-
-  build:
-    needs: collect
-    if: needs.collect.outputs.build == 'true'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    env:
-      KSP_ROOT: /tmp/ksp
-      # not VERSION: MSBuild takes environment variables as properties (a five-number Version failed the restore)
-      TESTING_COMMIT: ${{ needs.collect.outputs.commit }}
-      TESTING_VERSION: ${{ needs.collect.outputs.version }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.collect.outputs.master }}
-          fetch-depth: 0
-          persist-credentials: false
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: testing-merge
-          path: ${{ runner.temp }}/testing
-
-      - name: Check out the merge
-        run: |
-          bundle="$RUNNER_TEMP/testing/merged.bundle"
-          if [ -f "$bundle" ]; then git fetch -q "$bundle" HEAD; fi
-          git checkout -q --detach "$TESTING_COMMIT"
-          git submodule update -q --init --recursive
-
-      # From here on as package.yml's build, without the CKAN download cache: this zip goes to players
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: 8.x
-
-      - uses: KSPModdingLibs/KSPBuildTools/.github/actions/setup-ckan@1.1.1
-        with:
-          ckan-filters: ""
-
-      - uses: KSPModdingLibs/KSPBuildTools/.github/actions/install-dependencies@1.1.1
-        with:
-          dependency-identifiers: ModularFlightIntegrator KSPCommunityFixes KSPBurst ModuleManager
-
-      # The testing version into Version.cs, the AssemblyInfos and FAR.version: config.json's replacements with the
-      # version numbers overridden, all four (master's config.json is ahead of the last stable release between a release
-      # bump's merge and its tag). A config.json.user list replaces config.json's, so CI's settings come after, for the
-      # package; then GitSha, logged at startup, the merge commit's, not GITHUB_SHA (master's here)
-      - name: Stamp version and commit SHA
-        run: |
-          numbers=$(jq -Rc 'split(".") | map(tonumber) | {VersionMajor: .[0], VersionMinor: .[1], VersionBuild: .[2], VersionRevision: .[3]}' <<< "$TESTING_VERSION")
-          jq -n --argjson v "$numbers" '{variables: $v}' > config.json.user
-          python -m buildtools replace
-          jq --argjson v "$numbers" '.variables += $v | del(.replace)' .github/package.config.json > config.json.user
-          sed -i -E "s/GitSha = (null|\"[^\"]*\")/GitSha = \"$TESTING_COMMIT (testing)\"/" FerramAerospaceResearch.Base/Version.cs
-          grep -F "GitSha = \"$TESTING_COMMIT" FerramAerospaceResearch.Base/Version.cs
-          grep -F "AssemblyVersion(\"$TESTING_VERSION\")" FerramAerospaceResearch/Properties/AssemblyInfo.cs FerramAerospaceResearch.Base/Properties/AssemblyInfo.cs
-          code=$(sed -n 's/.*const byte \(Major\|Minor\|Build\|Revision\) = \([0-9]*\);.*/\2/p' FerramAerospaceResearch.Base/Version.cs | paste -sd.)
-          [ "$code" = "$TESTING_VERSION" ] || { echo "::error::Version.cs is at $code, not $TESTING_VERSION"; exit 1; }
-          jq -e --arg v "$TESTING_VERSION" '.VERSION | "\(.MAJOR).\(.MINOR).\(.PATCH).\(.BUILD)" == $v' GameData/FerramAerospaceResearch/FAR.version
-
-      - uses: KSPModdingLibs/KSPBuildTools/.github/actions/compile@1.1.1
-        with:
-          solution-file-path: FerramAerospaceResearch.sln
-
-      - name: Package
-        id: package-mod
-        run: |
-          archive=$(python -m buildtools package)
-          echo "archive=$archive" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/upload-artifact@v6
-        with:
-          name: FerramAerospaceResearch
-          path: ${{ steps.package-mod.outputs.archive }}
-
-      # what the tests take (ci/ in tests.yml's terms, ci.sh): the package's GameData (what goes in the zip players get),
-      # the unit tests' KSPBurst Unity packages, and the merge (its bundle and commit), which ci.sh prepare checks out so
-      # the tests are the merge's. The package is a folder (upload-artifact zips it), or a zip
-      - name: The tests' artifact
-        env:
-          ARCHIVE: ${{ steps.package-mod.outputs.archive }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/far-ci/GameData" "$RUNNER_TEMP/far-ci/kspburst"
-          src="$ARCHIVE"
-          if [ ! -d "$src" ]; then mkdir -p "$RUNNER_TEMP/zip"; unzip -q "$src" -d "$RUNNER_TEMP/zip"; src="$RUNNER_TEMP/zip"; fi
-          far=$(find "$src" -type d -path '*GameData/FerramAerospaceResearch' | head -n 1)
-          [ -n "$far" ] || { echo "::error::no GameData/FerramAerospaceResearch in $ARCHIVE"; exit 1; }
-          cp -r "$far" "$RUNNER_TEMP/far-ci/GameData/"
-          cp "$KSP_ROOT"/GameData/000_KSPBurst/Plugins/Unity.*.dll "$RUNNER_TEMP/far-ci/kspburst/" ||
-            echo "::warning::no KSPBurst Unity packages: the unit tests that need them fail"
-          bundle="$RUNNER_TEMP/testing/merged.bundle"
-          if [ -f "$bundle" ]; then cp "$bundle" "$RUNNER_TEMP/far-ci/"; fi
-          echo "$TESTING_COMMIT" > "$RUNNER_TEMP/far-ci/commit"
-      - uses: actions/upload-artifact@v6
-        with:
-          name: far-ci
-          path: ${{ runner.temp }}/far-ci
-
-  # the build's unit and in-game tests (KspTest's workflow, as tests.yml): no commit statuses (the merge is no branch's
-  # commit, and the run's own is master's), no caches saved, no coverage (the package has no .pdb files to measure by).
-  # ci.sh's unit tests from the copy prepare leaves in ci/: the workflow's own, whatever the merge has
-  ingame:
-    needs: build
-    uses: chambem42/KspTest/.github/workflows/ingame.yml@main
-    permissions:
-      contents: read
+      contents: write
       pull-requests: write
       statuses: write
       # the job's OIDC token, for KspTest's game broker (the game without secrets)
       id-token: write
     with:
+      force: ${{ inputs.force }}
+      dry-run: ${{ inputs.dry-run }}
+      name: Ferram Aerospace Research
+      asset: FAR
+      # Version.cs keeps the fourth number in a byte
+      max-revision: 255
+      dependencies: ModularFlightIntegrator KSPCommunityFixes KSPBurst ModuleManager
+      solution: FerramAerospaceResearch.sln
+      # config.json's replacements with the version numbers overridden, all four (master's config.json is ahead of the
+      # last stable release between a release bump's merge and its tag). A config.json.user list replaces config.json's,
+      # so CI's settings come after, for the package; then GitSha, logged at startup, the merge commit's
+      stamp: |
+        numbers=$(jq -Rc 'split(".") | map(tonumber) | {VersionMajor: .[0], VersionMinor: .[1], VersionBuild: .[2], VersionRevision: .[3]}' <<< "$TEST_RELEASE_VERSION")
+        jq -n --argjson v "$numbers" '{variables: $v}' > config.json.user
+        python -m buildtools replace
+        jq --argjson v "$numbers" '.variables += $v | del(.replace)' .github/package.config.json > config.json.user
+        sed -i -E "s/GitSha = (null|\"[^\"]*\")/GitSha = \"$TEST_RELEASE_COMMIT (testing)\"/" FerramAerospaceResearch.Base/Version.cs
+        grep -F "GitSha = \"$TEST_RELEASE_COMMIT" FerramAerospaceResearch.Base/Version.cs
+        grep -F "AssemblyVersion(\"$TEST_RELEASE_VERSION\")" FerramAerospaceResearch/Properties/AssemblyInfo.cs FerramAerospaceResearch.Base/Properties/AssemblyInfo.cs
+        code=$(sed -n 's/.*const byte \(Major\|Minor\|Build\|Revision\) = \([0-9]*\);.*/\2/p' FerramAerospaceResearch.Base/Version.cs | paste -sd.)
+        [ "$code" = "$TEST_RELEASE_VERSION" ] || { echo "::error::Version.cs is at $code, not $TEST_RELEASE_VERSION"; exit 1; }
+        jq -e --arg v "$TEST_RELEASE_VERSION" '.VERSION | "\(.MAJOR).\(.MINOR).\(.PATCH).\(.BUILD)" == $v' GameData/FerramAerospaceResearch/FAR.version
+      # the release: buildtools' package (a zip, or a folder), unpacked. The tests (ci/ in the test jobs, ci.sh): its
+      # GameData/FerramAerospaceResearch, and KSPBurst's Unity packages for the unit tests
+      package: |
+        archive=$(python -m buildtools package)
+        if [ -d "$archive" ]; then cp -r "$archive"/. "$RELEASE_DIR/"; else unzip -q "$archive" -d "$RELEASE_DIR"; fi
+        far=$(find "$RELEASE_DIR" -type d -path '*GameData/FerramAerospaceResearch' | head -n 1)
+        [ -n "$far" ] || { echo "::error::no GameData/FerramAerospaceResearch in $archive"; exit 1; }
+        mkdir -p "$TESTS_DIR/GameData" "$TESTS_DIR/kspburst"
+        cp -r "$far" "$TESTS_DIR/GameData/"
+        cp "$KSP_ROOT"/GameData/000_KSPBurst/Plugins/Unity.*.dll "$TESTS_DIR/kspburst/" ||
+          echo "::warning::no KSPBurst Unity packages: the unit tests that need them fail"
       test-project: KspTests/FerramAerospaceResearch.KspTests.Run
-      title: FAR testing build tests
+      title: FAR test release tests
       legs: '["windows", "linux"]'
       shards: 5
-      artifact: far-ci
-      artifact-path: ci
       prepare: bash .github/scripts/ci.sh prepare
-      before: bash ci/ci.sh unit
-      statuses: false
-      save-caches: false
-
-  # only once the tests passed, and not on a dry run
-  publish:
-    needs: [collect, build, ingame]
-    if: ${{ !inputs.dry-run }}
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      TESTING_COMMIT: ${{ needs.collect.outputs.commit }}
-      TESTING_VERSION: ${{ needs.collect.outputs.version }}
-      TESTING_TAG: ${{ needs.collect.outputs.tag }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.collect.outputs.master }}
-          fetch-depth: 0
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: testing-merge
-          path: ${{ runner.temp }}/testing
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: FerramAerospaceResearch
-          path: dist
-
-      - name: Publish the prerelease
-        run: |
-          bundle="$RUNNER_TEMP/testing/merged.bundle"
-          if [ -f "$bundle" ]; then git fetch -q "$bundle" HEAD; fi
-          if gh release view "$TESTING_TAG" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            echo "::notice::$TESTING_TAG is published already"
-            exit 0
-          fi
-          # left by a run cancelled between the tag and the release: this one's if it is at this commit
-          existing=$(git ls-remote --tags origin "refs/tags/$TESTING_TAG" | cut -f1)
-          if [ "$existing" = "$TESTING_COMMIT" ]; then
-            echo "$TESTING_TAG is already at ${TESTING_COMMIT::8}"
-          elif [ -n "$existing" ]; then
-            echo "::error::$TESTING_TAG already exists, at ${existing::8}, not ${TESTING_COMMIT::8}. Delete it (no release uses it?) and re-run"
-            exit 1
-          else
-            git tag "$TESTING_TAG" "$TESTING_COMMIT"
-            if ! git push -q origin "refs/tags/$TESTING_TAG"; then
-              echo "::error::could not push $TESTING_TAG. GITHUB_TOKEN cannot push commits changing .github/workflows: does a pull request?"
-              exit 1
-            fi
-          fi
-          zip="$PWD/FAR_${TESTING_VERSION}_testing.zip"
-          (cd dist && zip -qr "$zip" .)
-          if ! gh release create "$TESTING_TAG" "$zip" -R "$GITHUB_REPOSITORY" --verify-tag --prerelease --latest=false \
-              --title "Ferram Aerospace Research v$TESTING_VERSION (testing)" --notes-file "$RUNNER_TEMP/testing/notes.md"; then
-            git push -q origin ":refs/tags/$TESTING_TAG" || true
-            exit 1
-          fi
+      before: bash .github/scripts/ci.sh unit
