@@ -70,6 +70,10 @@ Set all the other winglet/control surface values to zero
 
 ## CHANGELOG
 
+------------------------master branch---------------------  
+
+FAR no longer references TweakScale's Scale_Redist.dll, so the burst compiler can compile FAR and every other mod again with TweakScale installed; FAR follows TweakScale's rescale event instead [#190](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/190)  
+
 0.17.0.0V "Maxwell"------------------------------------  
 
 Wing aspect ratio is computed from the whole wing a panel belongs to, so a wing split into several panels flies like the same wing as one panel. Turn off "whole-wing aspect ratio" in the Model Options window (right-click FAR's toolbar button) for the old behavior [#174](https://github.com/KSPModStewards/Ferram-Aerospace-Research/pull/174)  
