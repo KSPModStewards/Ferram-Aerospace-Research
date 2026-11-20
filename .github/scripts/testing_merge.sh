@@ -4,8 +4,7 @@
 # requests) and notes.md (the release notes). Outputs: build (false: nothing to publish), master, commit, version, tag.
 # Nothing of the pull requests runs here: git merges them, that is all.
 #
-# Env: REPO (owner/name), LABEL, BASE (the default branch), OUT; from the event ACTION, PR, MERGED (all optional);
-# FORCE=true publishes an unchanged set. Local dry run, which takes no labels off and posts no comments:
+# Env: REPO (owner/name), LABEL, BASE (the default branch), OUT; FORCE=true publishes an unchanged set. Local dry run, which takes no labels off and posts no comments:
 #   DRY_RUN=1 REPO=KSPModStewards/Ferram-Aerospace-Research LABEL=ready-for-testing BASE=master OUT=/tmp/t \
 #     bash .github/scripts/testing_merge.sh        (on a scratch checkout of master: it merges into HEAD)
 set -euo pipefail
@@ -35,15 +34,6 @@ writer() {
     *) return 1 ;;
   esac
 }
-
-if [ "${ACTION:-}" = closed ]; then
-  unlabel "$PR"
-  if [ "${MERGED:-}" = true ]; then
-    echo "::notice::#$PR was merged: master has it now, the testing build stays as it is"
-    output build false
-    exit 0
-  fi
-fi
 
 master=$(git rev-parse HEAD)
 output master "$master"

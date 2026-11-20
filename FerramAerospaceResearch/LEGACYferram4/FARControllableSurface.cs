@@ -859,7 +859,7 @@ namespace ferram4
             Vector3 CoM = Vector3.zero;
             if (HighLogic.LoadedSceneIsEditor)
             {
-                // as the editor's analyses take it
+                // as the editor's analyses take it; skips parts gone since the list was made (dropped back in the bin)
                 FARAeroUtil.EditorMassAndCoM(VesselPartList, out Vector3d com);
                 CoM = com;
             }
@@ -868,6 +868,9 @@ namespace ferram4
                 float mass = 0;
                 foreach (Part p in VesselPartList)
                 {
+                    // a part the list was made with can be gone since
+                    if (p == null)
+                        continue;
                     CoM += p.transform.position * p.mass;
                     mass += p.mass;
                 }

@@ -50,7 +50,6 @@ using FerramAerospaceResearch.FARAeroComponents;
 using FerramAerospaceResearch.Settings;
 using KSP.Localization;
 using KSPCommunityFixes;
-using TweakScale;
 using UnityEngine;
 
 // ReSharper disable once CheckNamespace
@@ -61,7 +60,7 @@ namespace ferram4
     ///     It uses Prandtl lifting line theory to calculate the basic lift and drag coefficients and includes compressibility
     ///     corrections for subsonic and supersonic flows; transonic regime has placeholder
     /// </summary>
-    public class FARWingAerodynamicModel : FARBaseAerodynamics, IRescalable<FARWingAerodynamicModel>, IPartMassModifier
+    public class FARWingAerodynamicModel : FARBaseAerodynamics, IPartMassModifier
     {
         protected const double criticalCl = 1.6;
         // rawAoAmax is read by FARWingInteraction from upstream wings (per-thread
@@ -258,10 +257,20 @@ namespace ferram4
             return ModifierChangeWhen.FIXED;
         }
 
-        public void OnRescale(ScalingFactor factor)
+        // TweakScale's rescale (TweakScaleEvent)
+        [KSPEvent]
+        public void OnPartScaleChanged(BaseEventDetails data)
         {
-            b_2_actual = factor.absolute.linear * b_2;
-            MAC_actual = factor.absolute.linear * MAC;
+            TweakScaleEvent.Handle(this, data, OnRescale);
+        }
+
+        // TweakScale Rescaled's Harmony transpiler finds this method by its name alone and rewrites the MassScale lookup
+        // below by matching its instructions exactly. Keep the name unique (an overload makes the patch fail) and that
+        // line as it is; Rescaled logs "Successfully patched ferram4.FARWingAerodynamicModel.OnRescale" when it matched
+        public void OnRescale(float linearScale)
+        {
+            b_2_actual = linearScale * b_2;
+            MAC_actual = linearScale * MAC;
             if (part.Modules.Contains("TweakScale"))
             {
                 PartModule m = part.Modules["TweakScale"];

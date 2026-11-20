@@ -346,6 +346,64 @@ namespace FerramAerospaceResearch.KspTests
             }
         }
 
+        /// <summary>
+        /// The Aeris 4A with a delta wing scaled to 2 through TweakScale, saved and loaded again: TweakScale rescales the
+        /// loaded wing as it starts, and FAR's wing model and geometry of it are the scaled ones (span and mean chord
+        /// twice the prefab's, mesh twice as large as an unscaled wing's).
+        /// </summary>
+        [UITest(Kind = "Check", Requires = "Scale", Mods = InteropMods, StartsAt = StartState.Sph, Craft = Far.Plane, TimeoutSec = 900)]
+        public static IEnumerator TweakScale_ScaledWingLoadsScaled(TestContext ctx)
+        {
+            yield return Far.WaitForEditorVoxels();
+            yield return Far.Settled("the Aeris 4A");
+            Part part = EditorLogic.fetch.ship.parts.First(p => p.partInfo.name == "deltaWing");
+            var wing = part.FindModuleImplementing<FARWingAerodynamicModel>();
+            var geometry = part.FindModuleImplementing<GeometryPartModule>();
+            PartModule tweakScale = part.Modules["TweakScale"];
+            double b2 = wing.b_2, mac = wing.MAC;
+            Vector3 meshSize = geometry.localMeshBounds.size;
+            string path = System.IO.Path.Combine(ctx.SaveDir, "Ships", "SPH", "FAR TweakScale Reload.craft");
+            using var log = new ExceptionLog();
+            try
+            {
+                ctx.Step("Scaled to 2 and saved");
+                yield return SetTweakScale(part, tweakScale, 2);
+                Assert.Near(2, ((float)Reflect.Get(tweakScale, "currentScaleFactor")), 1e-3, "TweakScale's scale factor");
+                yield return Wait.Until(() => geometry.Ready, 30, "FAR's geometry of the wing", shot: false);
+                EditorLogic.fetch.ship.SaveShip().Save(path);
+
+                ctx.Step("Loaded again");
+                EditorLogic.LoadShipFromFile(path);
+                yield return Wait.Frames(5);
+                yield return Far.WaitForEditorVoxels();
+                yield return Far.Settled("the Aeris 4A loaded scaled");
+                List<Part> scaled = EditorLogic.fetch.ship.parts
+                    .Where(p => p.partInfo.name == "deltaWing" && p.Modules.Contains("TweakScale") &&
+                                ((float)Reflect.Get(p.Modules["TweakScale"], "currentScaleFactor")) > 1.5f)
+                    .ToList();
+                Assert.True(scaled.Count > 0, "a delta wing loaded scaled");
+                foreach (Part p in scaled)
+                {
+                    var w = p.FindModuleImplementing<FARWingAerodynamicModel>();
+                    var g = p.FindModuleImplementing<GeometryPartModule>();
+                    yield return Wait.Until(() => g.Ready, 30, "FAR's geometry of the loaded wing", shot: false);
+                    float f = (float)Reflect.Get(p.Modules["TweakScale"], "currentScaleFactor");
+                    Vector3 size = g.localMeshBounds.size;
+                    ctx.Record("loaded " + p.persistentId, $"factor {f:F3}, span {w.b_2_actual:F4} m, MAC {w.MAC_actual:F4} m, mesh {size}");
+                    Assert.Near(f * b2, w.b_2_actual, 1e-4 * b2, "the loaded wing's span (m)");
+                    Assert.Near(f * mac, w.MAC_actual, 1e-4 * mac, "the loaded wing's mean chord (m)");
+                    Assert.Near(f * meshSize.magnitude, size.magnitude, 0.02 * f * meshSize.magnitude,
+                                $"FAR's geometry of the loaded wing ({size} from {meshSize})");
+                }
+                log.AssertNone("loading a craft with a wing scaled by TweakScale");
+            }
+            finally
+            {
+                EditorLogic.LoadShipFromFile(ctx.Craft);
+                try { System.IO.File.Delete(path); } catch (Exception) { }
+            }
+        }
+
         // ------------------------------------------------------------------------------------------ KSPWheel
 
         /// <summary>
