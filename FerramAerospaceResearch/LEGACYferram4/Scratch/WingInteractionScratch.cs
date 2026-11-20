@@ -32,6 +32,9 @@ namespace ferram4
         public double EffectiveUpstreamMAC;
         public double EffectiveUpstreamb_2;
         public double EffectiveUpstreamArea;
+        // the span and area of the wings ahead that this surface lies behind, summed over them (linear flap lift)
+        public double CoveredUpstreamb_2;
+        public double CoveredUpstreamArea;
         public double EffectiveUpstreamLiftSlope;
         public double EffectiveUpstreamStall;
         public double EffectiveUpstreamCosSweepAngle;
@@ -48,6 +51,8 @@ namespace ferram4
             EffectiveUpstreamMAC = src.EffectiveUpstreamMAC;
             EffectiveUpstreamb_2 = src.EffectiveUpstreamb_2;
             EffectiveUpstreamArea = src.EffectiveUpstreamArea;
+            CoveredUpstreamb_2 = src.CoveredUpstreamb_2;
+            CoveredUpstreamArea = src.CoveredUpstreamArea;
             EffectiveUpstreamLiftSlope = src.EffectiveUpstreamLiftSlope;
             EffectiveUpstreamStall = src.EffectiveUpstreamStall;
             EffectiveUpstreamCosSweepAngle = src.EffectiveUpstreamCosSweepAngle;

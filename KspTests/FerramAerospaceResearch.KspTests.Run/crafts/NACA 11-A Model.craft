@@ -1,0 +1,671 @@
+ship = NACA 11-A Model
+version = 1.2.0
+description = The NACA Model 11-A flying-boat hull (TN 470) from its Table I offsets, the tank model's own size, 17 in beam: one ProceduralParts Spine (CustomProceduralParts), its stations embedded as custom sections
+type = SPH
+size = 2,2,8
+PART
+{
+	part = proceduralTankLiquid_4294811080
+	partName = Part
+	pos = 0,3,0
+	attPos = 0,0,0
+	attPos0 = 0,3,0
+	rot = 0.707106829,0,0,0.707106829
+	attRot = 0,0,0,1
+	attRot0 = 0.707106829,0,0,0.707106829
+	mir = 1,1,1
+	symMethod = Mirror
+	autostrutMode = Off
+	istg = 0
+	resPri = 0
+	dstg = 0
+	sidx = -1
+	sqor = -1
+	sepI = 0
+	attm = 0
+	modCost = 0
+	modMass = 0
+	modSize = 0,0,0
+	MODULE
+	{
+		name = ProceduralPart
+		isEnabled = True
+		density = 0
+		forceLegacyTextures = False
+		textureSet = Original
+		capTextureIndex = 0
+		shapeName = Spine
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+			upgrade = ProceduralPartsTank1500L
+			upgrade = ProceduralPartsTank2500L
+			upgrade = ProceduralPartsTankAviation
+			upgrade = ProceduralPartsTank20000L
+			upgrade = ProceduralPartsTank37000L
+			upgrade = ProceduralPartsTank45000L
+			upgrade = ProceduralPartsTank85000L
+			upgrade = ProceduralPartsTankMiniaturization
+			upgrade = ProceduralPartsTankUnlimited
+		}
+	}
+	MODULE
+	{
+		name = ProceduralShapeSpine
+		isEnabled = True
+		length = 2.43840
+		hScale = 0.1
+		vScale = 0.1
+		sectionPoints = 96
+		stagingEnabled = True
+		CROSS_SECTION
+		{
+			name = NACA11A_00
+			v = 0.00000,-1.00000
+			v = 1.00000,-1.00000
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-1.00000
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_01
+			v = 0.00000,-1.00000
+			v = 0.10222,-0.82167
+			v = 0.30222,-0.53404
+			v = 0.59556,-0.24640
+			v = 0.66667,-0.19847
+			v = 1.00000,-0.01055
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.01055
+			v = -0.66667,-0.19847
+			v = -0.59556,-0.24640
+			v = -0.30222,-0.53404
+			v = -0.10222,-0.82167
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_02
+			v = 0.00000,-1.00000
+			v = 0.09974,-0.86441
+			v = 0.29921,-0.61017
+			v = 0.39370,-0.50678
+			v = 0.54856,-0.35593
+			v = 0.78740,-0.18136
+			v = 0.93176,-0.10169
+			v = 1.00000,-0.07288
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.07288
+			v = -0.93176,-0.10169
+			v = -0.78740,-0.18136
+			v = -0.54856,-0.35593
+			v = -0.39370,-0.50678
+			v = -0.29921,-0.61017
+			v = -0.09974,-0.86441
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_03
+			v = 0.00000,-1.00000
+			v = 0.20676,-0.76849
+			v = 0.29821,-0.66881
+			v = 0.44533,-0.52733
+			v = 0.59642,-0.39550
+			v = 0.75547,-0.28617
+			v = 0.89463,-0.20740
+			v = 1.00000,-0.15595
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.15595
+			v = -0.89463,-0.20740
+			v = -0.75547,-0.28617
+			v = -0.59642,-0.39550
+			v = -0.44533,-0.52733
+			v = -0.29821,-0.66881
+			v = -0.20676,-0.76849
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_04
+			v = 0.00000,-1.00000
+			v = 0.05167,-0.94856
+			v = 0.25000,-0.76150
+			v = 0.29833,-0.71473
+			v = 0.50000,-0.54014
+			v = 0.58167,-0.48090
+			v = 0.75000,-0.36711
+			v = 0.97333,-0.24708
+			v = 1.00000,-0.23617
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.23617
+			v = -0.97333,-0.24708
+			v = -0.75000,-0.36711
+			v = -0.58167,-0.48090
+			v = -0.50000,-0.54014
+			v = -0.29833,-0.71473
+			v = -0.25000,-0.76150
+			v = -0.05167,-0.94856
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_05
+			v = 0.00000,-1.00000
+			v = 0.15724,-0.88111
+			v = 0.20690,-0.84349
+			v = 0.41379,-0.69601
+			v = 0.47034,-0.65538
+			v = 0.62069,-0.56057
+			v = 0.82759,-0.43868
+			v = 0.84414,-0.42965
+			v = 1.00000,-0.35440
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.35440
+			v = -0.84414,-0.42965
+			v = -0.82759,-0.43868
+			v = -0.62069,-0.56057
+			v = -0.47034,-0.65538
+			v = -0.41379,-0.69601
+			v = -0.20690,-0.84349
+			v = -0.15724,-0.88111
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_06
+			v = 0.00000,-1.00000
+			v = 0.18892,-0.88427
+			v = 0.23678,-0.85460
+			v = 0.37783,-0.76855
+			v = 0.56675,-0.66024
+			v = 0.61587,-0.63205
+			v = 0.75567,-0.55638
+			v = 1.00000,-0.42878
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.42878
+			v = -0.75567,-0.55638
+			v = -0.61587,-0.63205
+			v = -0.56675,-0.66024
+			v = -0.37783,-0.76855
+			v = -0.23678,-0.85460
+			v = -0.18892,-0.88427
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_07
+			v = 0.00000,-1.00000
+			v = 0.18116,-0.90280
+			v = 0.29227,-0.84094
+			v = 0.36232,-0.80412
+			v = 0.54348,-0.71134
+			v = 0.71498,-0.62003
+			v = 0.72464,-0.61561
+			v = 0.90580,-0.52135
+			v = 1.00000,-0.47128
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.47128
+			v = -0.90580,-0.52135
+			v = -0.72464,-0.61561
+			v = -0.71498,-0.62003
+			v = -0.54348,-0.71134
+			v = -0.36232,-0.80412
+			v = -0.29227,-0.84094
+			v = -0.18116,-0.90280
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_08
+			v = 0.00000,-1.00000
+			v = 1.00000,-0.48902
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.48902
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_09
+			v = 0.00000,-1.00000
+			v = 1.00000,-0.48945
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.48945
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_10
+			v = 0.00000,-1.00000
+			v = 1.00000,-0.49241
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.49241
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_11
+			v = 0.00000,-1.00000
+			v = 1.00000,-0.49425
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.49425
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_12
+			v = 0.00000,-1.00000
+			v = 1.00000,-0.49714
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.49714
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_13
+			v = 0.00000,-1.00000
+			v = 1.00000,-0.47619
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.47619
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_14
+			v = 0.00000,-1.00000
+			v = 1.00000,-0.45721
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.45721
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_15
+			v = 0.00000,-1.00000
+			v = 0.96429,-0.46443
+			v = 0.96429,-0.31575
+			v = 1.00000,-0.29496
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.29496
+			v = -0.96429,-0.31575
+			v = -0.96429,-0.46443
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_16
+			v = 0.00000,-1.00000
+			v = 0.85943,-0.52159
+			v = 0.85943,-0.25748
+			v = 1.00000,-0.17774
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.17774
+			v = -0.85943,-0.25748
+			v = -0.85943,-0.52159
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_17
+			v = 0.00000,-1.00000
+			v = 0.66887,-0.63731
+			v = 0.66887,-0.24525
+			v = 1.00000,-0.06563
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.06563
+			v = -0.66887,-0.24525
+			v = -0.66887,-0.63731
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_18
+			v = 0.00000,-1.00000
+			v = 0.38257,-0.80738
+			v = 0.38257,-0.27993
+			v = 1.00000,0.03150
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,0.03150
+			v = -0.38257,-0.27993
+			v = -0.38257,-0.80738
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_19
+			v = 0.00000,-1.00000
+			v = 0.03367,-0.98510
+			v = 0.03367,-0.33333
+			v = 1.00000,0.11173
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,0.11173
+			v = -0.03367,-0.33333
+			v = -0.03367,-0.98510
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_20
+			v = 0.00000,-1.00000
+			v = 1.00000,-0.31768
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.31768
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_21
+			v = 0.00000,-1.00000
+			v = 1.00000,-0.32102
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.32102
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_22
+			v = 0.00000,-1.00000
+			v = 1.00000,-0.35364
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.35364
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_23
+			v = 0.00000,-1.00000
+			v = 1.00000,-0.42558
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.42558
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_24
+			v = 0.00000,-1.00000
+			v = 1.00000,-0.56593
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.56593
+		}
+		CROSS_SECTION
+		{
+			name = NACA11A_25
+			v = 0.00000,-1.00000
+			v = 1.00000,-0.86400
+			v = 1.00000,1.00000
+			v = -1.00000,1.00000
+			v = -1.00000,-0.86400
+		}
+		SPINE_NODE
+		{
+			position = 0.000000
+			sizeH = 0.20320
+			sizeV = 0.63500
+			offsetV = -0.31750
+			section = NACA11A_25
+		}
+		SPINE_NODE
+		{
+			position = 0.050000
+			sizeH = 0.96520
+			sizeV = 0.92456
+			offsetV = -0.46228
+			section = NACA11A_24
+		}
+		SPINE_NODE
+		{
+			position = 0.100000
+			sizeH = 1.68148
+			sizeV = 1.21158
+			offsetV = -0.60579
+			section = NACA11A_23
+		}
+		SPINE_NODE
+		{
+			position = 0.150000
+			sizeH = 2.34188
+			sizeV = 1.50114
+			offsetV = -0.75057
+			section = NACA11A_22
+		}
+		SPINE_NODE
+		{
+			position = 0.200000
+			sizeH = 2.93624
+			sizeV = 1.78816
+			offsetV = -0.89408
+			section = NACA11A_21
+		}
+		SPINE_NODE
+		{
+			position = 0.207292
+			sizeH = 3.01752
+			sizeV = 1.83896
+			offsetV = -0.91948
+			section = NACA11A_20
+		}
+		SPINE_NODE
+		{
+			position = 0.208333
+			sizeH = 3.01752
+			sizeV = 2.72796
+			offsetV = -1.36398
+			section = NACA11A_19
+		}
+		SPINE_NODE
+		{
+			position = 0.250000
+			sizeH = 3.43916
+			sizeV = 2.82194
+			offsetV = -1.41097
+			section = NACA11A_18
+		}
+		SPINE_NODE
+		{
+			position = 0.300000
+			sizeH = 3.85064
+			sizeV = 2.94132
+			offsetV = -1.47066
+			section = NACA11A_17
+		}
+		SPINE_NODE
+		{
+			position = 0.350000
+			sizeH = 4.11988
+			sizeV = 3.05816
+			offsetV = -1.52908
+			section = NACA11A_16
+		}
+		SPINE_NODE
+		{
+			position = 0.400000
+			sizeH = 4.26720
+			sizeV = 3.17754
+			offsetV = -1.58877
+			section = NACA11A_15
+		}
+		SPINE_NODE
+		{
+			position = 0.450000
+			sizeH = 4.31800
+			sizeV = 3.29438
+			offsetV = -1.64719
+			section = NACA11A_14
+		}
+		SPINE_NODE
+		{
+			position = 0.498958
+			sizeH = 4.31800
+			sizeV = 3.41376
+			offsetV = -1.70688
+			section = NACA11A_13
+		}
+		SPINE_NODE
+		{
+			position = 0.500000
+			sizeH = 4.31800
+			sizeV = 3.55600
+			offsetV = -1.77800
+			section = NACA11A_12
+		}
+		SPINE_NODE
+		{
+			position = 0.550000
+			sizeH = 4.31800
+			sizeV = 3.53568
+			offsetV = -1.76784
+			section = NACA11A_11
+		}
+		SPINE_NODE
+		{
+			position = 0.600000
+			sizeH = 4.31800
+			sizeV = 3.51282
+			offsetV = -1.75641
+			section = NACA11A_10
+		}
+		SPINE_NODE
+		{
+			position = 0.650000
+			sizeH = 4.31292
+			sizeV = 3.49250
+			offsetV = -1.74625
+			section = NACA11A_09
+		}
+		SPINE_NODE
+		{
+			position = 0.700000
+			sizeH = 4.28244
+			sizeV = 3.46964
+			offsetV = -1.73482
+			section = NACA11A_08
+		}
+		SPINE_NODE
+		{
+			position = 0.750000
+			sizeH = 4.20624
+			sizeV = 3.44932
+			offsetV = -1.72466
+			section = NACA11A_07
+		}
+		SPINE_NODE
+		{
+			position = 0.800000
+			sizeH = 4.03352
+			sizeV = 3.42392
+			offsetV = -1.71196
+			section = NACA11A_06
+		}
+		SPINE_NODE
+		{
+			position = 0.850000
+			sizeH = 3.68300
+			sizeV = 3.37566
+			offsetV = -1.68783
+			section = NACA11A_05
+		}
+		SPINE_NODE
+		{
+			position = 0.900000
+			sizeH = 3.04800
+			sizeV = 3.25882
+			offsetV = -1.62941
+			section = NACA11A_04
+		}
+		SPINE_NODE
+		{
+			position = 0.925000
+			sizeH = 2.55524
+			sizeV = 3.15976
+			offsetV = -1.57988
+			section = NACA11A_03
+		}
+		SPINE_NODE
+		{
+			position = 0.950000
+			sizeH = 1.93548
+			sizeV = 2.99720
+			offsetV = -1.49860
+			section = NACA11A_02
+		}
+		SPINE_NODE
+		{
+			position = 0.975000
+			sizeH = 1.14300
+			sizeV = 2.64922
+			offsetV = -1.32461
+			section = NACA11A_01
+		}
+		SPINE_NODE
+		{
+			position = 1.000000
+			sizeH = 0.12700
+			sizeV = 1.01600
+			offsetV = -0.50800
+			section = NACA11A_00
+		}
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = TankContentSwitcher
+		isEnabled = True
+		tankType = LiquidFuel
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = GeometryPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = FARAeroPartModule
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+}
