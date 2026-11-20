@@ -6,11 +6,10 @@ name: Testing build
 # CKAN indexes a prerelease with release_status testing, which it offers to players whose stability tolerance for FAR
 # (or all mods) is Testing; the next stable release, numbered higher, replaces it.
 #
-# It runs when the label goes on or off a pull request, and when a labelled one gets commits, is reopened or is closed
-# (a merged one only loses the label: master has it). Each run takes every labelled pull request, so a newer run
-# cancels an older one, and none publishes when master and the labelled commits are what the last testing build has.
-# With no pull request labelled, a build of master alone replaces the last testing build (none after a stable release).
-# Run it by hand to rebuild (force: even unchanged).
+# It runs only by hand (Actions > Testing build > Run workflow): the label picks what goes in, it starts nothing. Each
+# run takes every open labelled pull request, so a newer run cancels an older one, and none publishes when master and
+# the labelled commits are what the last testing build has (force: publish anyway). With no pull request labelled, a
+# build of master alone replaces the last testing build (none after a stable release).
 #
 # Who: the label counts when the last to put it on has write access. A pull request by someone without write access
 # also needs that person's review of its latest commit, as run-ingame does in tests.yml, so a push after the review
@@ -26,8 +25,6 @@ name: Testing build
 # .github/workflows, so a pull request that does cannot be published this way.
 
 on:
-  pull_request_target:
-    types: [labeled, unlabeled, synchronize, reopened, closed]
   workflow_dispatch:
     inputs:
       force:
@@ -36,17 +33,11 @@ on:
         default: false
 
 env:
-  LABEL: ready-for-testing # also in collect's if
+  LABEL: ready-for-testing
 
 jobs:
   collect:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      ((github.event.action == 'labeled' || github.event.action == 'unlabeled') &&
-        github.event.label.name == 'ready-for-testing') ||
-      (github.event.action != 'labeled' && github.event.action != 'unlabeled' &&
-        contains(github.event.pull_request.labels.*.name, 'ready-for-testing'))
-    # one testing build at a time, the newest. Per job, so the pull request events the if drops cancel nothing
+    # one testing build at a time, the newest
     concurrency:
       group: testing-build
       cancel-in-progress: true
@@ -73,9 +64,6 @@ jobs:
           REPO: ${{ github.repository }}
           BASE: ${{ github.event.repository.default_branch }}
           OUT: ${{ runner.temp }}/testing
-          ACTION: ${{ github.event.action }}
-          PR: ${{ github.event.pull_request.number }}
-          MERGED: ${{ github.event.pull_request.merged }}
           FORCE: ${{ inputs.force }}
         run: bash .github/scripts/testing_merge.sh
 
