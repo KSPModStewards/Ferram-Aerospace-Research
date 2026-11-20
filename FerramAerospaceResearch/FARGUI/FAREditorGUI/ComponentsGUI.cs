@@ -49,7 +49,9 @@ using System.Linq;
 using ferram4;
 using FerramAerospaceResearch.FARAeroComponents;
 using FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation;
+using FerramAerospaceResearch.FARPartGeometry;
 using KSP.Localization;
+using KSPCommunityFixes;
 using UnityEngine;
 
 namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
@@ -57,8 +59,9 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
     /// <summary>
     ///     The editor's Components tab: the craft part by part, as FAR models it. A table of the parts that make forces (wing
     ///     panels, control surfaces, bodies) with each one's area, aspect ratios, wing, shielding and forces at a flight
-    ///     condition; the parts tinted by any of those; the flaps and spoilers set (and shown) for it; the voxels; and the
-    ///     whole-wing aspect ratio switched on and off to compare it with each panel's own.
+    ///     condition, and (asked for) the parts that make none, with why; the parts tinted by any of those; the flaps and
+    ///     spoilers set (and shown) for it; the voxels; and the whole-wing aspect ratio switched on and off to compare it
+    ///     with each panel's own.
     /// </summary>
     internal class ComponentsGUI
     {
@@ -87,6 +90,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             // forces at the condition (kN) and the pitching moment about the CoM (kN m), and the part's share of the
             // craft's coefficients (on the wing reference area and MAC, as the other editor tabs report the craft's)
             public double Lift, Drag, Moment, Cl, Cd, Cm;
+            // why a part has no forces here (a non-aero row); null for the others
+            public string Reason;
         }
 
         private readonly EditorSimManager simManager;
@@ -106,6 +111,12 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         private Vector2 scroll;
         private readonly List<Row> rows = new List<Row>();
         private string summary = "";
+        // the craft's parts with no forces here, each with why (Reason), shown under the others in the table when asked
+        // for; kept out of rows, which the tints and the legend go by
+        private readonly List<Row> nonAeroRows = new List<Row>();
+        private bool showNonAero, nonAeroToggled;
+        private GUIStyle nonAeroStyle;
+        private static readonly Color NonAeroTextColor = new Color(0.6f, 0.75f, 1f);
         // the legend as text (for scripts), and as drawn: a title, then a gradient bar with the value under each of its
         // colors (ticks: the position along the bar, 0..1, and the value) or swatches of color with what each means
         private string legend = "";
@@ -210,6 +221,17 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 resized = true;
             }
 
+            GUI.enabled = showTable;
+            if (GUILayout.Button(showNonAero ? "Hide Non-Aero" : "Show Non-Aero", GUILayout.Width(120)))
+                nonAeroToggled = true;
+            GUI.enabled = true;
+            // switched in the layout pass only: the rows it adds or takes away have to be the same in the events after it
+            if (nonAeroToggled && Event.current.type == EventType.Layout)
+            {
+                nonAeroToggled = false;
+                showNonAero = !showNonAero;
+            }
+
             GUILayout.FlexibleSpace();
             GUILayout.Label("Opacity " + opacity.ToString("F2", CultureInfo.InvariantCulture), GUILayout.Width(85));
             float o = GUILayout.HorizontalSlider(opacity, 0, 1, GUILayout.Width(90));
@@ -264,11 +286,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             foreach (Row r in rows)
             {
                 GUILayout.BeginHorizontal();
-                if (GUILayout.Button((r.Part == selected ? "> " : "") + r.Name, nameStyle, GUILayout.Width(wName)))
-                {
-                    selected = r.Part == selected ? null : r.Part;
-                    ApplyTints();
-                }
+                NameButton(r, nameStyle, wName);
                 bool wing = r.Wing != null;
                 Cell(wing ? r.S.ToString("F2", CultureInfo.InvariantCulture) : "", wNum);
                 Cell(wing ? r.OwnAR.ToString("F2", CultureInfo.InvariantCulture) : "", wNum);
@@ -284,7 +302,35 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 GUILayout.EndHorizontal();
             }
 
+            if (showNonAero)
+            {
+                if (nonAeroStyle == null)
+                {
+                    nonAeroStyle = new GUIStyle(nameStyle);
+                    nonAeroStyle.normal.textColor = nonAeroStyle.hover.textColor = nonAeroStyle.active.textColor = NonAeroTextColor;
+                }
+
+                // the reason across the number columns
+                float reasonWidth = heads.Length * wNum + (heads.Length - 1) * Math.Max(margin.left, margin.right);
+                foreach (Row r in nonAeroRows)
+                {
+                    GUILayout.BeginHorizontal();
+                    NameButton(r, nonAeroStyle, wName);
+                    GUILayout.Label(r.Reason, nonAeroStyle, GUILayout.Width(reasonWidth));
+                    GUILayout.EndHorizontal();
+                }
+            }
+
             GUILayout.EndScrollView();
+        }
+
+        // the row's part, picked (lit) or let go by a click on its name
+        private void NameButton(Row r, GUIStyle style, int width)
+        {
+            if (!GUILayout.Button((r.Part == selected ? "> " : "") + r.Name, style, GUILayout.Width(width)))
+                return;
+            selected = r.Part == selected ? null : r.Part;
+            ApplyTints();
         }
 
         private static void Cell(string text, int width)
@@ -304,6 +350,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
         private void Compute()
         {
             rows.Clear();
+            nonAeroRows.Clear();
             List<Part> parts = EditorLogic.SortedShipList;
             List<FARWingAerodynamicModel> wings = simManager.Wings;
             List<FARAeroSection> sections = simManager.AeroSections;
@@ -331,19 +378,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                 up = -Vector3.forward;
             }
 
-            Vector3d com = Vector3d.zero;
-            double mass = 0;
-            foreach (Part p in parts)
-            {
-                if (FARAeroUtil.IsNonphysical(p))
-                    continue;
-                double m = p.mass + (p.Resources.Count > 0 ? p.GetResourceMass() : 0);
-                com += m * (Vector3d)p.transform.TransformPoint(p.CoMOffset);
-                mass += m;
-            }
-
-            if (mass > 0)
-                com /= mass;
+            FARAeroUtil.EditorMassAndCoM(parts, out Vector3d com);
 
             Vector3d velocity = (forward * Math.Cos(alpha) - up * Math.Sin(alpha)).normalized;
             Vector3d liftDown = (-forward * Math.Sin(alpha) - up * Math.Cos(alpha)).normalized;
@@ -356,15 +391,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
             {
                 if (byPart.TryGetValue(p, out Row r))
                     return r;
-                // which side, and how far out (m): the craft's parts of one kind share a title
-                Vector3 at = root.InverseTransformPoint(p.transform.position);
-                string side = Math.Abs(at.x) < 0.05 ? "C" : at.x > 0 ? "R" : "L";
-                r = new Row
-                {
-                    Part = p,
-                    Name = string.Format(CultureInfo.InvariantCulture, "{0} {1} {2:F1}",
-                                         p.partInfo != null ? p.partInfo.title : p.name, side, Math.Abs(at.x))
-                };
+                r = new Row {Part = p, Name = NameOf(p, root)};
                 byPart[p] = r;
                 rows.Add(r);
                 return r;
@@ -469,6 +496,51 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
                                     "{7} wings ({8})",
                                     mach, q, cl, cd, cm, area, mac, groupIndex.Values.Distinct().Count(),
                                     FARDebugValues.wholeWingAspectRatio ? "whole-wing AR" : "each panel's own AR");
+            NonAero(parts, byPart, root);
+        }
+
+        /// <summary>
+        ///     The craft's parts with no forces here, each with why: no FAR shape (no GeometryPartModule: FAR leaves it
+        ///     out of its aero, as the Breaking Ground blades), or a shape the air does not reach (inside or behind other
+        ///     parts)
+        /// </summary>
+        private void NonAero(List<Part> parts, Dictionary<Part, Row> byPart, Transform root)
+        {
+            foreach (Part p in parts)
+            {
+                if (p == null || byPart.ContainsKey(p))
+                    continue;
+                nonAeroRows.Add(new Row
+                {
+                    Part = p,
+                    Name = NameOf(p, root),
+                    Reason = NonAeroReason(p)
+                });
+            }
+
+            nonAeroRows.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
+        }
+
+        /// <summary>Why a part has no forces here, as far as the part tells</summary>
+        private static string NonAeroReason(Part p)
+        {
+            if (p.HasModuleImplementingFast<LaunchClamp>())
+                return "launch clamp: stays on the ground";
+            GeometryPartModule g = p.GetComponent<GeometryPartModule>();
+            if (g == null)
+                return "no FAR shape: left out of FAR's aero";
+            if (!g.Valid)
+                return "FAR could not make its shape";
+            return "no forces: shielded by other parts, or no surface FAR sees";
+        }
+
+        /// <summary>The part's title, which side of the craft and how far out (m): the craft's parts of one kind share a title</summary>
+        private static string NameOf(Part p, Transform root)
+        {
+            Vector3 at = root.InverseTransformPoint(p.transform.position);
+            string side = Math.Abs(at.x) < 0.05 ? "C" : at.x > 0 ? "R" : "L";
+            return string.Format(CultureInfo.InvariantCulture, "{0} {1} {2:F1}",
+                                 p.partInfo != null ? p.partInfo.title : p.name, side, Math.Abs(at.x));
         }
 
         /// <summary>The parts tinted by the chosen quantity (none: cleared); the legend to go with it</summary>
