@@ -81,6 +81,49 @@ namespace FerramAerospaceResearch.KspTests
             Assert.True(cm8 < cm0, $"Cm falls with alpha (dCm/dalpha < 0): {cm0:F4} at 0 deg, {cm8:F4} at 8 deg");
         }
 
+        /// <summary>
+        /// The wings take the whole craft's part list once it is voxelized after a load: not a list FAR's editor made while
+        /// the craft was still loading (EditorGUI.ResetEditor throws the last one away, then whatever reads the list first
+        /// makes it from the parts under the root by then). A wing whose list lacks a part takes its raycasts' hits on it
+        /// for nothing there: after a save reload changed a load's timing, the ProceduralParts Aeris's winglets beside its
+        /// tanks were measured with their roots in free air, half their aspect ratio.
+        /// </summary>
+        [UITest(Kind = "Check", StartsAt = StartState.Sph, Craft = Far.Plane, TimeoutSec = 600)]
+        public static IEnumerator Editor_WingsTakeTheWholeCraftsPartList(TestContext ctx)
+        {
+            yield return Far.WaitForEditorVoxels();
+            yield return Far.Settled("the Aeris 4A");
+            List<Part> ship = EditorLogic.fetch.ship.parts;
+            var wings = ship.Select(p => p.GetComponent<ferram4.FARWingAerodynamicModel>()).Where(w => w != null).ToList();
+            Assert.True(wings.Count > 4, $"the Aeris 4A's wings ({wings.Count})");
+            Dictionary<ferram4.FARWingAerodynamicModel, double> ar = wings.ToDictionary(w => w, w => w.EffectiveAR);
+
+            try
+            {
+                // as a load leaves it when the list is made before the craft's last parts are attached: the root alone
+                var partial = new List<Part> { EditorLogic.RootPart };
+                FerramAerospaceResearch.FARGUI.FAREditorGUI.EditorGUI.ResetEditor();
+                Refl.SetStatic(typeof(FARAeroUtil), "AllEditorPartsCache", partial);
+                foreach (ferram4.FARWingAerodynamicModel w in wings)
+                    w.VesselPartList = partial;
+                yield return Far.Settled("the Aeris 4A, voxelized again");
+
+                foreach (ferram4.FARWingAerodynamicModel w in wings)
+                {
+                    string name = $"{w.part.partInfo.name} {w.part.craftID}";
+                    Assert.Equal(ship.Count, w.VesselPartList?.Count ?? -1, $"{name}'s part list is the craft's");
+                    // and its neighbours found among them again: the aspect ratio it had
+                    Assert.Near(ar[w], w.EffectiveAR, 1e-6 * ar[w], $"{name}'s aspect ratio");
+                }
+            }
+            finally
+            {
+                // FAR's own list and the wings' from it, whatever the test left
+                FerramAerospaceResearch.FARGUI.FAREditorGUI.EditorGUI.ResetEditor();
+            }
+            yield return Far.Settled("the Aeris 4A, its wings' lists made again");
+        }
+
         /// <summary>A symmetric craft: no side force, yaw or roll without sideslip, and equal and opposite ones with it.</summary>
         [UITest(Kind = "Check", StartsAt = StartState.Sph, Craft = Far.Plane, TimeoutSec = 900)]
         public static IEnumerator Editor_SymmetricInSideslip(TestContext ctx)
