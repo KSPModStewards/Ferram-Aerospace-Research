@@ -1,6 +1,6 @@
-name: Testing build
+name: Make Test Release
 
-# Run by hand (Actions > Testing build > Run workflow): master with the open pull requests labelled ready-for-testing
+# Run by hand (Actions > Make Test Release > Run workflow): master with the open pull requests labelled ready-for-testing
 # merged in, built and stamped as a GitHub prerelease's version, its unit and in-game tests run on that build (KspTest's
 # workflow, as tests.yml), and published only if they pass: a prerelease tagged v<latest stable release, its fourth
 # number counting the testing builds>_testing (v0.17.0.3_testing: the third on 0.17.0.0). Stable releases therefore
