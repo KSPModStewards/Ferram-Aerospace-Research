@@ -103,18 +103,8 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI
 
             FARBaseAerodynamics.PrecomputeGlobalCenterOfLift(aeroSection, dummy, vel, 1);
 
-            Vector3 pos = Vector3.zero;
-            float mass = 0;
-            foreach (Part p in EditorLogic.SortedShipList)
-            {
-                if (FARAeroUtil.IsNonphysical(p))
-                    continue;
-                float tmpMass = p.mass + p.GetResourceMass();
-                mass += tmpMass;
-                pos += p.partTransform.position * tmpMass;
-            }
-
-            pos /= mass;
+            FARAeroUtil.EditorMassAndCoM(EditorLogic.SortedShipList, out Vector3d com);
+            Vector3 pos = com;
 
             Vector3 force0 = aeroSection.force;
             Vector3 moment0 = aeroSection.TorqueAt(pos);
