@@ -372,6 +372,9 @@ namespace FerramAerospaceResearch.KspTests
                 if (ctx.Param("hydro") != null)
                     FARDebugValues.hydrodynamics = ctx.Param("hydro") != "false";
                 FARAeroComponents.PartHydrodynamics.ResetProfile();
+                // (dryCheck=true: DryFaces checked against its uncached way every recompute, the faces they differ on counted)
+                FARAeroComponents.PartHydrodynamics.DryCheck = ctx.Param("dryCheck") == "true";
+                FARAeroComponents.PartHydrodynamics.ProfileDryMismatches = 0;
                 int profFrames0 = Time.frameCount;
                 float profWall0 = Time.realtimeSinceStartup;
                 // (turnAfter=S: after S s, yaw at turnYaw (default 1: right; -1 left) and the engines on the inside of the
@@ -517,6 +520,12 @@ namespace FerramAerospaceResearch.KspTests
                                               $"contacts {FARAeroComponents.PartHydrodynamics.ProfileContactTicks * tick / steps:F2} ms, mesh {FARAeroComponents.PartHydrodynamics.ProfileMeshTicks * tick / steps:F2} ms; " +
                                               $"{FARAeroComponents.PartHydrodynamics.ProfilePolygons / steps} polygons, {FARAeroComponents.PartHydrodynamics.ProfileTrianglesTested / steps} triangles tested; " +
                                               $"{FARAeroComponents.PartHydrodynamics.ProfileShadowBuilds} closed-in rebuilds ({FARAeroComponents.PartHydrodynamics.ProfileShadowTicks * tick:F0} ms all); {steps} steps");
+                    long dryRuns = Math.Max(1, FARAeroComponents.PartHydrodynamics.ProfileDryRuns);
+                    ctx.Record("dry faces", $"{FARAeroComponents.PartHydrodynamics.ProfileDryRuns} recomputes ({FARAeroComponents.PartHydrodynamics.ProfileDryRuns / wall:F1} a second), " +
+                                            $"{FARAeroComponents.PartHydrodynamics.ProfileDryTicks * tick / dryRuns:F1} ms each, at most {FARAeroComponents.PartHydrodynamics.ProfileDryMaxTicks * tick:F1} ms in a step, " +
+                                            $"{FARAeroComponents.PartHydrodynamics.ProfileDryTicks * tick / steps:F2} ms a step; each: {FARAeroComponents.PartHydrodynamics.ProfileDryFaces / dryRuns} faces, " +
+                                            $"{FARAeroComponents.PartHydrodynamics.ProfileDryHemiRays / dryRuns} rays over them, {FARAeroComponents.PartHydrodynamics.ProfileDryOpenRays / dryRuns} open-surface rays; FAR's new meshes the same as before {FARAeroComponents.PartHydrodynamics.ProfileMeshSame} times" +
+                                            (FARAeroComponents.PartHydrodynamics.DryCheck ? $"; checked against the uncached way: {FARAeroComponents.PartHydrodynamics.ProfileDryMismatches} of {FARAeroComponents.PartHydrodynamics.ProfileDryFaces} faces differ" : ""));
                 }
                 if (!double.IsNaN(turnHdg))
                     ctx.Record("turned", $"{turned:+0.0;-0.0} deg since the turn began, {v.srfSpeed:F1} m/s at the end; drift {Drift():+0.0;-0.0} deg at the end, up to {driftMax:F1} deg");

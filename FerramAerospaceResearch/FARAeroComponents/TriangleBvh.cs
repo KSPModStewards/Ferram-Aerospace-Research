@@ -129,6 +129,53 @@ namespace FerramAerospaceResearch.FARAeroComponents
             return true;
         }
 
+        /// <summary>
+        /// How far along the ray from o along d the nearest triangle (not skip) beyond 0.1 mm is (d's length a unit;
+        /// infinity: none). AnyHit(o, d, skip, tMax) is NearestHit(o, d, skip) &lt; tMax.
+        /// </summary>
+        public float NearestHit(Vector3 o, Vector3 d, int skip)
+        {
+            float best = float.PositiveInfinity;
+            if (a.Length == 0)
+                return best;
+            var inv = new Vector3(1 / d.x, 1 / d.y, 1 / d.z);
+            stack.Clear();
+            if (Enter(0, o, inv) < best)
+                stack.Push(0);
+            while (stack.Count > 0)
+            {
+                int node = stack.Pop();
+                if (count[node] > 0)
+                {
+                    for (int i = first[node], end = first[node] + count[node]; i < end; i++)
+                    {
+                        int j = order[i];
+                        if (j != skip && Ray(o, d, a[j], e1[j], e2[j], out float t) && t > 1e-4f && t < best)
+                            best = t;
+                    }
+                    continue;
+                }
+                int l = left[node], r = right[node];
+                float tl = Enter(l, o, inv), tr = Enter(r, o, inv);
+                // the nearer one popped first; a box entered past the best hit holds nothing nearer
+                if (tl <= tr)
+                {
+                    if (tr < best)
+                        stack.Push(r);
+                    if (tl < best)
+                        stack.Push(l);
+                }
+                else
+                {
+                    if (tl < best)
+                        stack.Push(l);
+                    if (tr < best)
+                        stack.Push(r);
+                }
+            }
+            return best;
+        }
+
         /// <summary>Whether the ray from o along d meets a triangle (not skip) beyond 0.1 mm (and within tMax, d's length a unit).</summary>
         public bool AnyHit(Vector3 o, Vector3 d, int skip, float tMax = float.PositiveInfinity)
         {

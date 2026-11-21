@@ -184,11 +184,18 @@ namespace FerramAerospaceResearch.FARAeroComponents
         public static long ProfileSteps, ProfileTrianglesTested, ProfilePolygons, ProfileContactPairs;
         public static long ProfileShadowBuilds, ProfileShadowTicks, ProfileShadowMaxTicks, ProfileLeeRays, ProfileLeeTicks,
             ProfilePieceTicks, ProfileImpactTicks;
+        // DryFaces: its recomputes (the water's level or attitude moved), their time, the most in one step, the faces looked at,
+        // and its rays: over each face's half (HemiDirs) and the open-surface tests' level rays
+        public static long ProfileDryRuns, ProfileDryTicks, ProfileDryMaxTicks, ProfileDryFaces, ProfileDryHemiRays, ProfileDryOpenRays;
+        // FAR's new meshes for a part found the same as before (EnsureMesh), nothing made again
+        public static long ProfileMeshSame;
         public static void ResetProfile() =>
             ProfileGatherTicks = ProfileSolveTicks = ProfileContactTicks = ProfileMeshTicks =
                 ProfileSteps = ProfileTrianglesTested = ProfilePolygons = ProfileContactPairs =
                     ProfileShadowBuilds = ProfileShadowTicks = ProfileShadowMaxTicks = ProfileLeeRays = ProfileLeeTicks =
-                        ProfilePieceTicks = ProfileImpactTicks = 0;
+                        ProfilePieceTicks = ProfileImpactTicks =
+                            ProfileDryRuns = ProfileDryTicks = ProfileDryMaxTicks = ProfileDryFaces = ProfileDryHemiRays = ProfileDryOpenRays =
+                                ProfileMeshSame = 0;
 
         internal readonly Part part;
         private List<GeometryMesh> meshSource;
@@ -276,6 +283,24 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     wingModel = w;
         }
 
+        // FAR's meshes as last taken (part space, before simplifying), and whether these are the same (1 mm)
+        private Vector3[] rawVerts;
+        private int[] rawTris;
+        private const float SameMeshTolerance = 1e-3f;
+
+        private bool SameMesh(List<Vector3> verts, List<int> t)
+        {
+            if (rawVerts == null || rawVerts.Length != verts.Count || rawTris.Length != t.Count)
+                return false;
+            for (int i = 0; i < rawTris.Length; i++)
+                if (rawTris[i] != t[i])
+                    return false;
+            for (int i = 0; i < rawVerts.Length; i++)
+                if ((rawVerts[i] - verts[i]).sqrMagnitude > SameMeshTolerance * SameMeshTolerance)
+                    return false;
+            return true;
+        }
+
         private bool EnsureMesh()
         {
             GeometryPartModule g = part.GetComponent<GeometryPartModule>();
@@ -297,6 +322,18 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 pieceCount++;
             }
             FarMeshes(meshes, Sink, log);
+            // FAR hands over new meshes (a voxel update, an animation's state) as often as not with nothing moved: the
+            // same faces where they were keep everything made of them (the closed-in faces, the dry ones and the
+            // neighbours', the BVHs), which took a cargo ramp, its bay and an engine ~0.4 s to make again
+            if (SameMesh(verts, t))
+            {
+                meshSource = meshes;
+                ProfileMeshSame++;
+                ProfileMeshTicks += Stopwatch.GetTimestamp() - t0;
+                return tris.Length > 0;
+            }
+            rawVerts = verts.ToArray();
+            rawTris = t.ToArray();
             int unsimplified = t.Count / 3;
             if (MeshSimplifyTolerance > 0 && unsimplified >= MeshSimplifyMinTriangles && verts.Count > 0)
             {
@@ -577,10 +614,36 @@ namespace FerramAerospaceResearch.FARAeroComponents
         // rim goes under, the surface over the hollow is open and it floods. Neither pressure nor flow on a dry face.
         // The meshes: the part's own (an open boat as one closed mesh, its deck caved in), and for a hull plate
         // (FARWingAerodynamicModel.hullPlate) the vessel's (VesselMeshes: the plates and the deck together). Faces a ray
-        // over their half meets the meshes at all are the only ones that can be dry (DryCandidates, once a mesh): a
-        // convex part has none. The rest depends on the water's level and the hull's attitude: computed again when
-        // the level moves DryLevelStep or the attitude DryTurn.
-        private bool[] dryFaces, dryCandidates;
+        // over their half meets the meshes at all are the only ones that can be dry (candidates, found once a mesh as
+        // the recomputes come to them): a convex part has none. The rest depends on the water's level and the hull's
+        // attitude: computed again when the level moves DryLevelStep or the attitude DryTurn. With the candidates,
+        // each one's rays over its half (HemiDirs from its middle) are cast once, to how far each goes (dryReach;
+        // infinity: it meets nothing), so a new level or attitude only compares those with the surface; and in one
+        // recompute, the surface's openness is looked at once in each OpenCell of it (the rays of many faces come up
+        // within a few centimetres).
+        private bool[] dryFaces;
+        private sbyte[] dryState;   // a face: 0 not looked at yet this mesh, 1 a candidate, -1 not one
+        private bool dryNone;       // every face looked at, none a candidate
+        private float[] dryReach;   // [face * HemiDirs.Length + ray], the candidates' (others unset)
+        private const float OpenCell = 0.1f;
+        // a recompute under way (dryJob): for jobKey's level and attitude, the faces from jobNext on still to do
+        private bool dryJob;
+        private long jobKey;
+        private Vector3 jobUp;
+        private float jobLevel;
+        private int jobNext, jobCount, jobCandidates;
+        private bool[] jobResult;
+        private long jobTicks;
+        // the work a step a recompute does (a mesh's own first one all at once): DryWork, a face looked at or a ray cast
+        // a unit. A cargo ramp's ~490 candidates and ~1600 rays took 15-90 ms in one step, several times a second as a
+        // boat ran through waves
+        private const int DryWorkPerStep = 300;
+        private static long dryWork;
+        private readonly Dictionary<long, bool> openMemo = new Dictionary<long, bool>();
+        // debug: compute every recompute the old way too (no cached reaches, no openness memo), counting the faces the two
+        // disagree on (ProfileDryMismatches)
+        public static bool DryCheck;
+        public static long ProfileDryMismatches;
         private long dryKey = long.MinValue, dryCandidateKey = long.MinValue;
         private int dryLogged = -1;
         private TriangleBvh ownBvh;
@@ -633,22 +696,22 @@ namespace FerramAerospaceResearch.FARAeroComponents
             }
             int n = tris.Length / 3;
             long t0 = Stopwatch.GetTimestamp();
-            // (candidates: a ray over the face's half meets the meshes; once a mesh)
             if (dryCandidateKey != version)
             {
+                // a new mesh: its candidates found as the recomputes come to its faces. Its first recompute is done at
+                // once, unless the faces are as many as before (an animation's travel, an engine's fan turned: the
+                // same faces moved), whose dry ones are kept till it's done
                 dryCandidateKey = version;
-                dryCandidates = null;
-                for (int i = 0; i < n; i++)
-                {
-                    Face(toBvh, i, out Vector3 a, out Vector3 e1, out Vector3 e2);
-                    if (!Blocked(bvh, a, e1, e2, baseIndex + i))
-                        continue;
-                    dryCandidates ??= new bool[n];
-                    dryCandidates[i] = true;
-                }
-                dryKey = long.MinValue;
+                bool keep = dryState != null && dryState.Length == n && (dryFaces == null || dryFaces.Length == n);   // (null: none dry)
+                dryState = new sbyte[n];
+                dryReach = null;
+                dryNone = false;
+                dryJob = false;
+                if (!keep)
+                    dryFaces = null;
+                dryKey = keep ? long.MinValue + 1 : long.MinValue;
             }
-            if (dryCandidates == null)
+            if (dryNone)
                 return null;
             // the water's up and level in the meshes' space (a point on the surface: the origin's depth above it)
             Vector3 upPart = part.partTransform.InverseTransformDirection(upWorld).normalized;
@@ -656,30 +719,86 @@ namespace FerramAerospaceResearch.FARAeroComponents
             float level = Vector3.Dot(toBvh.MultiplyPoint3x4(upPart * (float)depth0), up);
             long key = version * 31 + Mathf.RoundToInt(level / DryLevelStep) * 1000003L +
                        Mathf.RoundToInt(up.x / DryTurn) * 961 + Mathf.RoundToInt(up.y / DryTurn) * 31 + Mathf.RoundToInt(up.z / DryTurn);
-            if (key == dryKey)
-                return dryFaces;
-            dryKey = key;
-            bool[] result = null;
-            int count = 0;
-            for (int i = 0; i < n; i++)
+            if (!dryJob)
             {
-                if (!dryCandidates[i])
+                if (key == dryKey)
+                    return dryFaces;
+                // a recompute for this level and attitude, DryWorkPerStep a step, the faces as they were till it's
+                // done (a new mesh's first at once)
+                dryJob = true;
+                jobKey = key;
+                jobUp = up;
+                jobLevel = level;
+                jobNext = 0;
+                jobCount = 0;
+                jobCandidates = 0;
+                jobResult = null;
+                jobTicks = 0;
+                openMemo.Clear();
+            }
+            bool all = dryKey == long.MinValue;
+            long budget = all ? long.MaxValue : DryWorkPerStep, work0 = dryWork;
+            int hn = HemiDirs.Length;
+            int f = jobNext;
+            for (; f < n && dryWork - work0 < budget; f++)
+            {
+                if (dryState[f] < 0)
                     continue;
-                Face(toBvh, i, out Vector3 a, out Vector3 e1, out Vector3 e2);
+                Face(toBvh, f, out Vector3 a, out Vector3 e1, out Vector3 e2);
+                if (dryState[f] == 0)
+                {
+                    // first look at this face: a candidate if a ray over its half meets the meshes, its rays' reaches
+                    dryWork += hn;
+                    if (!Blocked(bvh, a, e1, e2, baseIndex + f))
+                    {
+                        dryState[f] = -1;
+                        continue;
+                    }
+                    dryState[f] = 1;
+                    dryReach ??= new float[n * hn];
+                    FaceFrame(a, e1, e2, out Vector3 o, out Vector3 nn, out Vector3 b1, out Vector3 b2);
+                    for (int k = 0; k < hn; k++)
+                    {
+                        Vector3 hd = HemiDirs[k];
+                        dryReach[f * hn + k] = bvh.NearestHit(o, b1 * hd.x + b2 * hd.y + nn * hd.z, baseIndex + f);
+                    }
+                }
+                jobCandidates++;
+                dryWork++;
+                ProfileDryFaces++;
                 // (past the part's own mesh, only a face in a hollow open to the air: a ray of its up to the surface
                 // clear. One every ray of which meets the mesh is buried in it (a B9 panel's pieces overlap, an
                 // engine's casing): its pressure is its part's own, cancelled by the face it lies against)
-                if (SeaReaches(bvh, a, e1, e2, baseIndex + i, up, level, out bool surfaced) || !IsHullPlate && !surfaced)
+                bool dry = !SeaReaches(bvh, a, e1, e2, baseIndex + f, jobUp, jobLevel, out bool surfaced, dryReach, f, openMemo) && (IsHullPlate || surfaced);
+                if (DryCheck)
+                {
+                    bool was = !SeaReaches(bvh, a, e1, e2, baseIndex + f, jobUp, jobLevel, out bool s0, null, f, null) && (IsHullPlate || s0);
+                    if (was != dry)
+                        ProfileDryMismatches++;
+                }
+                if (!dry)
                     continue;
-                result ??= new bool[n];
-                result[i] = true;
-                count++;
+                jobResult ??= new bool[n];
+                jobResult[f] = true;
+                jobCount++;
             }
-            dryFaces = result;
-            double ms = (Stopwatch.GetTimestamp() - t0) * 1000.0 / Stopwatch.Frequency;
-            if (count != dryLogged || ms > 20)
-                FARLogger.Info($"Hydrodynamics of {part.partInfo?.name}: {count} of {n} faces out of the sea's reach ({ms:F0} ms)");
-            dryLogged = count;
+            jobNext = f;
+            long dt = Stopwatch.GetTimestamp() - t0;
+            jobTicks += dt;
+            ProfileDryTicks += dt;
+            if (!all)   // (a step's slice; not a new mesh's first recompute, all at once)
+                ProfileDryMaxTicks = Math.Max(ProfileDryMaxTicks, dt);
+            if (jobNext < n)
+                return dryFaces;
+            dryJob = false;
+            dryKey = jobKey;
+            dryFaces = jobResult;
+            dryNone = jobCandidates == 0;
+            ProfileDryRuns++;
+            double ms = jobTicks * 1000.0 / Stopwatch.Frequency;
+            if (jobCount != dryLogged || ms > 20)
+                FARLogger.Info($"Hydrodynamics of {part.partInfo?.name}: {jobCount} of {n} faces out of the sea's reach ({ms:F0} ms)");
+            dryLogged = jobCount;
             return dryFaces;
         }
 
@@ -733,10 +852,13 @@ namespace FerramAerospaceResearch.FARAeroComponents
         // the sea reaches the face (DryFaces): SeaRays of its level and downward rays meet nothing (not one: a mesh of
         // pieces may have cracks, CustomProceduralParts' convex collider pieces), or one rises clear to a surface that is
         // open (OpenSurfaceRays of its 8 level rays meet nothing: a pocket under the water opening upward is wet); a
-        // face under no water, too
+        // face under no water, too. reach: the face's rays over its half as cast once (DryFaces' dryReach; null: cast
+        // them now), for a face whose middle is under (its rays from there); memo: the surface's openness by OpenCell
+        // in this recompute (null: look every time)
         private const int SeaRays = 2, OpenSurfaceRays = 3;
 
-        private static bool SeaReaches(TriangleBvh bvh, Vector3 a, Vector3 e1, Vector3 e2, int self, Vector3 up, float level, out bool surfaced)
+        private static bool SeaReaches(TriangleBvh bvh, Vector3 a, Vector3 e1, Vector3 e2, int self, Vector3 up, float level, out bool surfaced,
+                                       float[] reach, int face, Dictionary<long, bool> memo)
         {
             surfaced = false;
             if (!FaceFrame(a, e1, e2, out Vector3 o, out Vector3 nn, out Vector3 b1, out Vector3 b2))
@@ -744,6 +866,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
             float depth = level - Vector3.Dot(o, up);
             if (depth <= 0)
             {
+                reach = null;   // (from another point than its middle)
                 // its middle out of the water: from near its deepest corner (the part of it under; a big face across the
                 // waterline, an open boat's floor as it planes, was all wet for its middle in the air)
                 Vector3 deep = a;
@@ -758,34 +881,60 @@ namespace FerramAerospaceResearch.FARAeroComponents
             Vector3 l1 = Vector3.Cross(up, Math.Abs(up.x) < 0.9f ? Vector3.right : Vector3.forward).normalized, l2 = Vector3.Cross(up, l1);
             int found = 0;
             // level and downward rays first: the sea under the water, the commonest way in
+            int hn = HemiDirs.Length;
             for (int pass = 0; pass < 2; pass++)
-                foreach (Vector3 h in HemiDirs)
+                for (int hk = 0; hk < hn; hk++)
                 {
+                    Vector3 h = HemiDirs[hk];
                     Vector3 d = b1 * h.x + b2 * h.y + nn * h.z;
                     float du = Vector3.Dot(d, up);
                     bool rising = du > 0.02f;
                     if (rising != (pass == 1))
                         continue;
+                    float ts = rising ? depth / du : float.PositiveInfinity;
+                    bool hits;
+                    if (reach != null)
+                        hits = reach[face * hn + hk] < ts;
+                    else
+                    {
+                        ProfileDryHemiRays++;
+                        dryWork++;
+                        hits = bvh.AnyHit(o, d, self, ts);
+                    }
                     if (!rising)
                     {
-                        if (!bvh.AnyHit(o, d, self) && ++found >= SeaRays)
+                        if (!hits && ++found >= SeaRays)
                             return true;
                         continue;
                     }
-                    float ts = depth / du;
-                    if (bvh.AnyHit(o, d, self, ts))
+                    if (hits)
                         continue;
                     surfaced = true;
                     // up to the surface clear: is the surface there open (its level rays from just under it meet
                     // nothing)? (just under: never below the face itself)
                     Vector3 q = o + d * ts - up * Math.Min(0.01f, 0.5f * depth);
+                    long cell = 0;
+                    if (memo != null)
+                    {
+                        cell = (long)Mathf.RoundToInt(Vector3.Dot(q, l1) / OpenCell) * 4000037L + Mathf.RoundToInt(Vector3.Dot(q, l2) / OpenCell);
+                        if (memo.TryGetValue(cell, out bool was))
+                        {
+                            if (was)
+                                return true;
+                            continue;
+                        }
+                    }
                     int open = 0;
                     for (int k = 0; k < 8 && open < OpenSurfaceRays; k++)
                     {
                         float az = k * Mathf.PI / 4;
+                        ProfileDryOpenRays++;
+                        dryWork++;
                         if (!bvh.AnyHit(q, l1 * Mathf.Cos(az) + l2 * Mathf.Sin(az), -1))
                             open++;
                     }
+                    if (memo != null)
+                        memo[cell] = open >= OpenSurfaceRays;
                     if (open >= OpenSurfaceRays)   // (an open surface over it: the sea, one ray enough)
                         return true;
                 }
