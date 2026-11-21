@@ -107,8 +107,8 @@ namespace ferram4
         private static long lastStamp;
 
         /// <summary>
-        /// The flight prediction the calling thread is inside, or null: the airflow it simulates and the external
-        /// temperature its skin friction takes (the vessel's as captured with a snapshot), if set.
+        /// The flight prediction the calling thread is inside, or null: the airflow it simulates (what a wing's
+        /// GetVelocity reports to its neighbours) and the external temperature its skin friction takes.
         /// </summary>
         public sealed class PredictionCall
         {

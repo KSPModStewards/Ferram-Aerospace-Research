@@ -22,8 +22,8 @@ namespace FerramAerospaceResearch
     /// <summary>
     ///     A vessel's aerodynamic model as it stood when <see cref="FARAPI.CaptureVesselSnapshot" /> took it on the main
     ///     thread: the voxel sections, every wing and control surface with its part's transform, mass, shielding and
-    ///     deflection, the body parts' transforms and angular velocities, the vessel's center of mass, and the body's
-    ///     atmosphere. <see cref="FARAPI.CalculateSnapshotAeroForcesAt" />
+    ///     deflection, the body parts' transforms and angular velocities, the intakes and engine throttle, the
+    ///     vessel's center of mass, and the body's atmosphere. <see cref="FARAPI.CalculateSnapshotAeroForcesAt" />
     ///     predicts from it on any thread, reading no live game state; world-frame vectors are those of the capture
     ///     frame. Once the vessel changes (a re-voxelization, a part added, removed or destroyed, a wing rebuilt) the
     ///     snapshot is stale and predictions from it return false; take a new one.
@@ -77,11 +77,12 @@ namespace FerramAerospaceResearch
         internal FARWingAerodynamicModel.SnapshotState[] WingStates;
         internal FARWingAerodynamicModel[] SimulatedWings;
 
+        internal VesselIntakeRamDrag.Snapshot RamDrag;
         internal Vector3 CenterOfMass;
         internal double Length;
         internal double AdiabaticIndex;
         internal double VesselAdiabaticIndex;
-        internal double ExternalTemperature;
+        internal FARBaseAerodynamics.ShockTemperatureParameters Shock;
         internal Settings.BodySettings BodyData;
 
         internal CelestialBody Body;
@@ -125,6 +126,21 @@ namespace FerramAerospaceResearch
         ///     where a property is not custom, the custom function (without its live fallback) where it is. False when
         ///     a property cannot be evaluated on this thread or a custom function threw.
         /// </summary>
+        /// <summary>
+        /// The temperature the flight's Reynolds number takes at a point (FARAtmosphere.GetTemperature): a custom
+        /// function as set, else the altitude curve without the latitude and sun offset the density has. Call after
+        /// TryGetGasProperties gave <paramref name="properties" /> for the same point.
+        /// </summary>
+        internal double ReynoldsTemperature(Vector3d latLonAltitude, double ut, in GasProperties properties)
+        {
+            if (CustomTemperature)
+                return properties.Temperature;
+            if (Atmosphere != null)
+                return Atmosphere.GetBaseTemperature(latLonAltitude.z);
+            // not reproduced: TryGetGasProperties ran on the main thread
+            return FARAtmosphere.GetTemperature(Body, latLonAltitude, ut);
+        }
+
         internal bool TryGetGasProperties(Vector3d latLonAltitude, double ut, bool mainThread, out GasProperties properties)
         {
             properties = default;
@@ -179,14 +195,14 @@ namespace FerramAerospaceResearch
 
         /// <summary>
         ///     Whether the reproduced atmosphere gives what a live prediction takes now at a point
-        ///     (FARAtmosphere.GetGasProperties), to a relative 1e-5 in pressure and temperature: float rounding
+        ///     (FARAtmosphere.GetPredictionGasProperties), to a relative 1e-5 in pressure and temperature: float rounding
         ///     in a curve evaluation passes, a different atmosphere (a body type or a patch that changes the game's
         ///     functions) does not. Main thread, at capture.
         /// </summary>
         internal bool AtmosphereMatchesLive(Vector3d latLonAltitude, double ut, out string difference)
         {
             difference = null;
-            GasProperties live = FARAtmosphere.GetGasProperties(Body, latLonAltitude, ut);
+            GasProperties live = FARAtmosphere.GetPredictionGasProperties(Body, latLonAltitude, ut);
             if (!TryGetGasProperties(latLonAltitude, ut, true, out GasProperties reproduced))
             {
                 difference = "not evaluable";

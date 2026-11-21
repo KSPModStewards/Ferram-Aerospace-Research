@@ -250,8 +250,8 @@ namespace ferram4
         }
 
         /// <summary>
-        /// A prediction flies the surface as it is deflected now: the control state (deflection, deflected normal,
-        /// control mapping) is the flight's, slot 0's, and its shielding the flight's.
+        /// A prediction starts from the fixed wing state but flies the surface as it is deflected now: the control
+        /// state (deflection, deflected normal, control mapping, shielding) is the flight's, slot 0's.
         /// </summary>
         internal override SnapshotState CaptureSnapshotState()
         {

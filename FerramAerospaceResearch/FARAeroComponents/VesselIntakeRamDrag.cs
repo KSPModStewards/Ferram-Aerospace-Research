@@ -132,23 +132,112 @@ namespace FerramAerospaceResearch.FARAeroComponents
             ApplyIntakeDrag(currentRamDrag, vesselVelNorm);
         }
 
+        /// <summary>
+        /// The ram drag ApplyIntakeRamDrag would apply at the given state, accumulated into a center query the way
+        /// SimulatedForceContext accumulates the section forces (dynamic pressure times the pseudo-Reynolds drag
+        /// multiplier, as part.dragScalar does in flight), at each intake part's origin, where flight applies it.
+        /// </summary>
+        public void SimulateIntakeRamDrag(float machNumber, Vector3 velocityWorld, float atmDensity, ferram4.FARCenterQuery center)
+        {
+            SimulateIntakeRamDrag(Capture(), machNumber, velocityWorld, atmDensity, center);
+        }
+
+        /// <summary>
+        /// What the simulated ram drag reads from the vessel - the air-breathing engines' throttle and each open
+        /// intake's direction, area and part origin - captured on the main thread so it can be simulated on any thread.
+        /// </summary>
+        internal sealed class Snapshot
+        {
+            public float Throttle;
+            public Vector3[] Forward;
+            public double[] Area;
+            public Vector3[] Origin;
+        }
+
+        /// <summary>The vessel's intakes and engines as SimulateIntakeRamDrag reads them now. Main thread.</summary>
+        internal Snapshot Capture()
+        {
+            var forward = new List<Vector3>();
+            var area = new List<double>();
+            var origin = new List<Vector3>();
+            for (int i = 0; i < _intakeTransforms.Count; i++)
+            {
+                ModuleResourceIntake intake = _intakeModules[i];
+                Transform transform = _intakeTransforms[i];
+                FARAeroPartModule aeroModule = _aeroModulesWithIntakes[i];
+                if (!intake.intakeEnabled || transform == null || aeroModule == null || aeroModule.part == null)
+                    continue;
+                Part p = aeroModule.part;
+                forward.Add(transform.forward);
+                area.Add(intake.area);
+                // flight adds it at the part's origin (AddLocalForce(force, Vector3.zero)), not at its CoM
+                origin.Add(p.partTransform.position);
+            }
+
+            return new Snapshot
+            {
+                Throttle = CurrentThrottle(),
+                Forward = forward.ToArray(),
+                Area = area.ToArray(),
+                Origin = origin.ToArray()
+            };
+        }
+
+        /// <summary>
+        /// The ram drag ApplyIntakeRamDrag would apply at the given state for the captured intakes and throttle,
+        /// accumulated into a center query at each intake part's origin. Any thread.
+        /// </summary>
+        internal static void SimulateIntakeRamDrag(
+            Snapshot snapshot,
+            float machNumber,
+            Vector3 velocityWorld,
+            float atmDensity,
+            ferram4.FARCenterQuery center
+        )
+        {
+            float currentRamDrag = RamDrag(machNumber, snapshot.Throttle);
+            if (currentRamDrag <= 0)
+                return;
+            float speed = velocityWorld.magnitude;
+            if (speed <= 0)
+                return;
+            Vector3 velNorm = velocityWorld / speed;
+            double dragFactor = 0.0005 * speed * speed * atmDensity *
+                                Mathf.Max(FARAeroUtil.DragPseudoReynolds.Evaluate(atmDensity * speed), 1.0f);
+            for (int i = 0; i < snapshot.Forward.Length; i++)
+            {
+                float cosAoA = Vector3.Dot(snapshot.Forward[i], velNorm);
+                if (cosAoA <= 0)
+                    continue;
+                Vector3 force = (float)(cosAoA * currentRamDrag * snapshot.Area[i] * 100 * dragFactor) * -velNorm;
+                center.AddForce(snapshot.Origin[i], force);
+            }
+        }
+
         private float CalculateRamDrag(float machNumber)
         {
-            float currentThrottle = 0;
+            return RamDrag(machNumber, CurrentThrottle());
+        }
 
+        // The air-breathing engines' mean throttle, an engine held by the player counting as full.
+        private float CurrentThrottle()
+        {
+            float currentThrottle = 0;
             foreach (ModuleEngines engine in _airBreathingEngines)
                 if (engine.manuallyOverridden)
                     currentThrottle++;
                 else
                     currentThrottle += engine.currentThrottle;
             currentThrottle /= Math.Max((float)_airBreathingEngines.Count, 1);
+            return currentThrottle;
+        }
 
+        private static float RamDrag(float machNumber, float currentThrottle)
+        {
             if (currentThrottle > 0.5)
                 return 0;
-
             float currentRamDrag = RamDragPerArea(machNumber);
             currentRamDrag *= 1f - 2f * currentThrottle;
-
             return currentRamDrag;
         }
 

@@ -111,41 +111,32 @@ namespace ferram4
         public double CapturedSubmergedPortion;
         public double CapturedSubmergedLiftScalar;
         public double CapturedSubmergedDragScalar;
-        public Vector3d CapturedVelocity;
 
         /// <summary>
-        /// Every field from another slot's (the flight's): the state a flight prediction starts from, the one it
-        /// found when it ran on the flight's own.
+        /// Every field back to the value a new scratch has, with the wing's geometric aspect ratio: the fixed state a
+        /// flight prediction starts from, so its answer depends only on its inputs.
         /// </summary>
-        public void CopyFrom(WingScratch src)
+        public void Reset(double geometricTransformedAR)
         {
-            velocityEditor = src.velocityEditor;
-            rho = src.rho;
-            Cl = src.Cl;
-            Cd = src.Cd;
-            stall = src.stall;
-            minStall = src.minStall;
-            rawAoAmax = src.rawAoAmax;
-            AoAmax = src.AoAmax;
-            rawLiftSlope = src.rawLiftSlope;
-            liftslope = src.liftslope;
-            cosSweepAngle = src.cosSweepAngle;
-            effective_b_2 = src.effective_b_2;
-            effective_MAC = src.effective_MAC;
-            effective_AR = src.effective_AR;
-            transformed_AR = src.transformed_AR;
-            ClIncrementFromRear = src.ClIncrementFromRear;
-            e = src.e;
-            piARe = src.piARe;
-            zeroLiftCdIncrement = src.zeroLiftCdIncrement;
-            FinalLiftSlope = src.FinalLiftSlope;
-            ParallelInPlane = src.ParallelInPlane;
-            perp = src.perp;
-            liftDirection = src.liftDirection;
-            ParallelInPlaneLocal = src.ParallelInPlaneLocal;
-            AerodynamicCenter = src.AerodynamicCenter;
-            CurWingCentroid = src.CurWingCentroid;
-            // Nothing captured for a snapshot prediction is on the slot until it is installed.
+            velocityEditor = Vector3d.zero;
+            rho = 0;
+            Cl = Cd = 0;
+            stall = minStall = 0;
+            rawAoAmax = 15;
+            AoAmax = 0;
+            rawLiftSlope = liftslope = 0;
+            cosSweepAngle = 0;
+            effective_b_2 = 1;
+            effective_MAC = 1;
+            effective_AR = 4;
+            transformed_AR = geometricTransformedAR;
+            ClIncrementFromRear = 0;
+            e = 0;
+            piARe = 1;
+            zeroLiftCdIncrement = 0;
+            FinalLiftSlope = 0;
+            ParallelInPlane = perp = liftDirection = ParallelInPlaneLocal = Vector3d.zero;
+            AerodynamicCenter = CurWingCentroid = Vector3d.zero;
             CaptureStamp = 0;
         }
     }

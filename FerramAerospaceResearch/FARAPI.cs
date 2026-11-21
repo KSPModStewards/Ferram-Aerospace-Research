@@ -349,6 +349,56 @@ namespace FerramAerospaceResearch
             double altitude
         )
         {
+            if (!OnMainThread())
+            {
+                aeroForce = aeroTorque = Vector3.zero;
+                return;
+            }
+
+            if (vessel == null)
+            {
+                aeroForce = aeroTorque = Vector3.zero;
+                FARLogger.Error("API Error: attempted to simulate aerodynamics of null vessel");
+                return;
+            }
+
+            CalculateVesselAeroForcesAt(vessel,
+                                      out aeroForce,
+                                      out aeroTorque,
+                                      velocityWorldVector,
+                                      vessel.CurrentPosition(altitude),
+                                      Planetarium.GetUniversalTime());
+        }
+
+        /// <summary>
+        ///     Calculates the forces and torque on a vessel at a given condition at the CoM, with the atmosphere taken
+        ///     at a given place and time. The default atmosphere matches the density the game gives a vessel there
+        ///     (latitude and sun heating included), so a trajectory predictor passing the predicted point gets the
+        ///     forces the vessel will feel there; the altitude-only overload uses the vessel's current latitude,
+        ///     longitude and time.
+        /// </summary>
+        /// <param name="vessel">Vessel in question</param>
+        /// <param name="aeroForce">Total aerodynamic force at CoM, in kN</param>
+        /// <param name="aeroTorque">Total aerodynamic torque at CoM, in kN * m</param>
+        /// <param name="velocityWorldVector">
+        ///     Velocity vector in world space relative to the atmosphere for CURRENT vessel
+        ///     orientation, m/s
+        /// </param>
+        /// <param name="latLonAltitude">Latitude and longitude (deg, body-fixed) and altitude (m)</param>
+        /// <param name="ut">Universal time the vessel is at that point</param>
+        /// <remarks>
+        ///     Main thread only: it reads the live vessel. Called from another thread it logs once and returns zero;
+        ///     predict from a <see cref="FARVesselSnapshot" /> there.
+        /// </remarks>
+        public static void CalculateVesselAeroForcesAt(
+            Vessel vessel,
+            out Vector3 aeroForce,
+            out Vector3 aeroTorque,
+            Vector3 velocityWorldVector,
+            Vector3d latLonAltitude,
+            double ut
+        )
+        {
             aeroForce = aeroTorque = Vector3.zero;
             if (!OnMainThread())
                 return;
@@ -366,7 +416,7 @@ namespace FerramAerospaceResearch
                 return;
             }
 
-            vesselAero.SimulateAeroProperties(out aeroForce, out aeroTorque, velocityWorldVector, altitude);
+            vesselAero.SimulateAeroPropertiesAt(out aeroForce, out aeroTorque, velocityWorldVector, latLonAltitude, ut);
         }
 
         private static bool loggedOffMainThread;
@@ -379,7 +429,7 @@ namespace FerramAerospaceResearch
             {
                 loggedOffMainThread = true;
                 // Off the main thread by definition: logged from it.
-                FARLogAnyThread.Warning("FARAPI.CalculateVesselAeroForces called off the main thread; returning zero. " +
+                FARLogAnyThread.Warning("FARAPI.CalculateVesselAeroForces(At) called off the main thread; returning zero. " +
                                         "Use CaptureVesselSnapshot on the main thread and CalculateSnapshotAeroForcesAt " +
                                         "on any thread.");
             }
@@ -392,11 +442,12 @@ namespace FerramAerospaceResearch
         ///     <see cref="CalculateSnapshotAeroForcesAt" />. Main thread only (null otherwise), and null when the vessel has
         ///     no FAR aerodynamics or has not been voxelized yet. The snapshot holds the voxel sections, the wings and
         ///     control surfaces with their parts' geometry, shielding and deflection, the body parts' geometry, the
-        ///     center of mass and the body's atmosphere, so a prediction from it reads no live game state and gives the
-        ///     same answer on any thread.
+        ///     intakes and engine throttle, the center of mass and the body's atmosphere, so a prediction from it reads
+        ///     no live game state and gives the same answer on any thread.
         ///
-        ///     The atmosphere: FAR's default functions are reproduced for the body from its curves and constants, and
-        ///     checked against the live functions at capture (to a relative 1e-5; a body
+        ///     The atmosphere: FAR's default functions are reproduced for the body from its curves and constants and
+        ///     the sun's and the body's positions at capture (the time a point is carried from by the body's rotation
+        ///     is the capture time), and checked against the live functions at capture (to a relative 1e-5; a body
         ///     whose atmosphere is not reproduced keeps its snapshots' predictions on the main thread, with a warning). A custom function registered
         ///     through FARAtmosphere is called as it is: on any thread when it was set with threadSafe true, otherwise
         ///     only on the main thread. <see cref="FARVesselSnapshot.OffMainThread" /> says which applies; a part's
