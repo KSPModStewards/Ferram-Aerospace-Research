@@ -1093,7 +1093,8 @@ namespace ferram4
                                                               KSPUtil.PrintTimeStamp(FlightLogger.met),
                                                               part.partInfo.title);
                                 FlightLogger.eventLog.Add(msg);
-                                part.decouple(25);
+                                // no break force, or what came off keeps its stage icons
+                                part.decouple();
                                 if (FARDebugValues.aeroFailureExplosions)
                                     FXMonger.Explode(part, AerodynamicCenter, 1);
                             }
