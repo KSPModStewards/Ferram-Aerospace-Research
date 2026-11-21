@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using ferram4;
 using FerramAerospaceResearch.FARGUI.FARFlightGUI;
@@ -306,6 +307,79 @@ namespace FerramAerospaceResearch.KspTests
         }
 
         /// <summary>
+        /// FAR's debug tools off (the default: FARDebugValues.DebugTools), the flight window has no Debug button and no
+        /// flight assistance (its Roll toggle, its settings group), and a wing leveler left on is turned off and puts in
+        /// no roll; switched on, all of them are back, the settings window still on the group it showed.
+        /// </summary>
+        [UITest(Kind = "Check", StartsAt = StartState.Flight, Craft = Far.Plane, CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 300)]
+        public static IEnumerator FlightGui_DebugToolsHideDebugAndAssistance(TestContext ctx)
+        {
+            yield return Wait.Seconds(5);
+            FlightGUI gui = Far.FlightGui();
+            var windows = new Windows(gui);
+            bool[] savedStab = Enumerable.Range(0, 5).Select(i => Far.StabAugActive(gui, i)).ToArray();
+            using IDisposable tools = Far.DebugTools(false);
+            object stab = Refl.Get(gui, "_stabilityAugmentation");
+            var update = stab.GetType().GetMethod("OnAutoPilotUpdate", BindingFlags.Instance | BindingFlags.NonPublic)
+                         ?? throw new UITestFailure("no OnAutoPilotUpdate");
+            try
+            {
+                yield return OpenFlightWindow();
+                Far.SetSettingsGroup(gui, Far.GroupAirspeed);
+                FarFlightProbe.Condition c = Cruise(3);
+                yield return FlightTests.Airborne(c);
+                yield return FarFlightProbe.Place(c);
+                Vessel v = FlightGlobals.ActiveVessel;
+                v.SetRotation(Quaternion.AngleAxis(30, ((Vector3)v.srf_velocity).normalized) * v.transform.rotation);
+                yield return Wait.Frames(5);
+
+                ctx.Step("debug tools off");
+                yield return Imgui.WaitVisible(Loc("FARFlightGUIFltSettings"), Far.MainWindow);
+                bool debugButton = Imgui.IsVisible(Loc("FARFlightGUIFltDebug"), Far.MainWindow);
+                bool rollToggle = Imgui.IsVisible(Loc("FARFlightStabAugLabel0"), Far.MainWindow);
+                Far.SetStabAug(gui, 0, true);
+                Refl.Set(stab, "info", gui.InfoParameters);
+                var state = new FlightCtrlState();
+                update.Invoke(stab, new object[] { state });
+                float rollOff = state.roll;
+                bool levelerOff = !Far.StabAugActive(gui, 0);
+                int groupOff = Far.SettingsGroup(gui);
+                ctx.Record("off", $"Debug button {debugButton}, Roll toggle {rollToggle}, leveler roll {rollOff:F3} " +
+                                  $"(turned {(levelerOff ? "off" : "on")}), settings group {groupOff}");
+                Assert.False(debugButton, "no Debug button with the tools off");
+                Assert.False(rollToggle, "no flight assistance with the tools off");
+                Assert.Equal(0f, rollOff, "a wing leveler left on puts in no roll with the tools off");
+                Assert.True(levelerOff, "a wing leveler left on is turned off with the tools off");
+
+                ctx.Step("debug tools on");
+                FARDebugValues.DebugTools = true;
+                yield return Imgui.WaitVisible(Loc("FARFlightStabAugLabel0"), Far.MainWindow);
+                bool debugOn = Imgui.IsVisible(Loc("FARFlightGUIFltDebug"), Far.MainWindow);
+                Far.SetStabAug(gui, 0, true);
+                state = new FlightCtrlState();
+                update.Invoke(stab, new object[] { state });
+                float rollOn = state.roll;
+                int groupOn = Far.SettingsGroup(gui);
+                ctx.Record("on", $"Debug button {debugOn}, leveler roll {rollOn:F3}, settings group {groupOn}");
+                Assert.True(debugOn, "the Debug button with the tools on");
+                Assert.True(Math.Abs(rollOn) > 0.01, $"the wing leveler puts in roll with the tools on ({rollOn:F3})");
+                Assert.Equal(Far.GroupAirspeed, groupOn, "the settings window still on the airspeed group");
+
+                ctx.Step("debug tools turned off");
+                FARDebugValues.DebugTools = false;
+                bool offAgain = !Far.StabAugActive(gui, 0);
+                ctx.Record("off again", $"wing leveler turned {(offAgain ? "off" : "on")}");
+                Assert.True(offAgain, "turning the tools off turns the wing leveler off");
+            }
+            finally
+            {
+                for (int i = 0; i < savedStab.Length; ++i)
+                    Far.SetStabAug(gui, i, savedStab[i]);
+                windows.Restore();
+            }
+        }
+
+        /// <summary>
         /// Banks the plane by bankDeg about its velocity just after placing it, then lets it fly hands off, recording
         /// [time, bank from the vessel's axes, FAR's roll angle, roll input] every physics frame.
         /// </summary>
@@ -337,6 +411,7 @@ namespace FerramAerospaceResearch.KspTests
         {
             const double bank = 30, seconds = 10;
             yield return Wait.Seconds(5);
+            using IDisposable tools = Far.DebugTools();
             FlightGUI gui = Far.FlightGui();
             var windows = new Windows(gui);
             // every system off (a saved setting could have one on); the roll system is switched on below
@@ -374,7 +449,8 @@ namespace FerramAerospaceResearch.KspTests
                 Assert.Near(bank, start, 3, "the bank given");
                 Assert.Near(start, farStart, 2, "FAR's roll angle reads the bank");
                 Assert.True(maxInputOff < 0.01, $"no roll input without the leveler ({maxInputOff:F3})");
-                Assert.True(Math.Abs(inputOn) > 0.05, $"the leveler puts in roll ({inputOn:F3} along the bank)");
+                // (its ailerons' lift linear in their deflection, FARDebugValues.linearFlapLift, it needs less of them)
+                Assert.True(Math.Abs(inputOn) > 0.02, $"the leveler puts in roll ({inputOn:F3} along the bank)");
                 Assert.True(endOn < 10 && endOn < 0.5 * endOff,
                             $"the leveler brings the bank back toward level: {endOn:F1} deg with it, {endOff:F1} deg without");
             }
