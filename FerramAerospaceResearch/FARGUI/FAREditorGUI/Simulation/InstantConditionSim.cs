@@ -208,24 +208,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             }
             else
             {
-                CoM = Vector3d.zero;
-                double mass = 0;
-                List<Part> partsList = EditorLogic.SortedShipList;
-                foreach (Part p in partsList)
-                {
-                    if (FARAeroUtil.IsNonphysical(p))
-                        continue;
-
-                    double partMass = p.mass;
-                    if (p.Resources.Count > 0)
-                        partMass += p.GetResourceMass();
-
-                    // If you want to use GetModuleMass, you need to start from p.partInfo.mass, not p.mass
-                    CoM += partMass * (Vector3d)p.transform.TransformPoint(p.CoMOffset);
-                    mass += partMass;
-                }
-
-                CoM /= mass;
+                CoM = ComputeEditorCoM();
             }
 
             // Rodhern: The original reference directions (velocity, liftVector, sideways) did not form an orthonormal
@@ -522,27 +505,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
 
         private static Vector3d ComputeEditorCoM()
         {
-            Vector3d CoM = Vector3d.zero;
-            double mass = 0;
-            List<Part> partsList = EditorLogic.SortedShipList;
-            if (partsList == null)
-                return CoM;
-
-            foreach (Part p in partsList)
-            {
-                if (FARAeroUtil.IsNonphysical(p))
-                    continue;
-
-                double partMass = p.mass;
-                if (p.Resources.Count > 0)
-                    partMass += p.GetResourceMass();
-
-                CoM += partMass * (Vector3d)p.transform.TransformPoint(p.CoMOffset);
-                mass += partMass;
-            }
-
-            if (mass > 0)
-                CoM /= mass;
+            FARAeroUtil.EditorMassAndCoM(EditorLogic.SortedShipList, out Vector3d CoM);
             return CoM;
         }
     }

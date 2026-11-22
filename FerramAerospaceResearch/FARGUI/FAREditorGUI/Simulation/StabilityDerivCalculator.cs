@@ -111,13 +111,15 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
 
             var areaWings = new List<FARWingAerodynamicModel>();
             List<Part> partsList = EditorLogic.SortedShipList;
-            foreach (Part p in partsList)
+            // each part's mass, for the moments of inertia below too (0: physicsless)
+            var partMasses = new double[partsList.Count];
+            for (int i = 0; i < partsList.Count; i++)
             {
+                Part p = partsList[i];
                 if (FARAeroUtil.IsNonphysical(p))
                     continue;
-                double partMass = p.mass;
-                if (p.Resources.Count > 0)
-                    partMass += p.GetResourceMass();
+                double partMass = FARAeroUtil.EditorPartMass(p);
+                partMasses[i] = partMass;
 
                 // If you want to use GetModuleMass, you need to start from p.partInfo.mass, not p.mass
                 CoM += partMass * (Vector3d)p.transform.TransformPoint(p.CoMOffset);
@@ -140,8 +142,9 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
             CoM /= mass;
             mass *= 1000;
 
-            foreach (Part p in partsList)
+            for (int i = 0; i < partsList.Count; i++)
             {
+                Part p = partsList[i];
                 if (p == null || FARAeroUtil.IsNonphysical(p))
                     continue;
                 //This section handles the parallel axis theorem
@@ -153,9 +156,7 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                 double y = relPos.x;
                 double z = relPos.y;
 
-                double partMass = p.mass;
-                if (p.Resources.Count > 0)
-                    partMass += p.GetResourceMass();
+                double partMass = partMasses[i];
 
                 // If you want to use GetModuleMass, you need to start from p.partInfo.mass, not p.mass
 

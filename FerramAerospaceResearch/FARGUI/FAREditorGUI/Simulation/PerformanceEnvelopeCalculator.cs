@@ -253,25 +253,18 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
 
             HashSet<int> burnableIds = deck.GetBurnablePropellantIds();
 
-            double mass = 0;
+            double mass = FARAeroUtil.EditorMassAndCoM(partsList, out Vector3d CoM);
+            if (mass <= 0)
+                return props;
+
             double area = 0;
             double fuelMass = 0;
-            Vector3d CoM = Vector3d.zero;
-
             foreach (Part p in partsList)
             {
-                if (FARAeroUtil.IsNonphysical(p))
+                if (!FARAeroUtil.MassCounts(p))
                     continue;
 
-                double partMass = p.mass;
-                if (p.Resources.Count > 0)
-                    partMass += p.GetResourceMass();
-
-                // p.mass already includes module mass in the editor; starting from p.partInfo.mass
-                // would be required to use GetModuleMass instead.
-                CoM += partMass * (Vector3d)p.transform.TransformPoint(p.CoMOffset);
-                mass += partMass;
-
+                // a physicsless part's fuel is in its parent's mass
                 foreach (PartResource res in p.Resources)
                 {
                     if (res.info == null || !burnableIds.Contains(res.info.id))
@@ -279,17 +272,15 @@ namespace FerramAerospaceResearch.FARGUI.FAREditorGUI.Simulation
                     fuelMass += res.amount * res.info.density;
                 }
 
+                if (FARAeroUtil.IsNonphysical(p))
+                    continue;
+
                 FARWingAerodynamicModel w = p.GetComponent<FARWingAerodynamicModel>();
                 if (w == null || w.isShielded)
                     continue;
 
                 area += w.S;
             }
-
-            if (mass <= 0)
-                return props;
-
-            CoM /= mass;
 
             // Wingless craft fall back to the body reference area, as the other editor sims do.
             if (area.NearlyEqual(0))

@@ -433,6 +433,87 @@ namespace FerramAerospaceResearch
                    p.PhysicsSignificance == (int)Part.PhysicalSignificance.NONE;
         }
 
+        /// <summary>
+        /// The mass (t) a part's rigidbody has in flight: its own and its resources', plus that of the physicsless
+        /// parts hanging off it, which KSP adds to their parent's rigidbody (FlightIntegrator). 0 for a part with no
+        /// rigidbody of its own (its mass is its parent's) and for launch clamps, which stay with the ground. Taken
+        /// at the part's CoM, as the rigidbody's is.
+        /// </summary>
+        public static double EditorPartMass(Part p)
+        {
+            if (IsNonphysical(p))
+                return 0;
+            return p.mass + p.GetResourceMass() + PhysicslessChildMass(p);
+        }
+
+        /// <summary>
+        /// In the editor (no rigidbodies), the mass (t) of the rigidbody a part's forces will act on in flight: its
+        /// own, or a physicsless part's physical parent's. The part's own mass if it has none of those.
+        /// </summary>
+        public static double EditorRigidbodyMass(Part p)
+        {
+            Part body = p;
+            while (body != null && IsNonphysical(body))
+                body = body.parent;
+            double mass = body != null ? EditorPartMass(body) : 0;
+            return mass > 0 ? mass : p.mass;
+        }
+
+        /// <summary>
+        /// Whether a part's mass is in some rigidbody's <see cref="EditorPartMass" />: its own, or (physicsless) that
+        /// of the physical part it hangs off. False for launch clamps and the physicsless parts on them.
+        /// </summary>
+        public static bool MassCounts(Part p)
+        {
+            for (; p != null; p = p.parent)
+            {
+                if (p.HasModuleImplementingFast<LaunchClamp>())
+                    return false;
+                if (!IsNonphysical(p))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// The craft's mass (t) and centre of mass in the editor, as its rigidbodies will have them in flight: each
+        /// physical part's <see cref="EditorPartMass" /> at its CoM. 0 (and the origin) for no parts.
+        /// </summary>
+        public static double EditorMassAndCoM(IEnumerable<Part> parts, out Vector3d com)
+        {
+            com = Vector3d.zero;
+            double mass = 0;
+            if (parts != null)
+                foreach (Part p in parts)
+                {
+                    if (p == null || IsNonphysical(p))
+                        continue;
+                    double m = EditorPartMass(p);
+                    com += m * (Vector3d)p.transform.TransformPoint(p.CoMOffset);
+                    mass += m;
+                }
+
+            if (mass > 0)
+                com /= mass;
+            return mass;
+        }
+
+        // Not Part.GetPhysicslessChildMass: that takes the children with no rigidbody, which in the editor is all of
+        // them, and only one level down
+        private static double PhysicslessChildMass(Part p)
+        {
+            double mass = 0;
+            foreach (Part child in p.children)
+            {
+                if (child == null || !IsNonphysical(child) || child.HasModuleImplementingFast<LaunchClamp>())
+                    continue;
+                mass += child.mass + child.GetResourceMass() + PhysicslessChildMass(child);
+            }
+
+            return mass;
+        }
+
         public static void ResetEditorParts()
         {
             AllEditorPartsCache = null;
