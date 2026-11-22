@@ -5,6 +5,7 @@ using System.Reflection;
 using ferram4;
 using FerramAerospaceResearch.FARAeroComponents;
 using FerramAerospaceResearch.FARPartGeometry;
+using KSP.UI.Screens;
 using KspTest;
 using UnityEngine;
 
@@ -15,7 +16,8 @@ namespace FerramAerospaceResearch.KspTests
     {
         /// <summary>
         /// A fairing base that fails under aero stress (the ComSat Lx's, on the pad) opens its fairing with a soft
-        /// ejection, and everything on it comes off with it: its children decouple from it and it from the rocket.
+        /// ejection, and everything on it comes off with it: its children decouple from it and it from the rocket. The
+        /// staging list drops what came off (the fairing, the lower stage's engine), and no stage is left empty.
         /// </summary>
         [UITest(Kind = "Check", StartsAt = StartState.Flight, Craft = "ComSat Lx Unclamped", CraftDir = "VAB", TimeoutSec = 600)]
         public static IEnumerator Pad_OverstressedFairingOpensAndShedsWhatIsOnIt(TestContext ctx)
@@ -32,6 +34,10 @@ namespace FerramAerospaceResearch.KspTests
             MethodInfo fail = typeof(FARAeroPartModule).GetMethod("ApplyAeroStressFailure", BindingFlags.Instance | BindingFlags.NonPublic);
             using var exceptions = new ExceptionLog();
             ctx.Record("before", $"ejection force {fm.ejectionForce}, children {string.Join(", ", children.Select(c => c.partInfo.name))}");
+            HashSet<Part> lost = Staging.Subtree(fairing);
+            List<string> lostStaged = Staging.Parts().Where(lost.Contains).Select(p => p.partInfo.name).ToList();
+            ctx.Record("lost staged", $"{string.Join(", ", lostStaged)}; {StageManager.StageCount} stages");
+            Assert.True(lostStaged.Count > 1, "the fairing and a part below it are in the staging list");
 
             ctx.Step("The fairing base failed under aero stress");
             fail.Invoke(aero, null);
@@ -41,7 +47,56 @@ namespace FerramAerospaceResearch.KspTests
             Assert.True(fairing.vessel != v, "the fairing base came off the rocket");
             foreach (Part c in children)
                 Assert.True(c.vessel != fairing.vessel && c.parent != fairing, $"{c.partInfo.name} came off the fairing base");
+            List<string> stray = Staging.Stray();
+            ctx.Record("staging after", $"stray {string.Join(", ", stray)}; {StageManager.StageCount} stages, {Staging.EmptyStages()} empty");
+            Assert.Equal(0, stray.Count, "the staging list keeps only the rocket's parts");
+            Assert.Equal(0, Staging.EmptyStages(), "no stage left empty");
             exceptions.AssertNone("failing a fairing base under aero stress");
+        }
+
+        /// <summary>
+        /// The wing panel carrying an engine (one of the Stearwing A300 PW's Goliaths, on a B9 procedural wing; the stock
+        /// A300's delta wing is shielded) past its own wing limit (FARWingAerodynamicModel's) at Mach 0.5: it tears off
+        /// with the engine, and the staging list drops the engine and keeps the other one. The two are a symmetry pair
+        /// with one icon between them; the engine torn off is the one that holds it.
+        /// </summary>
+        [UITest(Kind = "Check", StartsAt = StartState.Flight, Craft = "Stearwing A300 PW", CraftDir = "SPH", LaunchSite = "Runway", TimeoutSec = 900)]
+        public static IEnumerator Behaviour_WingTornOffTakesItsEngineOutOfStaging(TestContext ctx)
+        {
+            yield return Wait.Seconds(5);
+            yield return FlightTests.Airborne(Far.At(0.5, 3000, 4));
+            Vessel v = FlightGlobals.ActiveVessel;
+            using var exceptions = new ExceptionLog();
+            Part engine = Staging.Parts().FirstOrDefault(p => p.Modules.Contains<ModuleEngines>());
+            Assert.NotNull(engine, "a staged engine");
+            var wings = new List<FARWingAerodynamicModel>();
+            for (Part p = engine.parent; p != null && p.parent != null; p = p.parent)
+                wings.AddRange(p.Modules.OfType<FARWingAerodynamicModel>());
+            ctx.Record("wings", string.Join(", ", wings.Select(w => $"{w.part.partInfo.name}{(w.isShielded ? " (shielded)" : "")}")));
+            wings = wings.Where(w => !w.isShielded).ToList();
+            Assert.True(wings.Count > 0, $"an unshielded wing panel between {engine.partInfo.name} and the fuselage");
+            Part other = v.parts.FirstOrDefault(p => p != engine && p.Modules.Contains<ModuleEngines>());
+            Assert.NotNull(other, "a second engine");
+            ctx.Record("before", $"other {other.partInfo.name} icon {other.stackIcon?.StageIcon != null}, listed {Staging.Parts().Contains(other)}; " +
+                                 $"{StageManager.StageCount} stages, {Staging.Parts().Count} listed icons");
+
+            ctx.Step("the panels past their wing limit");
+            foreach (FARWingAerodynamicModel w in wings)
+            {
+                w.YmaxForce = 0;
+                w.XZmaxForce = 0;
+            }
+            yield return Wait.Until(() => engine.vessel != v, 10, "a panel past its wing limit to come off with the engine", shot: false);
+            yield return Wait.Frames(3);
+            List<string> stray = Staging.Stray();
+            ctx.Record("staging after", $"stray {string.Join(", ", stray)}; other on the plane {other.vessel == v}, icon {other.stackIcon?.StageIcon != null}, " +
+                                        $"listed {Staging.Parts().Contains(other)}; {StageManager.StageCount} stages, " +
+                                        $"{Staging.Parts().Count} listed icons, {Staging.EmptyStages()} empty");
+            Assert.True(other.vessel == v, "the other engine stays on the plane");
+            Assert.Equal(0, stray.Count, "the staging list keeps only the plane's parts");
+            Assert.True(Staging.Parts().Contains(other), "the other engine stays in the staging list");
+            Assert.Equal(0, Staging.EmptyStages(), "no stage left empty");
+            exceptions.AssertNone("tearing off a wing with an engine on it");
         }
 
         private static readonly string[] Directions = { "Forward", "Backward", "Leftward", "Rightward" };

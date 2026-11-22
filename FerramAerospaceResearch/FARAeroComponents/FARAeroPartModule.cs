@@ -860,18 +860,17 @@ namespace FerramAerospaceResearch.FARAeroComponents
             }
 
             List<Part> children = part.children;
-            // decouple takes the child out of part.children: from the last back, or every second one stays on
+            // decouple takes the child out of part.children: from the last back, or every second one stays on.
+            // No break force: with one, KSP leaves the stage icons of what came off in the staging list.
             for (int i = children.Count - 1; i >= 0; i--)
             {
-                Part child = children[i];
-                child.decouple(25);
-
+                children[i].decouple();
                 failureOccured = true;
             }
 
             if (part.parent)
             {
-                part.decouple(25);
+                part.decouple();
                 failureOccured = true;
             }
 
