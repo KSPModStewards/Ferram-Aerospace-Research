@@ -30,10 +30,6 @@
       <HintPath>$(KSPBT_ManagedPath)\KSPAssets.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="Scale_Redist">
-      <HintPath>..\GameData\FerramAerospaceResearch\Plugins\Scale_Redist.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
     <ModReference Include="ModularFlightIntegrator">
       <DLLPath>GameData/ModularFlightIntegrator/ModularFlightIntegrator.dll</DLLPath>
       <CKANIdentifier>ModularFlightIntegrator</CKANIdentifier>

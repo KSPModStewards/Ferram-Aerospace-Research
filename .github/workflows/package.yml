@@ -144,7 +144,7 @@ jobs:
           skippable() {
             case "$1" in
               .github/workflows/tests.yml) return 1 ;;
-              .github/workflows/*|.github/scripts/testing_*) return 0 ;;
+              .github/workflows/*) return 0 ;;
               *) return 1 ;;
             esac
           }
