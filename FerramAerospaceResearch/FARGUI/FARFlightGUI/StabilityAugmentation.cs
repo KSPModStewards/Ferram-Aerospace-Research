@@ -92,7 +92,19 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
 
             for (int i = 0; i < systemInstances.Length; i++)
                 systemInstances[i] = new ControlSystem(systemTemplates[i]);
+            if (!FARDebugValues.DebugTools)
+                TurnOff();
             _vessel.OnAutopilotUpdate += OnAutoPilotUpdate;
+        }
+
+        // every system off: with FAR's debug tools off (FARDebugValues.DebugTools) they are hidden, so none is left on
+        // with no way to turn it off
+        public void TurnOff()
+        {
+            foreach (ControlSystem sys in systemInstances)
+                sys.active = false;
+            foreach (ControlSystem sys in systemTemplates)
+                sys.active = false;
         }
 
         public void SaveAndDestroy()
@@ -161,6 +173,12 @@ namespace FerramAerospaceResearch.FARGUI.FARFlightGUI
 
         private void OnAutoPilotUpdate(FlightCtrlState state)
         {
+            // hidden with FAR's debug tools (FARDebugValues.DebugTools): off with them
+            if (!FARDebugValues.DebugTools)
+            {
+                TurnOff();
+                return;
+            }
             if (_vessel.srfSpeed < 5)
                 return;
 
