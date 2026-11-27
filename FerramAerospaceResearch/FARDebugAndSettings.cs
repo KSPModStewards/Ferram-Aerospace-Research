@@ -285,6 +285,38 @@ namespace FerramAerospaceResearch
                 FARDebugValues.OnModelChanged();
             }
 
+            bool linear = OptionToggle(FARDebugValues.linearFlapLift,
+                                       "Linear flap lift",
+                                       "A control surface hinged behind a wing adds the lift of the whole section it cambers, in proportion to its deflection.",
+                                       "A hinged control surface's added lift is scaled by its angle of attack again (old behavior: weak, and weaker trailing edge up).");
+            if (linear != FARDebugValues.linearFlapLift)
+            {
+                FARDebugValues.linearFlapLift = linear;
+                FARDebugValues.UpdateWingInteractions();
+                FARDebugValues.OnModelChanged();
+            }
+
+            bool hydro = OptionToggle(FARDebugValues.hydrodynamics,
+                                      "Hydrodynamics",
+                                      "Water forces from each part's shape in the water: planing, a submerged hull's flow, its buoyancy as set below; foils in the water's density.",
+                                      "The water as thick air: the aero forces scaled by the submerged drag and lift multipliers, stock buoyancy (old behavior).");
+            if (hydro != FARDebugValues.hydrodynamics)
+                FARDebugValues.hydrodynamics = hydro;
+
+            bool shape = OptionToggle(FARDebugValues.shapeBuoyancy,
+                                      "Buoyancy from shape",
+                                      "A part's buoyancy from the water's pressure on its closed shape (with the air a hull of plates encloses), stock's held to what its shape displaces, a planing hull's lifted share fading with speed.",
+                                      "Stock buoyancy as it is, for every part (old behavior); the hydrodynamics' planing and flow forces are kept.");
+            if (shape != FARDebugValues.shapeBuoyancy)
+                FARDebugValues.shapeBuoyancy = shape;
+
+            bool wash = OptionToggle(FARDebugValues.propwash,
+                                     "Propeller slipstream",
+                                     "Wing panels and control surfaces behind a propeller fly in its slipstream: a tail keeps its authority and pitch damping at low speed.",
+                                     "The free stream only, behind propellers too (old behavior).");
+            if (wash != FARDebugValues.propwash)
+                FARDebugValues.propwash = wash;
+
             if (GUILayout.Button("Close"))
                 modelOptions = false;
             GUI.DragWindow();
@@ -579,6 +611,10 @@ namespace FerramAerospaceResearch
                 GUILayout.Toggle(FARDebugValues.aeroFailureExplosions, "Aero Failures Create Explosions", thisStyle);
             FARDebugValues.showMomentArrows =
                 GUILayout.Toggle(FARDebugValues.showMomentArrows, "Show Torque Arrows in Aero Overlay", thisStyle);
+            FARDebugValues.DebugTools =
+                GUILayout.Toggle(FARDebugValues.DebugTools,
+                                 "Show Debug and Experimental Tools (Exposure Debug, Flight Assistance)",
+                                 thisStyle);
             if (ToolbarManager.ToolbarAvailable)
             {
                 bool tmp = FARDebugValues.useBlizzyToolbar;
@@ -679,6 +715,32 @@ namespace FerramAerospaceResearch
             else
                 FARDebugValues.wholeWingAspectRatio = true;
 
+            if (node.HasValue("linearFlapLift") && bool.TryParse(node.GetValue("linearFlapLift"), out tmp))
+                FARDebugValues.linearFlapLift = tmp;
+            else
+                FARDebugValues.linearFlapLift = true;
+
+            // (a save without it: FARConfig's, the default for new saves)
+            if (node.HasValue("hydrodynamics") && bool.TryParse(node.GetValue("hydrodynamics"), out tmp))
+                FARDebugValues.hydrodynamics = tmp;
+            else
+                FARDebugValues.hydrodynamics = FARSettings.Hydrodynamics;
+
+            if (node.HasValue("shapeBuoyancy") && bool.TryParse(node.GetValue("shapeBuoyancy"), out tmp))
+                FARDebugValues.shapeBuoyancy = tmp;
+            else
+                FARDebugValues.shapeBuoyancy = true;
+
+            if (node.HasValue("propwash") && bool.TryParse(node.GetValue("propwash"), out tmp))
+                FARDebugValues.propwash = tmp;
+            else
+                FARDebugValues.propwash = true;
+
+            if (node.HasValue("debugTools") && bool.TryParse(node.GetValue("debugTools"), out tmp))
+                FARDebugValues.DebugTools = tmp;
+            else
+                FARDebugValues.DebugTools = false;
+
             FARAeroUtil.LoadAeroDataFromConfig();
             FARActionGroupConfiguration.LoadConfiguration();
 
@@ -701,6 +763,11 @@ namespace FerramAerospaceResearch
             node.AddValue("useBlizzyToolbar", FARDebugValues.useBlizzyToolbar & ToolbarManager.ToolbarAvailable);
             node.AddValue("aeroFailureExplosions", FARDebugValues.aeroFailureExplosions);
             node.AddValue("wholeWingAspectRatio", FARDebugValues.wholeWingAspectRatio);
+            node.AddValue("linearFlapLift", FARDebugValues.linearFlapLift);
+            node.AddValue("hydrodynamics", FARDebugValues.hydrodynamics);
+            node.AddValue("shapeBuoyancy", FARDebugValues.shapeBuoyancy);
+            node.AddValue("propwash", FARDebugValues.propwash);
+            node.AddValue("debugTools", FARDebugValues.DebugTools);
 
             FARActionGroupConfiguration.SaveConfiguration();
             // save in off thread so that it doesn't delay scene changes
@@ -736,6 +803,82 @@ namespace FerramAerospaceResearch
         // the aspect ratio of the whole wing a panel is part of (and that wing's sweep and the lift of the body between
         // its roots); off: each panel's own, as before. Set in the model options window
         public static bool wholeWingAspectRatio = true;
+
+        // a control surface hinged behind a wing: its section's added lift in proportion to its deflection (FARWingInteraction
+        // ClIncrementFromRear times cos AoA); off: times sin AoA, as before. Set in the model options window
+        public static bool linearFlapLift = true;
+
+        // with hydrodynamics: a part's buoyancy from its shape (PartHydrodynamics: the pressure on a closed mesh, stock's
+        // held to what an open one displaces, the planing hull's hydrostatic share fading with speed; and, with or without
+        // hydrodynamics, stock's held to the drag cube's box, FARAeroPartModule.HoldStockDisplacement); off: stock's as it
+        // is. Set in the model options window, kept per save
+        public static bool shapeBuoyancy = true;
+
+        // the slipstream of the vessel's propellers on its wing panels and control surfaces (FARAeroComponents.Propwash);
+        // off: the free stream only. Set in the model options window, kept per save
+        public static bool propwash = true;
+
+        // water forces from each part's geometry (PartHydrodynamics); off: the water share of the aero force, scaled by
+        // stock's submerged drag and lift scalars, as before. Set in the model options window, kept per save; a save
+        // without it takes FARConfig's (FARSettings.Hydrodynamics, never written in game). Changing it finds the wing
+        // groups again (a submerged foil's aspect ratio is grouped by it) and tells the model's listeners
+        public static bool hydrodynamics
+        {
+            get => hydrodynamicsOn;
+            set
+            {
+                if (value == hydrodynamicsOn)
+                    return;
+                hydrodynamicsOn = value;
+                FARWingInteraction.InvalidateWingGroups();
+                OnModelChanged();
+            }
+        }
+
+        private static bool hydrodynamicsOn = true;
+
+        private static bool debugTools;
+
+        /// <summary>
+        ///     FAR's debug and experimental tools shown: the flight window's debug window (the exposure renders) and its
+        ///     flight assistance (wing leveler, dampers, AoA limiter, dynamic pressure scaling: they act only while shown),
+        ///     and any test tools that look for it (the KspTests' put-on-water button). Off by default. Set in the debug
+        ///     options window
+        /// </summary>
+        public static bool DebugTools
+        {
+            get { return debugTools; }
+            set
+            {
+                if (debugTools == value)
+                    return;
+                debugTools = value;
+                DebugToolsChanged?.Invoke();
+            }
+        }
+
+        /// <summary>DebugTools was switched</summary>
+        public static event Action DebugToolsChanged;
+
+        /// <summary>
+        ///     Every wing's neighbours found again (the editor's craft, the loaded vessels'): an option that changes how
+        ///     they are found was changed
+        /// </summary>
+        public static void UpdateWingInteractions()
+        {
+            var parts = new List<Part>();
+            if (HighLogic.LoadedSceneIsEditor && EditorLogic.fetch != null && EditorLogic.fetch.ship != null)
+                parts.AddRange(EditorLogic.fetch.ship.parts);
+            if (HighLogic.LoadedSceneIsFlight && FlightGlobals.Vessels != null)
+                foreach (Vessel v in FlightGlobals.Vessels)
+                    if (v != null && v.loaded)
+                        parts.AddRange(v.parts);
+            foreach (Part p in parts)
+                if (p != null)
+                    foreach (PartModule m in p.Modules)
+                        if (m is ferram4.FARWingAerodynamicModel w)
+                            w.UpdateThisWingInteractions();
+        }
 
         /// <summary>A model option changed: the editor's analyses go stale</summary>
         public static event Action ModelChanged;

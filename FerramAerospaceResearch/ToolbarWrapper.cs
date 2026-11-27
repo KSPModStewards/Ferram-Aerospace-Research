@@ -716,8 +716,22 @@ namespace FerramAerospaceResearch
 
         internal static Type getType(string name)
         {
-            return AssemblyLoader.loadedAssemblies.SelectMany(a => a.assembly.GetExportedTypes())
+            return AssemblyLoader.loadedAssemblies.SelectMany(a => exportedTypes(a.assembly))
                                  .SingleOrDefault(t => t.FullName == name);
+        }
+
+        // an assembly's public types, none for one that can't give them: a mod referencing another that isn't installed
+        // (Kerbal Powers Naval's Cavitation.dll without BDArmory) threw here, and the toolbar's types went unfound
+        private static Type[] exportedTypes(Assembly assembly)
+        {
+            try
+            {
+                return assembly.GetExportedTypes();
+            }
+            catch (Exception)
+            {
+                return Type.EmptyTypes;
+            }
         }
 
         internal static PropertyInfo getProperty(Type type, string name)

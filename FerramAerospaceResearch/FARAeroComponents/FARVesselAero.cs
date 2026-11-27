@@ -100,6 +100,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         private VehicleAerodynamics _vehicleAero;
         private VesselIntakeRamDrag _vesselIntakeRamDrag;
+        private readonly VesselHydrodynamics _hydrodynamics = new VesselHydrodynamics();
+        internal VesselHydrodynamics Hydrodynamics => _hydrodynamics;
         private CachedSimResults lastSimResults;
         // Predictions can come from more than one thread; the memo is read and written whole under this lock.
         private readonly object lastSimResultsLock = new object();
@@ -262,7 +264,16 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 _updateRateLimiter++;
             else if (_updateQueued)
                 VesselUpdate(_recalcGeoModules);
+            // its parts' water model readied before they are wet (a look every PrewarmEvery steps)
+            if (++_prewarmTick >= PrewarmEvery)
+            {
+                _prewarmTick = 0;
+                PartHydrodynamics.PrewarmVessel(vessel);
+            }
         }
+
+        private const int PrewarmEvery = 10;
+        private int _prewarmTick;
 
         private void CalculateAndApplyVesselAeroProperties()
         {
@@ -307,7 +318,26 @@ namespace FerramAerospaceResearch.FARAeroComponents
             _vesselIntakeRamDrag.ApplyIntakeRamDrag((float)MachNumber, vessel.srf_velocity.normalized);
 
             foreach (FARAeroPartModule m in _currentAeroModules)
-                m.ApplyForces();
+                m.ApplyForces(_hydrodynamics);
+            // the water: the wet parts' hulls, once all of them are in
+            _hydrodynamics.Solve(vessel);
+            if (FARDebugValues.hydrodynamics)
+                _hydrodynamics.Crush(vessel);
+            foreach (FARAeroPartModule m in _currentAeroModules)
+                if (FARDebugValues.hydrodynamics && m.part.submergedPortion > 0 && m.Hydrodynamics != null)
+                    m.worldSpaceHydroForce = m.Hydrodynamics.LastForce;
+            // the water tearing parts off (gear legs, engine pods): decoupled once every part's check is done
+            if (FARDebugValues.hydrodynamics && FARDebugValues.allowStructuralFailures && !CheatOptions.UnbreakableJoints && !vessel.packed)
+            {
+                List<FARAeroPartModule> torn = null;
+                foreach (FARAeroPartModule m in _currentAeroModules)
+                    if (m.WaterTearsOff(TimeWarp.fixedDeltaTime))
+                        (torn ??= new List<FARAeroPartModule>()).Add(m);
+                if (torn != null)
+                    foreach (FARAeroPartModule m in torn)
+                        if (m != null && m.part != null)
+                            m.TearOffByWater();
+            }
         }
 
         private static bool loggedOffMainThread;

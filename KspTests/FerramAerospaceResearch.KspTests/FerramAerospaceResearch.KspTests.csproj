@@ -33,4 +33,9 @@
                Text="No FAR build at $(FarPlugins): build FerramAerospaceResearch.sln first, or set FarGameData." />
     </Target>
     <Import Project="$(KspTestRoot)/build/KspTest.FromSource.targets" />
+
+    <!-- (the recorder's sound: UnityEngine.AudioRenderer) -->
+    <ItemGroup>
+        <Reference Include="UnityEngine.AudioModule" HintPath="$(KspManaged)/UnityEngine.AudioModule.dll" Private="false" />
+    </ItemGroup>
 </Project>
