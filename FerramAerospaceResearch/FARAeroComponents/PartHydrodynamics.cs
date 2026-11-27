@@ -56,7 +56,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
     /// closes behind the body, and its thickness's pressures are no drag (d'Alembert); its drag is its friction. A
     /// section between the surface and SubmergedFade below it takes both, the planing's as it is at the surface.
     /// </summary>
-    internal sealed class PartHydrodynamics
+    internal sealed partial class PartHydrodynamics
     {
         public static double AddedMassCoefficient = 1.0;
         public static double CrossflowDragIn = 1.0;
@@ -115,6 +115,24 @@ namespace FerramAerospaceResearch.FARAeroComponents
         // much the same), fading with its section under the water as the strips' terms do; roll RadiationRollShare of
         // it (a ship's roll is lightly damped: its bilges radiate little)
         public static double RadiationDamping = 0.25, RadiationRollShare = 0.3;
+        // ... and on a short, round hull its pitch and roll RadiationRoundShare of it alike: a body of revolution rocking
+        // about its middle pushes little water up and down to make waves (Orion's drop tests rock for many seconds, ~0.07
+        // of critical), where strips taken as 2D sections each radiate as if the water could not get round their ends.
+        // Shares as above from a wetted length/beam of RadiationLongAspect up, the round share at 1, linear between
+        public static double RadiationRoundShare = 0.1, RadiationLongAspect = 4;
+        // the crossflow drag's share on a round hull (the same ramp to all of it at RadiationLongAspect): a 2D strip's Cd
+        // has no ends; a disc's is ~0.6 of a 2D plate's (Hoerner, 1.17 to 1.98). Orion's pool drops rebound and rock more
+        // than the strips' full crossflow lets a capsule
+        public static double CrossflowRoundShare = 0.6;
+        // ... and on a round hull it fades in with the strip's speed across the flow, as w^2 / (w^2 + w_t^2) with w_t this
+        // C_V on its widest strip (sqrt(g bMax)): a small swing's flow stays on a round hull (low Keulegan-Carpenter) and
+        // sheds little; a slam's separates. Orion's pool drop rocks on at ~0.8 of each swing
+        public static double CrossflowTaperCv = 0.3;
+
+        /// <summary>How long a wetted hull is for the 2D strips' damping: 0 for a round one (its wetted length no more
+        /// than its widest strip), 1 from RadiationLongAspect up.</summary>
+        internal static double LongRelief(double wettedLength, double bMax) =>
+            bMax > 0 ? Math.Min(1, Math.Max(0, (wettedLength / bMax - 1) / (RadiationLongAspect - 1))) : 1;
         // ... fading out from a strip's beam Froude number C_V RadiationFadeCv to 2.5x it (moving, its strips'
         // momentum damps its heave and pitch: the waves it radiates are a slow hull's damping, not a planing one's)
         public static double RadiationFadeCv = 0.4;
@@ -142,12 +160,27 @@ namespace FerramAerospaceResearch.FARAeroComponents
         // a foil in the water hands its force to the first of its parents that is not a foil, whether or not that part is
         // in a hull (FARWingAerodynamicModel.WaterHost; false: only to a hull's part, as before: tests compare)
         public static bool FoilHostAnyBody = true;
+        // a foil lying flat at the surface (a wing on the water, not a rudder or keel through it) is wet on its lower side
+        // only: it planes, the water's share of its force this share of the two-sided foil's (a planing plate's lift,
+        // pi tau, half a foil's 2 pi tau), and the water never pulls it down into itself (the suction on its lower side
+        // ventilates from the surface). Fully under, a hydrofoil, both sides
+        public static double PlaningFoilShare = 0.5;
         // a face is a strip's (the bottom's, the top's, a side's) as much as it looks that way (its area times its
         // normal's share in that direction), from this share on at the surface (the planing model's), from none under
         // the water (each section's sec between): there every face that looks that way at all is, so the strips do not
         // jump as a faceted section turns (a 12-sided collider rolled 15 deg moved a whole facet in or out of the
         // bottom's width)
         public static double FaceThreshold = 0.3;
+        // the crush cap (g; 0: off): the load the water's dynamic forces (the hulls' and the wet foils'; not the
+        // hydrostatics) put through a vessel's joints, held to this many g of its weight for a vessel of CrushRefMass
+        // (t), scaled by (mass / CrushRefMass)^(2/3) (VesselHydrodynamics.Crush). Past it the airframe would fail: a
+        // real one crushes and breaks up and the load falls, where KSP's parts hold any load whole (a 45 deg banked
+        // ditch's wing digging in, then its nose, stopped an unbreakable airliner at 24-37 g)
+        public static double CrushG = 0, CrushRefMass = 45;
+        // a crushed airframe floods: the joint load the cap has taken off, per the vessel's mass (m/s), from
+        // FloodStartDv to FloodFullDv, takes up to FloodMax of its parts' buoyancy, filling over FloodTau seconds (a
+        // breached hull keeping all its buoyancy, driven deep while the cap held, shot back out of the water)
+        public static double FloodMax = 0.5, FloodTau = 1.0, FloodStartDv = 2, FloodFullDv = 20;
         /// <summary>
         /// Stock's water drag and angular drag on the wet parts' rigidbodies (PartBuoyancy, FlightIntegrator), on top of
         /// this model's own damping: as stock applies them (Unity's rigidbody damping, which on a vessel of several parts
@@ -199,6 +232,51 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         internal readonly Part part;
         private List<GeometryMesh> meshSource;
+        // FAR's pieces' places (each one's origin and its bounds' centre in part space: 2 per piece) and which were shown,
+        // as the mesh was made of them: FAR keeps one list for a part and moves its pieces in it (a gear leg let down), so
+        // a mesh made before it touched the water (Prewarm) was a gear's folded up, its wheels never in the water. Either
+        // point moved MeshPoseMove or shown or hidden: made again. The centre catches a piece swung about its own origin
+        // (a ramp or leg on its hinge); turned about its centre (an engine's fan) is no change
+        private Vector3[] meshPoses;
+        private bool[] meshShown;
+        private const float MeshPoseMove = 0.05f;
+
+        private static void MeshPoses(List<GeometryMesh> meshes, out Vector3[] poses, out bool[] shown)
+        {
+            poses = new Vector3[2 * meshes.Count];
+            shown = new bool[meshes.Count];
+            for (int i = 0; i < meshes.Count; i++)
+            {
+                GeometryMesh m = meshes[i];
+                shown[i] = m != null && m.valid && m.gameObjectActiveInHierarchy && m.MeshLocalVerts != null;
+                if (shown[i])
+                {
+                    poses[2 * i] = m.meshLocalToPart.GetColumn(3);
+                    poses[2 * i + 1] = m.meshLocalToPart.MultiplyPoint3x4(m.meshLocalBounds.center);
+                }
+            }
+        }
+
+        private static bool PosesMoved(List<GeometryMesh> meshes, Vector3[] poses, bool[] shown)
+        {
+            if (poses == null || poses.Length != 2 * meshes.Count)
+                return true;
+            const float move2 = MeshPoseMove * MeshPoseMove;
+            for (int i = 0; i < meshes.Count; i++)
+            {
+                GeometryMesh m = meshes[i];
+                bool now = m != null && m.valid && m.gameObjectActiveInHierarchy && m.MeshLocalVerts != null;
+                if (now != shown[i])
+                    return true;
+                if (now && (((Vector3)m.meshLocalToPart.GetColumn(3) - poses[2 * i]).sqrMagnitude > move2 ||
+                            (m.meshLocalToPart.MultiplyPoint3x4(m.meshLocalBounds.center) - poses[2 * i + 1]).sqrMagnitude > move2))
+                    return true;
+            }
+            return false;
+        }
+
+        // the part's mesh is these meshes' as they are
+        private bool MeshesCurrent(List<GeometryMesh> meshes) => ReferenceEquals(meshes, meshSource) && !PosesMoved(meshes, meshPoses, meshShown);
         private int meshVersion;
         private Vector3[] localVerts = Array.Empty<Vector3>();
         private int[] tris = Array.Empty<int>();
@@ -307,33 +385,94 @@ namespace FerramAerospaceResearch.FARAeroComponents
             List<GeometryMesh> meshes = g != null ? g.meshDataList : null;
             if (meshes == null || meshes.Count == 0)
                 return false;
-            if (ReferenceEquals(meshes, meshSource))
+            if (MeshesCurrent(meshes))
                 return tris.Length > 0;
 
             long t0 = Stopwatch.GetTimestamp();
-            var verts = new List<Vector3>();
-            var t = new List<int>();
-            var log = new System.Text.StringBuilder();
-            int pieceCount = 0;
+            // made ahead for these meshes (Prewarm): its result, waited for if a worker has it now, made here if none
+            // has started it
+            MeshBuild b = TakeMeshJob(meshes);
+            if (b == null)
+            {
+                MeshCapture c = CaptureMesh(meshes);
+                // FAR hands over new meshes (a voxel update, an animation's state) as often as not with nothing moved:
+                // the same faces where they were keep everything made of them (the closed-in faces, the dry ones and
+                // the neighbours', the BVHs), which took a cargo ramp, its bay and an engine ~0.4 s to make again
+                if (SameMesh(c.Verts, c.Tris))
+                {
+                    meshSource = meshes;
+                    meshPoses = c.Poses;
+                    meshShown = c.Shown;
+                    ProfileMeshSame++;
+                    ProfileMeshTicks += Stopwatch.GetTimestamp() - t0;
+                    return tris.Length > 0;
+                }
+                b = BuildMesh(c, false);
+            }
+            InstallMesh(b);
+            ProfileMeshTicks += Stopwatch.GetTimestamp() - t0;
+            return tris.Length > 0;
+        }
+
+        // a part's FAR meshes as taken on the main thread (in part space), for BuildMesh (on any thread)
+        private sealed class MeshCapture
+        {
+            public List<GeometryMesh> Source;
+            public Vector3[] Poses;
+            public bool[] Shown;
+            public readonly List<Vector3> Verts = new List<Vector3>();
+            public readonly List<int> Tris = new List<int>();
+            public readonly System.Text.StringBuilder Log = new System.Text.StringBuilder();
+            public int Pieces;
+            public double VesselSize;
+        }
+
+        // what BuildMesh made of them, for InstallMesh (on the main thread)
+        private sealed class MeshBuild
+        {
+            public List<GeometryMesh> Source;
+            public Vector3[] Poses;
+            public bool[] Shown;
+            public Vector3[] RawVerts, Verts;
+            public int[] RawTris, Tris;
+            public int CapStart;
+            public double CapArea, Volume, OpenShare;
+            public Bounds Bounds;
+            public bool Closes;
+            public Vector3 Leak;
+            public string Log;
+            // made ahead too (Prewarm): its own BVH and its dry candidates with their rays' reaches (null: not)
+            public TriangleBvh Bvh;
+            public sbyte[] DryState;
+            public float[] DryReach;
+            public bool DryNone;
+            public long Ticks;
+        }
+
+        private MeshCapture CaptureMesh(List<GeometryMesh> meshes)
+        {
+            var c = new MeshCapture { Source = meshes };
+            MeshPoses(meshes, out c.Poses, out c.Shown);
             void Sink(string name, Vector3[] mv, int[] mt, Matrix4x4 toPart)
             {
-                log.Append($" {name}({mt.Length / 3})");
-                AddMesh(mv, mt, toPart, verts, t);
-                pieceCount++;
+                c.Log.Append($" {name}({mt.Length / 3})");
+                AddMesh(mv, mt, toPart, c.Verts, c.Tris);
+                c.Pieces++;
             }
-            FarMeshes(meshes, Sink, log);
-            // FAR hands over new meshes (a voxel update, an animation's state) as often as not with nothing moved: the
-            // same faces where they were keep everything made of them (the closed-in faces, the dry ones and the
-            // neighbours', the BVHs), which took a cargo ramp, its bay and an engine ~0.4 s to make again
-            if (SameMesh(verts, t))
-            {
-                meshSource = meshes;
-                ProfileMeshSame++;
-                ProfileMeshTicks += Stopwatch.GetTimestamp() - t0;
-                return tris.Length > 0;
-            }
-            rawVerts = verts.ToArray();
-            rawTris = t.ToArray();
+            FarMeshes(meshes, Sink, c.Log);
+            c.VesselSize = VesselSize();
+            return c;
+        }
+
+        // the part's mesh from its FAR meshes: simplified, its open edges capped, faces closing a hollow in dropped, its
+        // volume and whether it closes; dry: its own BVH and dry candidates too. No Unity objects: any thread
+        private static MeshBuild BuildMesh(MeshCapture c, bool dry)
+        {
+            long t0 = Stopwatch.GetTimestamp();
+            List<Vector3> verts = c.Verts;
+            List<int> t = c.Tris;
+            System.Text.StringBuilder log = c.Log;
+            var b = new MeshBuild { Source = c.Source, Poses = c.Poses, Shown = c.Shown, RawVerts = verts.ToArray(), RawTris = t.ToArray() };
             int unsimplified = t.Count / 3;
             if (MeshSimplifyTolerance > 0 && unsimplified >= MeshSimplifyMinTriangles && verts.Count > 0)
             {
@@ -342,7 +481,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     b0.Encapsulate(w);
                 double smallest = Math.Min(b0.size.x, Math.Min(b0.size.y, b0.size.z));
                 double tol = Math.Min(MeshSimplifyTolerance, MeshSimplifyShare * smallest);
-                double largest = Math.Max(b0.size.x, Math.Max(b0.size.y, b0.size.z)), vesselSize = VesselSize();
+                double largest = Math.Max(b0.size.x, Math.Max(b0.size.y, b0.size.z)), vesselSize = c.VesselSize;
                 double bulk = Math.Pow(Math.Max(b0.size.x, 1e-3) * Math.Max(b0.size.y, 1e-3) * Math.Max(b0.size.z, 1e-3), 1 / 3.0);
                 if (bulk < SmallPartShare * vesselSize)
                     tol = Math.Max(tol, Math.Min(Math.Min(SmallPartVesselShare * vesselSize, SmallPartOwnShare * largest),
@@ -360,14 +499,14 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 openSum += n2 * 0.5f;
                 area += n2.magnitude * 0.5;
             }
-            capStart = t.Count / 3;
-            CapArea = CapOpenEdges(verts, t, out int loops, out double roughCap);
+            int capStart = t.Count / 3;
+            b.CapArea = CapOpenEdges(verts, t, out int loops, out double roughCap);
             if (loops > 0)
-                log.Append($"; {loops} open edge loops capped, {CapArea:F4} m2 ({roughCap:F4} not flat)");
+                log.Append($"; {loops} open edge loops capped, {b.CapArea:F4} m2 ({roughCap:F4} not flat)");
             // (pieces together sealing a space in: their faces on it dropped, when that closes a hollow in, its volume
             // grown; pieces only overlapping, a B9 wing's, are left as they are: their buried faces' pressures cancel,
             // and dropping them left its skin's seams a little open)
-            if (pieceCount > 1)
+            if (c.Pieces > 1)
             {
                 double before = SignedVolume(verts, t);
                 var trial = new List<int>(t);
@@ -386,46 +525,109 @@ namespace FerramAerospaceResearch.FARAeroComponents
             double volume = 0;
             for (int i = 0; i + 2 < t.Count; i += 3)
             {
-                Vector3 a = verts[t[i]], b = verts[t[i + 1]], c = verts[t[i + 2]];
-                areaSum += Vector3.Cross(b - a, c - a) * 0.5f;
-                volume += Vector3.Dot(a, Vector3.Cross(b, c)) / 6.0;
+                Vector3 a = verts[t[i]], bb = verts[t[i + 1]], cc = verts[t[i + 2]];
+                areaSum += Vector3.Cross(bb - a, cc - a) * 0.5f;
+                volume += Vector3.Dot(a, Vector3.Cross(bb, cc)) / 6.0;
             }
-            MeshVolume = volume;
+            b.Volume = volume;
             var bounds = new Bounds(verts.Count > 0 ? verts[0] : Vector3.zero, Vector3.zero);
             foreach (Vector3 w in verts)
                 bounds.Encapsulate(w);
-            localBounds = bounds;
+            b.Bounds = bounds;
             log.Append($"; part-space bounds {bounds.min:F3} to {bounds.max:F3}");
-            meshCloses = area > 0 && volume > 0 &&
-                           (openSum.magnitude < ClosureTolerance * area && CapArea < CapTolerance * area ||
-                            loops > 0 && roughCap <= 0 && CapArea < FlatCapShare * area && areaSum.magnitude < CappedResidual * area);
-            leakArea = areaSum;
-            OpenShare = area > 0 ? openSum.magnitude / area : 1;
+            b.Closes = area > 0 && volume > 0 &&
+                       (openSum.magnitude < ClosureTolerance * area && b.CapArea < CapTolerance * area ||
+                        loops > 0 && roughCap <= 0 && b.CapArea < FlatCapShare * area && areaSum.magnitude < CappedResidual * area);
+            b.Leak = areaSum;
+            b.OpenShare = area > 0 ? openSum.magnitude / area : 1;
+            b.CapStart = capStart;
+            b.Verts = verts.ToArray();
+            b.Tris = t.ToArray();
+            b.Log = log.ToString();
+            // (an open mesh never owns its buoyancy, so never has dry faces worked out: none made for it)
+            if (dry && b.Closes && b.Tris.Length > 0)
+            {
+                b.Bvh = MeshBvh(b.Verts, b.Tris);
+                FindDryCandidates(b.Bvh, b.Verts, b.Tris, out b.DryState, out b.DryReach);
+                b.DryNone = Array.IndexOf(b.DryState, (sbyte)1) < 0;
+            }
+            b.Ticks = Stopwatch.GetTimestamp() - t0;
+            return b;
+        }
+
+        // BuildMesh's mesh as the part's (on the main thread): everything made of the old one made again as it is
+        // next needed, but what came made with it
+        private void InstallMesh(MeshBuild b)
+        {
+            rawVerts = b.RawVerts;
+            rawTris = b.RawTris;
+            capStart = b.CapStart;
+            CapArea = b.CapArea;
+            MeshVolume = b.Volume;
+            localBounds = b.Bounds;
+            meshCloses = b.Closes;
+            leakArea = b.Leak;
+            OpenShare = b.OpenShare;
             if (!OwnsBuoyancy)
                 RestoreStockBuoyancy();
-            FARLogger.Info($"Hydrodynamics of {part.partInfo?.name}: {t.Count / 3} triangles from FAR's meshes{log}; " +
-                           $"volume {volume:F3} m3, open {OpenShare:F4} of its area: " +
+            FARLogger.Info($"Hydrodynamics of {part.partInfo?.name}: {b.Tris.Length / 3} triangles from FAR's meshes{b.Log}; " +
+                           $"volume {b.Volume:F3} m3, open {OpenShare:F4} of its area: " +
                            (meshCloses ? "buoyancy from its pressure" : "stock buoyancy") +
                            (FARDebugValues.shapeBuoyancy ? "" : " (buoyancy from shape off: stock's)"));
-            localVerts = verts.ToArray();
-            tris = t.ToArray();
+            localVerts = b.Verts;
+            tris = b.Tris;
             worldVerts = new Vector3[localVerts.Length];
             depths = new float[localVerts.Length];
             contactStamp = new int[tris.Length / 3];
             dryStamp = new int[tris.Length / 3];
             contacts.Clear();
-            meshSource = meshes;
+            meshSource = b.Source;
+            meshPoses = b.Poses;
+            meshShown = b.Shown;
             meshVersion++;
-            ProfileMeshTicks += Stopwatch.GetTimestamp() - t0;
-            return tris.Length > 0;
+            if (b.DryState != null && !IsHullPlate)
+            {
+                // its dry candidates found (DryFaces' new mesh, its first recompute to come)
+                int n = tris.Length / 3;
+                bool keep = dryState != null && dryState.Length == n && (haveSimplex || haveLevel);
+                ownBvh = b.Bvh;
+                ownBvhVersion = meshVersion;
+                dryCandidateKey = -1 - meshVersion;
+                dryState = b.DryState;
+                dryReach = b.DryReach;
+                dryNone = b.DryNone;
+                dryJob = false;
+                dryCorners.Clear();
+                if (!keep)
+                {
+                    haveSimplex = haveLevel = false;
+                }
+                simplexKey = levelKey = long.MinValue;
+                dryKey = keep ? long.MinValue + 1 : long.MinValue;
+            }
         }
 
         // the vessel's size (m): the span of its parts' origins, and the largest part's own bounds (0 with no vessel)
+        // (kept per vessel till its parts change: every part's renderers walked, for each part's mesh)
+        private static readonly Dictionary<Vessel, (int version, double size)> vesselSizes = new Dictionary<Vessel, (int, double)>();
+
         private double VesselSize()
         {
             Vessel v = part.vessel;
             if (v == null || v.parts.Count == 0)
                 return 0;
+            HookStructure();
+            if (vesselSizes.TryGetValue(v, out var known) && known.version == structureVersion)
+                return known.size;
+            if (vesselSizes.Count > 32)
+                vesselSizes.Clear();
+            double size = MeasureVessel(v);
+            vesselSizes[v] = (structureVersion, size);
+            return size;
+        }
+
+        private double MeasureVessel(Vessel v)
+        {
             Transform root = v.rootPart != null ? v.rootPart.partTransform : part.partTransform;
             var b = new Bounds(root.InverseTransformPoint(v.parts[0].partTransform.position), Vector3.zero);
             float own = 0;
@@ -621,57 +823,205 @@ namespace FerramAerospaceResearch.FARAeroComponents
         // infinity: it meets nothing), so a new level or attitude only compares those with the surface; and in one
         // recompute, the surface's openness is looked at once in each OpenCell of it (the rays of many faces come up
         // within a few centimetres).
-        private bool[] dryFaces;
+        // A face's dryness fades with the level and the attitude, without a jump: the level and the up's three parts
+        // over a grid (DryLevelStep; the up's DryTurnStep, the part's farthest point moved no more than a level step by
+        // it), the dry faces found at the corners of the simplex of it the level and attitude are in (Kuhn's: 5 of its
+        // cell's 16), and each step a face is the share of dry its place in the simplex gives (DryWeights). Simplices side
+        // by side share the corners of their common side, so the dryness goes on without a jump from one to the next,
+        // a recompute's few steps too (the place weighed by the simplex it had, its weights held at 0 and up: at its
+        // side, the next one's own); a corner found is kept (dryCorners), crossing into a simplex mostly finding one new
+        // one. Dry or wet at once, a recess's rim at the water (a gear well, a cockpit's) flooded and drained as it
+        // rocked, a jump in its buoyancy each time, not the same at the same place and attitude, and kept a floating
+        // wreck rocking for good (0.2 rad/s, 0.04 m/s heave); corners a whole DryTurn tilted (a 4 deg cell's) put a long
+        // open hull's rim under at an end, and the blend of them flooded it.
+        private readonly Dictionary<long, bool[]> dryCorners = new Dictionary<long, bool[]>();   // NoneDry: none dry
+        private static readonly bool[] NoneDry = new bool[0];
+        private const int DryCornersKept = 512;
+        // the simplex in use: its corners' grid places (level, up x, y, z), their dry faces, the order its edges go in
+        private readonly int[,] simplexAt = new int[5, 4];
+        private readonly bool[][] simplexDry = new bool[5][];
+        private readonly int[] simplexOrder = new int[4];
+        private long simplexKey = long.MinValue;
+        private bool haveSimplex;
+        private float dryTurnStep = DryTurn;
+        private long turnStepVersion = long.MinValue;
+        private float[] dryWeights;
+        private const long LevelLoCorner = long.MinValue + 1, LevelHiCorner = long.MinValue + 2;
+        // at speed (AttitudeBlur): the dry faces at the bottom and the top of the level's step, at the attitude its
+        // recompute had (that step and the attitude's DryTurn bin its key)
+        private bool[] levelLo = NoneDry, levelHi = NoneDry;
+        private int levelBase;
+        private long levelKey = long.MinValue;
+        private bool haveLevel;
         private sbyte[] dryState;   // a face: 0 not looked at yet this mesh, 1 a candidate, -1 not one
         private bool dryNone;       // every face looked at, none a candidate
         private float[] dryReach;   // [face * HemiDirs.Length + ray], the candidates' (others unset)
         private const float OpenCell = 0.1f;
-        // a recompute under way (dryJob): for jobKey's level and attitude, the faces from jobNext on still to do
+
+        // a recompute under way (dryJob): for jobKey's simplex, its corners not yet found, the faces from jobNext on still to do
+        private sealed class DryCorner
+        {
+            public long Key;
+            public float Level;
+            public Vector3 Up;
+            public bool[] Result;
+            public int Count;
+            public readonly Dictionary<long, bool> Memo = new Dictionary<long, bool>();
+        }
+
         private bool dryJob;
         private long jobKey;
-        private Vector3 jobUp;
-        private float jobLevel;
-        private int jobNext, jobCount, jobCandidates;
-        private bool[] jobResult;
+        private readonly int[,] jobAt = new int[5, 4];
+        private readonly int[] jobOrder = new int[4];
+        private bool jobWantsSimplex, jobWantsLevel;
+        private long jobLevelKey;
+        private int jobLevelBase;
+        private readonly List<DryCorner> jobCorners = new List<DryCorner>();
+        private readonly List<DryCorner> cornerPool = new List<DryCorner>();
+        private int jobNext, jobCandidates;
         private long jobTicks;
         // the work a step a recompute does (a mesh's own first one all at once): DryWork, a face looked at or a ray cast
         // a unit. A cargo ramp's ~490 candidates and ~1600 rays took 15-90 ms in one step, several times a second as a
         // boat ran through waves
         private const int DryWorkPerStep = 300;
         private static long dryWork;
-        private readonly Dictionary<long, bool> openMemo = new Dictionary<long, bool>();
         // debug: compute every recompute the old way too (no cached reaches, no openness memo), counting the faces the two
         // disagree on (ProfileDryMismatches)
         public static bool DryCheck;
         public static long ProfileDryMismatches;
         private long dryKey = long.MinValue, dryCandidateKey = long.MinValue;
-        private int dryLogged = -1;
+        private int dryLoggedMin = -1, dryLoggedMax = -1;
         private TriangleBvh ownBvh;
         private int ownBvhVersion = -1;
-        private const float DryLevelStep = 0.05f, DryTurn = 0.05f;
+        private const float DryLevelStep = 0.05f, DryTurn = 0.05f, DryTurnMin = 0.004f;
+        // how far the up's grid step moves a part's farthest point (m): the waterline's blur at its ends (0.05 left the
+        // cockpit end heaving 0.015 m/s for good, 0.1 still slow; a whole 4 deg flooded the 11-A shell)
+        public static double DryTurnReach = 0.15;
 
         private TriangleBvh OwnBvh()
         {
             if (ownBvh != null && ownBvhVersion == meshVersion)
                 return ownBvh;
-            int n = tris.Length / 3;
+            ownBvh = MeshBvh(localVerts, tris);
+            ownBvhVersion = meshVersion;
+            return ownBvh;
+        }
+
+        // a mesh's triangles in a BVH, a face's index its triangle's (any thread; one thread at a time casting in it)
+        private static TriangleBvh MeshBvh(Vector3[] v, int[] t)
+        {
+            int n = t.Length / 3;
             var ta = new Vector3[n];
             var te1 = new Vector3[n];
             var te2 = new Vector3[n];
             for (int i = 0; i < n; i++)
             {
-                Vector3 a = localVerts[tris[3 * i]];
+                Vector3 a = v[t[3 * i]];
                 ta[i] = a;
-                te1[i] = localVerts[tris[3 * i + 1]] - a;
-                te2[i] = localVerts[tris[3 * i + 2]] - a;
+                te1[i] = v[t[3 * i + 1]] - a;
+                te2[i] = v[t[3 * i + 2]] - a;
             }
-            ownBvh = new TriangleBvh(ta, te1, te2);
-            ownBvhVersion = meshVersion;
-            return ownBvh;
+            return new TriangleBvh(ta, te1, te2);
         }
 
-        /// <summary>The faces dry this step (null: none), for the water's up (world) and this part's origin's depth.</summary>
-        private bool[] DryFaces(Vector3 upWorld, double depth0)
+        // a face (corner a, edges e1 and e2; self, its index in bvh) looked at the first time: whether a ray over its
+        // half meets the meshes (a candidate: it can be dry), and then its rays' reaches (reach[f * HemiDirs.Length + k])
+        private static bool Candidate(TriangleBvh bvh, Vector3 a, Vector3 e1, Vector3 e2, int self, float[] reach, int f)
+        {
+            if (!Blocked(bvh, a, e1, e2, self))
+                return false;
+            int hn = HemiDirs.Length;
+            FaceFrame(a, e1, e2, out Vector3 o, out Vector3 nn, out Vector3 b1, out Vector3 b2);
+            for (int k = 0; k < hn; k++)
+            {
+                Vector3 hd = HemiDirs[k];
+                reach[f * hn + k] = bvh.NearestHit(o, b1 * hd.x + b2 * hd.y + nn * hd.z, self);
+            }
+            return true;
+        }
+
+        // every face of a part's own mesh looked at (DryFaces' dryState, dryReach): any thread
+        private static void FindDryCandidates(TriangleBvh bvh, Vector3[] v, int[] t, out sbyte[] state, out float[] reach)
+        {
+            int n = t.Length / 3;
+            state = new sbyte[n];
+            reach = null;
+            for (int f = 0; f < n; f++)
+            {
+                Vector3 a = v[t[3 * f]], e1 = v[t[3 * f + 1]] - a, e2 = v[t[3 * f + 2]] - a;
+                reach ??= new float[n * HemiDirs.Length];
+                state[f] = Candidate(bvh, a, e1, e2, f, reach, f) ? (sbyte)1 : (sbyte)-1;
+            }
+        }
+
+        private static long CornerKey(int level, int x, int y, int z) =>
+            ((level + 500000L) << 30) | ((long)(x + 512) << 20) | ((long)(y + 512) << 10) | (long)(z + 512);
+
+        // the up's grid step for this mesh: its farthest point (from the origin the level is taken at) moved no more than
+        // DryTurnReach by it (a hull plate's: across its vessel), within DryTurnMin and DryTurn
+        private float DryTurnStep(long version)
+        {
+            if (turnStepVersion == version)
+                return dryTurnStep;
+            turnStepVersion = version;
+            double r = 0;
+            if (IsHullPlate)
+                r = 0.5 * VesselSize();
+            else
+                for (int k = 0; k < 8; k++)
+                {
+                    Vector3 c = new Vector3((k & 1) != 0 ? localBounds.max.x : localBounds.min.x, (k & 2) != 0 ? localBounds.max.y : localBounds.min.y,
+                                            (k & 4) != 0 ? localBounds.max.z : localBounds.min.z);
+                    r = Math.Max(r, c.magnitude);
+                }
+            dryTurnStep = (float)Math.Max(DryTurnMin, Math.Min(DryTurn, DryTurnReach / Math.Max(r, 1e-3)));
+            return dryTurnStep;
+        }
+
+        // the simplex the grid place g (level, up x, y, z in grid steps) is in: its corners (at) and its edges' order
+        private static void Simplex(float[] g, int[,] at, int[] order)
+        {
+            var f = new float[4];
+            for (int d = 0; d < 4; d++)
+            {
+                int b = Mathf.FloorToInt(g[d]);
+                at[0, d] = b;
+                f[d] = g[d] - b;
+                order[d] = d;
+            }
+            // (its parts largest first)
+            for (int i = 1; i < 4; i++)
+                for (int j = i; j > 0 && f[order[j]] > f[order[j - 1]]; j--)
+                    (order[j], order[j - 1]) = (order[j - 1], order[j]);
+            for (int k = 0; k < 4; k++)
+                for (int d = 0; d < 4; d++)
+                    at[k + 1, d] = at[k, d] + (order[k] == d ? 1 : 0);
+        }
+
+        private static long SimplexKey(int[,] at, int[] order) =>
+            CornerKey(at[0, 0], at[0, 1], at[0, 2], at[0, 3]) * 24 + order[0] * 6 + order[1] * 2 + (order[2] > order[3] ? 1 : 0);
+
+        private float[] GridPlace(float level, Vector3 up, float turn) =>
+            new[] { level / DryLevelStep, up.x / turn, up.y / turn, up.z / turn };
+
+        // the attitude's blur's share (DryWeights): all of it at rest, none at speed. Its hydrostatics must store and give
+        // back what they take for a hull to come to rest; at speed the flow's forces are what matter, and a few degrees'
+        // blur left a ditching airliner's engine ducts and wheel wells dry at attitudes it wasn't at: it slewed round
+        // and tore its engines off (14 g). From DryBlurFullSpeed to DryBlurNoneSpeed (m/s over the surface) it fades out
+        public static double DryBlurFullSpeed = 1, DryBlurNoneSpeed = 3;
+
+        private float AttitudeBlur()
+        {
+            double s = part.vessel != null ? part.vessel.srfSpeed : 0;
+            double x = Math.Max(0, Math.Min(1, (s - DryBlurFullSpeed) / Math.Max(1e-3, DryBlurNoneSpeed - DryBlurFullSpeed)));
+            return (float)(1 - x * x * (3 - 2 * x));
+        }
+
+        /// <summary>
+        /// Each face's dryness this step, 0 (wet) to 1 (null: none dry), for the water's up (world) and this part's
+        /// origin's depth.
+        /// </summary>
+        private float[] DryFaces(Vector3 upWorld, double depth0)
         {
             TriangleBvh bvh;
             Matrix4x4 toBvh;
@@ -700,15 +1050,19 @@ namespace FerramAerospaceResearch.FARAeroComponents
             {
                 // a new mesh: its candidates found as the recomputes come to its faces. Its first recompute is done at
                 // once, unless the faces are as many as before (an animation's travel, an engine's fan turned: the
-                // same faces moved), whose dry ones are kept till it's done
+                // same faces moved), whose dryness is kept till it's done
                 dryCandidateKey = version;
-                bool keep = dryState != null && dryState.Length == n && (dryFaces == null || dryFaces.Length == n);   // (null: none dry)
+                bool keep = dryState != null && dryState.Length == n && (haveSimplex || haveLevel);
                 dryState = new sbyte[n];
                 dryReach = null;
                 dryNone = false;
                 dryJob = false;
+                dryCorners.Clear();
                 if (!keep)
-                    dryFaces = null;
+                {
+                    haveSimplex = haveLevel = false;
+                }
+                simplexKey = levelKey = long.MinValue;
                 dryKey = keep ? long.MinValue + 1 : long.MinValue;
             }
             if (dryNone)
@@ -717,24 +1071,66 @@ namespace FerramAerospaceResearch.FARAeroComponents
             Vector3 upPart = part.partTransform.InverseTransformDirection(upWorld).normalized;
             Vector3 up = toBvh.MultiplyVector(upPart).normalized;
             float level = Vector3.Dot(toBvh.MultiplyPoint3x4(upPart * (float)depth0), up);
-            long key = version * 31 + Mathf.RoundToInt(level / DryLevelStep) * 1000003L +
-                       Mathf.RoundToInt(up.x / DryTurn) * 961 + Mathf.RoundToInt(up.y / DryTurn) * 31 + Mathf.RoundToInt(up.z / DryTurn);
+            float turn = DryTurnStep(version);
+            float[] g = GridPlace(level, up, turn);
+            float blur = AttitudeBlur();
             if (!dryJob)
             {
-                if (key == dryKey)
-                    return dryFaces;
-                // a recompute for this level and attitude, DryWorkPerStep a step, the faces as they were till it's
-                // done (a new mesh's first at once)
+                // the simplex (blur > 0) and the level's step at the attitude as it is (blur < 1) it needs, found already?
+                var at = new int[5, 4];
+                var order = new int[4];
+                long sKey = long.MinValue, lKey = long.MinValue;
+                int il = Mathf.FloorToInt(level / DryLevelStep);
+                if (blur > 0)
+                {
+                    Simplex(g, at, order);
+                    sKey = version * 31 + SimplexKey(at, order);
+                }
+                if (blur < 1)
+                    lKey = version * 31 + il * 1000003L + Mathf.RoundToInt(up.x / DryTurn) * 961 + Mathf.RoundToInt(up.y / DryTurn) * 31 +
+                           Mathf.RoundToInt(up.z / DryTurn);
+                bool wantSimplex = blur > 0 && sKey != simplexKey, wantLevel = blur < 1 && lKey != levelKey;
+                if (!wantSimplex && !wantLevel)
+                    return DryWeights(g, level, blur, n);
+                // its corners not yet found, DryWorkPerStep a step, the faces as they were till it's done (a new
+                // mesh's first at once)
+                foreach (DryCorner c in jobCorners)
+                    cornerPool.Add(c);
+                jobCorners.Clear();
+                jobWantsSimplex = wantSimplex;
+                jobWantsLevel = wantLevel;
+                if (wantSimplex)
+                {
+                    for (int k = 0; k < 5; k++)
+                    {
+                        long ck = CornerKey(at[k, 0], at[k, 1], at[k, 2], at[k, 3]);
+                        if (dryCorners.ContainsKey(ck))
+                            continue;
+                        Vector3 cu = new Vector3(at[k, 1], at[k, 2], at[k, 3]) * turn;
+                        jobCorners.Add(NewCorner(ck, at[k, 0] * DryLevelStep, cu.sqrMagnitude < 1e-6f ? up : cu.normalized));
+                    }
+                    Array.Copy(at, jobAt, at.Length);
+                    Array.Copy(order, jobOrder, 4);
+                    jobKey = sKey;
+                }
+                if (wantLevel)
+                {
+                    jobCorners.Add(NewCorner(LevelLoCorner, il * DryLevelStep, up));
+                    jobCorners.Add(NewCorner(LevelHiCorner, (il + 1) * DryLevelStep, up));
+                    jobLevelKey = lKey;
+                    jobLevelBase = il;
+                }
+                if (jobCorners.Count == 0)
+                {
+                    // the simplex's corners all found before (a boat rocking back): used as they are. (Every face has
+                    // been looked at by then: a corner kept is a recompute of this mesh done)
+                    UseSimplex(at, order, sKey);
+                    return DryWeights(g, level, blur, n);
+                }
                 dryJob = true;
-                jobKey = key;
-                jobUp = up;
-                jobLevel = level;
                 jobNext = 0;
-                jobCount = 0;
                 jobCandidates = 0;
-                jobResult = null;
                 jobTicks = 0;
-                openMemo.Clear();
             }
             bool all = dryKey == long.MinValue;
             long budget = all ? long.MaxValue : DryWorkPerStep, work0 = dryWork;
@@ -749,38 +1145,33 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 {
                     // first look at this face: a candidate if a ray over its half meets the meshes, its rays' reaches
                     dryWork += hn;
-                    if (!Blocked(bvh, a, e1, e2, baseIndex + f))
-                    {
-                        dryState[f] = -1;
-                        continue;
-                    }
-                    dryState[f] = 1;
                     dryReach ??= new float[n * hn];
-                    FaceFrame(a, e1, e2, out Vector3 o, out Vector3 nn, out Vector3 b1, out Vector3 b2);
-                    for (int k = 0; k < hn; k++)
-                    {
-                        Vector3 hd = HemiDirs[k];
-                        dryReach[f * hn + k] = bvh.NearestHit(o, b1 * hd.x + b2 * hd.y + nn * hd.z, baseIndex + f);
-                    }
+                    dryState[f] = Candidate(bvh, a, e1, e2, baseIndex + f, dryReach, f) ? (sbyte)1 : (sbyte)-1;
+                    if (dryState[f] < 0)
+                        continue;
                 }
                 jobCandidates++;
-                dryWork++;
                 ProfileDryFaces++;
                 // (past the part's own mesh, only a face in a hollow open to the air: a ray of its up to the surface
                 // clear. One every ray of which meets the mesh is buried in it (a B9 panel's pieces overlap, an
                 // engine's casing): its pressure is its part's own, cancelled by the face it lies against)
-                bool dry = !SeaReaches(bvh, a, e1, e2, baseIndex + f, jobUp, jobLevel, out bool surfaced, dryReach, f, openMemo) && (IsHullPlate || surfaced);
-                if (DryCheck)
+                for (int k = 0; k < jobCorners.Count; k++)
                 {
-                    bool was = !SeaReaches(bvh, a, e1, e2, baseIndex + f, jobUp, jobLevel, out bool s0, null, f, null) && (IsHullPlate || s0);
-                    if (was != dry)
-                        ProfileDryMismatches++;
+                    DryCorner c = jobCorners[k];
+                    dryWork++;
+                    bool dry = !SeaReaches(bvh, a, e1, e2, baseIndex + f, c.Up, c.Level, out bool surfaced, dryReach, f, c.Memo) && (IsHullPlate || surfaced);
+                    if (DryCheck)
+                    {
+                        bool was = !SeaReaches(bvh, a, e1, e2, baseIndex + f, c.Up, c.Level, out bool s0, null, f, null) && (IsHullPlate || s0);
+                        if (was != dry)
+                            ProfileDryMismatches++;
+                    }
+                    if (!dry)
+                        continue;
+                    c.Result ??= new bool[n];
+                    c.Result[f] = true;
+                    c.Count++;
                 }
-                if (!dry)
-                    continue;
-                jobResult ??= new bool[n];
-                jobResult[f] = true;
-                jobCount++;
             }
             jobNext = f;
             long dt = Stopwatch.GetTimestamp() - t0;
@@ -789,17 +1180,159 @@ namespace FerramAerospaceResearch.FARAeroComponents
             if (!all)   // (a step's slice; not a new mesh's first recompute, all at once)
                 ProfileDryMaxTicks = Math.Max(ProfileDryMaxTicks, dt);
             if (jobNext < n)
-                return dryFaces;
+                return DryWeights(g, level, blur, n);
             dryJob = false;
-            dryKey = jobKey;
-            dryFaces = jobResult;
+            dryKey = 0;
             dryNone = jobCandidates == 0;
             ProfileDryRuns++;
+            if (dryCorners.Count + jobCorners.Count > DryCornersKept)
+            {
+                // (all but the simplex in use's and this one's)
+                var kept = new List<KeyValuePair<long, bool[]>>();
+                for (int k = 0; k < 5; k++)
+                {
+                    long ck = CornerKey(simplexAt[k, 0], simplexAt[k, 1], simplexAt[k, 2], simplexAt[k, 3]);
+                    if (haveSimplex && dryCorners.TryGetValue(ck, out bool[] r))
+                        kept.Add(new KeyValuePair<long, bool[]>(ck, r));
+                    ck = CornerKey(jobAt[k, 0], jobAt[k, 1], jobAt[k, 2], jobAt[k, 3]);
+                    if (jobWantsSimplex && dryCorners.TryGetValue(ck, out r))
+                        kept.Add(new KeyValuePair<long, bool[]>(ck, r));
+                }
+                dryCorners.Clear();
+                foreach (var kv in kept)
+                    dryCorners[kv.Key] = kv.Value;
+            }
+            int min = int.MaxValue, max = 0;
+            foreach (DryCorner c in jobCorners)
+            {
+                if (c.Key == LevelLoCorner)
+                    levelLo = c.Result ?? NoneDry;
+                else if (c.Key == LevelHiCorner)
+                    levelHi = c.Result ?? NoneDry;
+                else
+                    dryCorners[c.Key] = c.Result ?? NoneDry;
+                min = Math.Min(min, c.Count);
+                max = Math.Max(max, c.Count);
+            }
             double ms = jobTicks * 1000.0 / Stopwatch.Frequency;
-            if (jobCount != dryLogged || ms > 20)
-                FARLogger.Info($"Hydrodynamics of {part.partInfo?.name}: {jobCount} of {n} faces out of the sea's reach ({ms:F0} ms)");
-            dryLogged = jobCount;
-            return dryFaces;
+            if (min != dryLoggedMin || max != dryLoggedMax || ms > 20)
+                FARLogger.Info($"Hydrodynamics of {part.partInfo?.name}: {min} to {max} of {n} faces out of the sea's reach " +
+                               $"({jobCorners.Count} corners, {ms:F0} ms)");
+            dryLoggedMin = min;
+            dryLoggedMax = max;
+            if (jobWantsSimplex)
+                UseSimplex(jobAt, jobOrder, jobKey);
+            if (jobWantsLevel)
+            {
+                levelBase = jobLevelBase;
+                levelKey = jobLevelKey;
+                haveLevel = true;
+            }
+            return DryWeights(g, level, blur, n);
+        }
+
+        // a corner to find (from the pool)
+        private DryCorner NewCorner(long key, float level, Vector3 up)
+        {
+            DryCorner c;
+            if (cornerPool.Count > 0)
+            {
+                c = cornerPool[cornerPool.Count - 1];
+                cornerPool.RemoveAt(cornerPool.Count - 1);
+            }
+            else
+                c = new DryCorner();
+            c.Key = key;
+            c.Level = level;
+            c.Up = up;
+            c.Result = null;
+            c.Count = 0;
+            c.Memo.Clear();
+            return c;
+        }
+
+        private void UseSimplex(int[,] at, int[] order, long key)
+        {
+            Array.Copy(at, simplexAt, at.Length);
+            Array.Copy(order, simplexOrder, 4);
+            for (int k = 0; k < 5; k++)
+                if (!dryCorners.TryGetValue(CornerKey(at[k, 0], at[k, 1], at[k, 2], at[k, 3]), out simplexDry[k]))
+                    simplexDry[k] = NoneDry;
+            simplexKey = key;
+            haveSimplex = true;
+        }
+
+        // each face's dryness at grid place g: blur of it the simplex in use's corners', weighed by g's place in it (held
+        // at 0 and up, a place past it as its next recompute runs at its side, the next simplex's own), the rest the
+        // level's step's at its attitude as it was (levelLo, levelHi: the level's place in the step, held to it); the
+        // one found already all of it till the other is
+        private float[] DryWeights(float[] g, float level, float blur, int n)
+        {
+            if (!haveSimplex)
+                blur = 0;
+            if (!haveLevel)
+                blur = haveSimplex ? 1 : 0;
+            bool any = false;
+            if (blur > 0)
+                for (int k = 0; k < 5; k++)
+                    any |= simplexDry[k].Length > 0;
+            if (blur < 1 && haveLevel)
+                any |= levelLo.Length > 0 || levelHi.Length > 0;
+            if (!any)
+                return null;
+            var w = new float[5];
+            if (blur > 0)
+            {
+                var f = new float[4];
+                for (int d = 0; d < 4; d++)
+                    f[d] = g[d] - simplexAt[0, d];
+                w[0] = 1 - f[simplexOrder[0]];
+                for (int k = 1; k < 4; k++)
+                    w[k] = f[simplexOrder[k - 1]] - f[simplexOrder[k]];
+                w[4] = f[simplexOrder[3]];
+                float sum = 0;
+                for (int k = 0; k < 5; k++)
+                {
+                    w[k] = Math.Max(0, w[k]);
+                    sum += w[k];
+                }
+                if (sum <= 1e-6f)
+                {
+                    w[0] = 1;
+                    sum = 1;
+                }
+                for (int k = 0; k < 5; k++)
+                    w[k] *= blur / sum;
+            }
+            float x = haveLevel ? Mathf.Clamp01(level / DryLevelStep - levelBase) : 0;
+            float wLo = (1 - blur) * (1 - x), wHi = (1 - blur) * x;
+            if (dryWeights == null || dryWeights.Length != n)
+                dryWeights = new float[n];
+            for (int i = 0; i < n; i++)
+            {
+                float d = 0;
+                // (a face not looked at yet keeps what it had: a new mesh of as many faces, an engine's fan turned, is as
+                // dry as it was till its recompute is done)
+                if (dryState[i] >= 0)
+                {
+                    if (blur > 0)
+                        for (int k = 0; k < 5; k++)
+                        {
+                            bool[] c = simplexDry[k];
+                            if (c.Length > 0 && c[i])
+                                d += w[k];
+                        }
+                    if (blur < 1)
+                    {
+                        if (levelLo.Length > 0 && levelLo[i])
+                            d += wLo;
+                        if (levelHi.Length > 0 && levelHi[i])
+                            d += wHi;
+                    }
+                }
+                dryWeights[i] = d;
+            }
+            return dryWeights;
         }
 
         private void Face(Matrix4x4 m, int i, out Vector3 a, out Vector3 e1, out Vector3 e2)
@@ -1083,8 +1616,20 @@ namespace FerramAerospaceResearch.FARAeroComponents
         /// </summary>
         private bool[] Shadowed()
         {
-            // its neighbours two joints out (a cargo bay open at both ends: the part beyond it closes what this one's
-            // cap faces into)
+            long key = ShadowKey();
+            poseWhy = key != shadowKey ? "meshes changed" : "";
+            if (key == shadowKey && (Time.time - shadowBuiltAt < PoseEvery || !PosesMoved()))
+                return shadowed;
+            // made ahead for these meshes (Prewarm), else made here
+            ShadowBuild b = key != shadowKey ? TakeShadowJob(key) : null;
+            InstallShadow(b ?? BuildShadow(CaptureShadow(key)));
+            return shadowed;
+        }
+
+        // its neighbours two joints out with meshes (nb; a cargo bay open at both ends: the part beyond it closes what
+        // this one's cap faces into), and the key of its mesh's and theirs
+        private long ShadowKey()
+        {
             FindNear();
             nb.Clear();
             foreach (FARAeroPartModule m in nearModules)
@@ -1096,23 +1641,54 @@ namespace FerramAerospaceResearch.FARAeroComponents
             long key = meshVersion;
             foreach (PartHydrodynamics hq in nb)
                 key = key * 1000003 + hq.meshVersion * 7919 + hq.part.GetInstanceID();
-            poseWhy = key != shadowKey ? "meshes changed" : "";
-            if (key == shadowKey && (Time.time - shadowBuiltAt < PoseEvery || !PosesMoved()))
-                return shadowed;
-            shadowBuiltAt = Time.time;
-            shadowKey = key;
-            shadowed = null;
-            shadowBvh = null;
-            shadowPoses.Clear();
-            shadowOrgPoses.Clear();
-            if (tris.Length == 0)
-                return null;
+            return key;
+        }
 
-            long t0 = Stopwatch.GetTimestamp();
-            // every triangle in this part's space, its own first (their indices its faces'), then its neighbours'
-            int total = tris.Length / 3;
+        // this part's mesh and its neighbours' (nb), where they are in its space, on the main thread, for BuildShadow
+        private sealed class ShadowCapture
+        {
+            public long Key;
+            public int Version, CapStart;
+            public Vector3[] Verts;
+            public int[] Tris;
+            public readonly List<(Vector3[] verts, int[] tris, Matrix4x4 pose, Matrix4x4 org)> Near =
+                new List<(Vector3[], int[], Matrix4x4, Matrix4x4)>();
+        }
+
+        private sealed class ShadowBuild
+        {
+            public long Key;
+            public int Version, Count, Neighbours, CapStart;
+            public bool[] Result;
+            public TriangleBvh Bvh;
+            public List<Matrix4x4> Poses, OrgPoses;
+            public long Ticks;
+        }
+
+        private ShadowCapture CaptureShadow(long key)
+        {
+            var c = new ShadowCapture { Key = key, Version = meshVersion, CapStart = capStart, Verts = localVerts, Tris = tris };
+            Matrix4x4 toMe = part.partTransform.worldToLocalMatrix;
             foreach (PartHydrodynamics hq in nb)
-                total += hq.tris.Length / 3;
+                c.Near.Add((hq.localVerts, hq.tris, toMe * hq.part.partTransform.localToWorldMatrix, OrgPose(hq.part)));
+            return c;
+        }
+
+        // every triangle in this part's space, its own first (their indices its faces'), then its neighbours', and its
+        // own faces closed in by them. No Unity objects: any thread
+        private static ShadowBuild BuildShadow(ShadowCapture c)
+        {
+            long t0 = Stopwatch.GetTimestamp();
+            var b = new ShadowBuild
+            {
+                Key = c.Key, Version = c.Version, Neighbours = c.Near.Count, CapStart = c.CapStart,
+                Poses = new List<Matrix4x4>(c.Near.Count), OrgPoses = new List<Matrix4x4>(c.Near.Count),
+            };
+            if (c.Tris.Length == 0)
+                return b;
+            int total = c.Tris.Length / 3;
+            foreach (var q in c.Near)
+                total += q.tris.Length / 3;
             var ta = new Vector3[total]; var te1 = new Vector3[total]; var te2 = new Vector3[total];
             int at = 0;
             void Mesh(Vector3[] lv, int[] lt, Matrix4x4 m)
@@ -1124,42 +1700,48 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     at++;
                 }
             }
-            Mesh(localVerts, tris, Matrix4x4.identity);
-            Matrix4x4 toMe = part.partTransform.worldToLocalMatrix;
-            foreach (PartHydrodynamics hq in nb)
+            Mesh(c.Verts, c.Tris, Matrix4x4.identity);
+            foreach (var q in c.Near)
             {
-                Matrix4x4 pose = toMe * hq.part.partTransform.localToWorldMatrix;
-                shadowPoses.Add(pose);
-                shadowOrgPoses.Add(OrgPose(hq.part));
-                Mesh(hq.localVerts, hq.tris, pose);
+                b.Poses.Add(q.pose);
+                b.OrgPoses.Add(q.org);
+                Mesh(q.verts, q.tris, q.pose);
             }
-            var bvh = new TriangleBvh(ta, te1, te2);
-            shadowBvh = bvh;
-            leeCache.Clear();
-
-            int ownCount = tris.Length / 3;
+            b.Bvh = new TriangleBvh(ta, te1, te2);
+            int ownCount = c.Tris.Length / 3;
             var result = new bool[ownCount];
-            int count = 0;
-            for (int i = 0; i < ownCount && i < capStart; i++)
-            {
-                if (Enclosed(bvh, ta[i], te1[i], te2[i], i))
+            for (int i = 0; i < ownCount && i < c.CapStart; i++)
+                if (Enclosed(b.Bvh, ta[i], te1[i], te2[i], i))
                 {
                     result[i] = true;
-                    count++;
+                    b.Count++;
                 }
-            }
-            if (count > 0)
-                shadowed = result;
-            long ticks = Stopwatch.GetTimestamp() - t0;
+            if (b.Count > 0)
+                b.Result = result;
+            b.Ticks = Stopwatch.GetTimestamp() - t0;
+            return b;
+        }
+
+        // BuildShadow's result as the part's (on the main thread)
+        private void InstallShadow(ShadowBuild b)
+        {
+            shadowBuiltAt = Time.time;
+            shadowKey = b.Key;
+            shadowed = b.Result;
+            shadowBvh = b.Bvh;
+            shadowPoses.Clear();
+            shadowPoses.AddRange(b.Poses);
+            shadowOrgPoses.Clear();
+            shadowOrgPoses.AddRange(b.OrgPoses);
+            leeCache.Clear();
             ProfileShadowBuilds++;
-            ProfileShadowTicks += ticks;
-            ProfileShadowMaxTicks = Math.Max(ProfileShadowMaxTicks, ticks);
+            ProfileShadowTicks += b.Ticks;
+            ProfileShadowMaxTicks = Math.Max(ProfileShadowMaxTicks, b.Ticks);
             // (logged when it changes what is closed in, or is slow)
-            double ms = ticks * 1000.0 / Stopwatch.Frequency;
-            if (count != shadowLogged || ms > 20)
-                FARLogger.Info($"Hydrodynamics of {part.partInfo?.name}: {count} of {capStart} faces closed in with {nb.Count} neighbours ({ms:F0} ms; {poseWhy})");
-            shadowLogged = count;
-            return shadowed;
+            double ms = b.Ticks * 1000.0 / Stopwatch.Frequency;
+            if (b.Count != shadowLogged || ms > 20)
+                FARLogger.Info($"Hydrodynamics of {part.partInfo?.name}: {b.Count} of {b.CapStart} faces closed in with {b.Neighbours} neighbours ({ms:F0} ms; {poseWhy})");
+            shadowLogged = b.Count;
         }
 
         private static double SignedVolume(List<Vector3> verts, List<int> t)
@@ -1592,7 +2174,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
             // the faces the sea doesn't reach (an open boat's hollow, a skin of plates' inside): no water on them at all.
             // Past its own mesh, or a hull plate's past the vessel's: a hull of other parts keeps each part's buoyancy its
             // own, as it was built for (a submarine's sail, a wing's seams: hollows that are no air tank)
-            bool[] sealedF = OwnsBuoyancy ? DryFaces(up, depth0) : null;
+            float[] dryF = OwnsBuoyancy ? DryFaces(up, depth0) : null;
 
             // the faces that meet another wet part this step
             stamp++;
@@ -1677,12 +2259,20 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 // (a sealed face looking into another wet part keeps its pressure: the other's face against it
                 // cancels it, and each part's buoyancy stays its own, so no part feels the water's level push; only a
                 // face sealed in over air, a void the parts close in, loses it)
-                if (OwnsBuoyancy && !sealedIn && !(sealedF != null && sealedF[i / 3] && !(anyContact && contactStamp[i / 3] == stamp)))
+                if (OwnsBuoyancy && !sealedIn)
                 {
                     // hydrostatic pressure rho g depth on the wet piece, integrated exactly: linear over each fan
                     // triangle, so its force is A mean(p) and its first moment A/12 (sum p_i r_i + sum p_i sum r_i)
                     // (the centroid would put a long, sloping piece's force too far up it); on a closed surface it
-                    // sums to the displaced water's weight at the center of buoyancy
+                    // sums to the displaced water's weight at the center of buoyancy.
+                    // A dry face (out of the sea's reach) loses only its pressure's vertical part: a hollow's dry faces
+                    // under the level, capped there, close a surface whose pressure is straight up, so dry faces take
+                    // away buoyancy, never push sideways. The rays may find only some of a hollow's faces dry (a
+                    // cockpit's or a docking port's recess), and their whole pressure taken away pushed a floating
+                    // wreck sideways (up to a kN on a 2.5 t piece: drifting and turning on still water). Partly dry (the
+                    // level between its step's dry and wet, DryWeights), that share of it; flow on it while it's mostly wet
+                    float dryness = dryF != null && !(anyContact && contactStamp[i / 3] == stamp) ? dryF[i / 3] : 0;
+                    Vector3 pn = dryness > 0 ? n - up * (Vector3.Dot(n, up) * dryness) : n;
                     Vector3 o = scratchA[0];
                     float po = (float)Math.Max(0, depth0 - Vector3.Dot(o - p0, up));
                     for (int j = 1; j + 1 < scratchA.Count; j++)
@@ -1698,13 +2288,13 @@ namespace FerramAerospaceResearch.FARAeroComponents
                             continue;
                         Vector3 ro = o - com, r1 = q1 - com, r2 = q2 - com;
                         Vector3 moment = (po * ro + p1 * r1 + p2 * r2 + ps * (ro + r1 + r2)) * (ta / 12f);  // integral of depth * r
-                        HsForces.Add(-n * (scale * ta * ps / 3f));
-                        HsTorques.Add(Vector3.Cross(moment * scale, -n));
+                        HsForces.Add(-pn * (scale * ta * ps / 3f));
+                        HsTorques.Add(Vector3.Cross(moment * scale, -pn));
                         HsPoints.Add((o + q1 + q2) / 3f);
                     }
                 }
                 if (Foil || i / 3 >= capStart || anyContact && contactStamp[i / 3] == stamp || shadow != null && shadow[i / 3] ||
-                    sealedF != null && sealedF[i / 3])
+                    dryF != null && dryF[i / 3] >= 0.5f)
                     continue;
                 PolyVerts.AddRange(scratchA);
                 PolyCounts.Add(scratchA.Count);
@@ -1819,9 +2409,126 @@ namespace FerramAerospaceResearch.FARAeroComponents
 
         public void Add(PartHydrodynamics hd) => pending.Add(hd);
 
+        // the crush cap (PartHydrodynamics.CrushG): the scale on the wet foils' forces (set each step by Crush, used by
+        // the next ones: a foil's force goes on as it is computed, before or after the hulls'), and their raw forces
+        // since the last Crush (kN, on the part each goes on)
+        public double CrushScale = 1;
+        private readonly List<Part> foilParts = new List<Part>();
+        private readonly List<Vector3d> foilForces = new List<Vector3d>();
+        private readonly Dictionary<Part, Vector3d> loadOf = new Dictionary<Part, Vector3d>();
+        public double LastCrushTotal;   // (kN, the last step's raw joint load)
+        public double LastCrushLimit;   // (kN, what the joints could carry)
+        public double CrushLeast = 1;   // the least scale the cap has put on (the vessel's worst crush so far)
+        public double CrushDv;          // the joint load the cap has taken off so far, per the vessel's mass (m/s)
+        public double Flood;            // the share of the wet parts' buoyancy lost to flooding (0 to FloodMax)
+        private bool solvedThisStep;
+
+        public void AddFoil(Part p, Vector3d force)
+        {
+            foilParts.Add(p);
+            foilForces.Add(force);
+        }
+
+        /// <summary>
+        /// The crush cap, once this step's hull forces are on. The load the vessel's joints carry: each part's water force
+        /// past what its own mass takes of the vessel's acceleration from them, half the sum of those (all of it carried
+        /// from the parts the water pushes to those it doesn't; none on a vessel of one part, or one loaded evenly). Past
+        /// what the joints hold (an airframe's strength going with its cross-section, its weight with its volume:
+        /// CrushG of the weight of a CrushRefMass vessel, scaled by (mass / CrushRefMass)^(2/3)), this step's hull forces
+        /// are scaled down to it (each part's LastForce at its CoM and LastTorque taken back by the share over it) and
+        /// the foils' next ones. The load taken off, per the vessel's mass, floods it (FloodStartDv to FloodFullDv).
+        /// </summary>
+        public void Crush(Vessel vessel)
+        {
+            if (PartHydrodynamics.CrushG <= 0)
+            {
+                foilParts.Clear();
+                foilForces.Clear();
+                CrushScale = 1;
+                return;
+            }
+            loadOf.Clear();
+            for (int i = 0; i < foilParts.Count; i++)
+                if (foilParts[i] != null)
+                    loadOf[foilParts[i]] = (loadOf.TryGetValue(foilParts[i], out Vector3d was) ? was : Vector3d.zero) + foilForces[i];
+            foilParts.Clear();
+            foilForces.Clear();
+            if (solvedThisStep)
+                foreach (PartHydrodynamics hd in wet)
+                    if (hd.part != null && hd.LastForce != Vector3.zero)
+                        loadOf[hd.part] = (loadOf.TryGetValue(hd.part, out Vector3d was) ? was : Vector3d.zero) + (Vector3d)hd.LastForce;
+            // (rigidbody masses: t; kN / t is m/s2)
+            double mass = 0;
+            Vector3d sum = Vector3d.zero;
+            foreach (Part p in vessel.parts)
+                if (p.rb != null)
+                {
+                    mass += p.rb.mass;
+                    if (loadOf.TryGetValue(p, out Vector3d f))
+                        sum += f;
+                }
+            double joint = 0;
+            if (mass > 0 && loadOf.Count > 0)
+            {
+                Vector3d accel = sum / mass;
+                foreach (Part p in vessel.parts)
+                    if (p.rb != null)
+                        joint += ((loadOf.TryGetValue(p, out Vector3d f) ? f : Vector3d.zero) - accel * p.rb.mass).magnitude;
+                joint *= 0.5;
+            }
+            double refMass = Math.Max(1e-3, PartHydrodynamics.CrushRefMass);
+            double limit = PartHydrodynamics.CrushG * 9.80665 * refMass * Math.Pow(Math.Max(1e-6, mass) / refMass, 2.0 / 3);
+            LastCrushTotal = joint;
+            LastCrushLimit = limit;
+            double s = joint > limit ? limit / joint : 1;
+            CrushScale = s;
+            CrushLeast = Math.Min(CrushLeast, s);
+            if (!solvedThisStep)
+                return;
+            if (s < 1 && mass > 0)
+                CrushDv += (joint - limit) * TimeWarp.fixedDeltaTime / mass;
+            // flooding: toward its share of the crush so far, the buoyancy (the parts' own, or stock's) taken back by it
+            double floodTo = PartHydrodynamics.FloodMax *
+                             Math.Max(0, Math.Min(1, (CrushDv - PartHydrodynamics.FloodStartDv) /
+                                                     Math.Max(1e-3, PartHydrodynamics.FloodFullDv - PartHydrodynamics.FloodStartDv)));
+            if (Flood < floodTo)
+                Flood += (floodTo - Flood) * Math.Min(1, TimeWarp.fixedDeltaTime / Math.Max(1e-3, PartHydrodynamics.FloodTau));
+            if (Flood > 1e-4)
+            {
+                float f = (float)Flood;
+                foreach (PartHydrodynamics hd in wet)
+                {
+                    if (hd.part == null || hd.part.rb == null)
+                        continue;
+                    if (hd.OwnsBuoyancy)
+                    {
+                        hd.part.AddForce((Vector3d)(-hd.LastHydrostaticForce * f));
+                        hd.part.AddTorque((Vector3d)(-hd.LastHydrostaticTorque * f));
+                        hd.LastHydrostaticForce *= 1 - f;
+                        hd.LastHydrostaticTorque *= 1 - f;
+                    }
+                    else if (hd.part.partBuoyancy != null)
+                        hd.part.AddForceAtPosition((Vector3d)(-hd.part.partBuoyancy.lastBuoyantForce * f),
+                                                   (Vector3d)hd.part.partBuoyancy.lastForcePosition);
+                }
+            }
+            if (s >= 1)
+                return;
+            float back = (float)(1 - s);
+            foreach (PartHydrodynamics hd in wet)
+                if (hd.LastForce != Vector3.zero && hd.part != null && hd.part.rb != null)
+                {
+                    hd.part.AddForce((Vector3d)(-hd.LastForce * back));
+                    hd.part.AddTorque((Vector3d)(-hd.LastTorque * back));
+                    hd.LastForce *= (float)s;
+                    hd.LastTorque *= (float)s;
+                }
+        }
+
         /// <summary>Solves and applies this step's water forces on the parts added since the last call.</summary>
         public void Solve(Vessel vessel)
         {
+            solvedThisStep = false;
             if (pending.Count == 0)
                 return;
             long t0 = Stopwatch.GetTimestamp();
@@ -1849,6 +2556,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     SolveHull(h, vessel);
                     ApplyHullDamping(h);
                 }
+                solvedThisStep = true;
             }
             PartHydrodynamics.ProfileSolveTicks += Stopwatch.GetTimestamp() - t0 - gathered;
         }
@@ -2210,14 +2918,27 @@ namespace FerramAerospaceResearch.FARAeroComponents
                         radArea[k] += a;
                         radW[k] += a * Vector3.Dot(pc.V, up);
                     }
-                double g = first.Gravity, roll = PartHydrodynamics.RadiationRollShare;
+                // (the hull's heave: its bottom's mean vertical speed; its shape: wetted length over its widest strip)
+                double areaAll = 0, wAll = 0, bMax = 0;
+                for (int k = 0; k < nStrips; k++)
+                    if (radArea[k] > 0 && radHi[k] > radLo[k])
+                    {
+                        areaAll += radArea[k];
+                        wAll += radW[k];
+                        bMax = Math.Max(bMax, radHi[k] - radLo[k]);
+                    }
+                double wHull = areaAll > 0 ? wAll / areaAll : 0;
+                double relief = PartHydrodynamics.LongRelief(wettedLength, bMax);
+                double round = PartHydrodynamics.RadiationRoundShare;
+                double g = first.Gravity, roll = round + (PartHydrodynamics.RadiationRollShare - round) * relief, pitch = round + (1 - round) * relief;
                 var radTorqueOf = new Vector3[parts.Count];
                 foreach (Piece pc in pieces)
                 {
                     int k = pc.Strip;
                     if (pc.Down <= 0 || sec[k] <= 0 || radArea[k] <= 0 || radHi[k] <= radLo[k])
                         continue;
-                    double wMean = radW[k] / radArea[k], w = wMean + roll * (Vector3.Dot(pc.V, up) - wMean);
+                    // (heave in full; pitch, the strips' means about it, and roll, each piece about its strip's, by shape)
+                    double wMean = radW[k] / radArea[k], w = wHull + pitch * (wMean - wHull) + roll * (Vector3.Dot(pc.V, up) - wMean);
                     // (gone as the hull gets going, on the strip's beam Froude number from RadiationFadeCv: there the
                     // strips' momentum, m_a V from the point velocity, damps its heave and pitch already; both at a
                     // planing hull's C_V 3-5 set NACA 57-B5's free trim 2.4 deg below TN 716's)
@@ -2256,7 +2977,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
             // with the hull's heave and pitch (2D+t, Zarnick's), applied explicitly launched a light hull (NACA 11-A's
             // 23 kg tank model, its added mass near its own) out of the water as it was set in it, and did not damp the
             // floatplane's porpoising: the step's ventilation on the trim-dependent wetted beam drove that)
-            double stiffness = Momentum(strips, nStrips, ka, rho, U, dx, secTop, secBottom, xHat, hull, xMin, wettedLength);
+            double stiffness = Momentum(strips, nStrips, ka, rho, U, dx, secTop, secBottom, xHat, hull, xMin, wettedLength, first.Gravity);
             if (under > 0)
             {
                 foreach (Strip[] set in Mirrored)
@@ -2280,8 +3001,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     ports[k].Ma *= g;
                     stbds[k].Ma *= g;
                 }
-                stiffness += under * (MomentumSubmerged(strips, tops, nStrips, rho, U, dx) + MomentumSubmerged(tops, strips, nStrips, rho, U, dx) +
-                                            MomentumSubmerged(ports, stbds, nStrips, rho, U, dx) + MomentumSubmerged(stbds, ports, nStrips, rho, U, dx));
+                stiffness += under * (MomentumSubmerged(strips, tops, nStrips, rho, U, dx, sec) + MomentumSubmerged(tops, strips, nStrips, rho, U, dx, sec) +
+                                            MomentumSubmerged(ports, stbds, nStrips, rho, U, dx, sec) + MomentumSubmerged(stbds, ports, nStrips, rho, U, dx, sec));
             }
 
             // explicit-step safety: the damping these forces put on the vessel stays well inside one step
@@ -2608,8 +3329,11 @@ namespace FerramAerospaceResearch.FARAeroComponents
         // across the body (its SubLoad): half the difference of its V and its mirror's (the strip on the body's other
         // side, the top's for the bottom's, the port's for the starboard's: the body's own taper moves both alike, the
         // flow across it them oppositely; a tapering end's V is no crossflow). Returns the damping these forces put on
-        // the vessel (N s/m)
-        private static double MomentumSubmerged(Strip[] ss, Strip[] mirror, int nStrips, double rho, double U, float dx)
+        // the vessel (N s/m). A closing section's recovery (its load pushing a face that moves away from the water) gives
+        // back no more than the line took ahead of it that step (in steady flow under the water, the nose's: d'Alembert,
+        // less SubmergedRecovery's loss): with the bow planing (the bottom's planing strips carry it, not this) and the
+        // tail under, a ditching plane's tail cone took 200 kN of thrust and lift from it rising out, 2 MJ in a bounce
+        private static double MomentumSubmerged(Strip[] ss, Strip[] mirror, int nStrips, double rho, double U, float dx, double[] sec)
         {
             double maPrevV = 0, maPrev = 0, maMax = 0, crossflow = 0;
             for (int k = nStrips - 1; k >= 0; k--)
@@ -2635,6 +3359,26 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 s.SubCrossflow = fcf;
                 s.SubLoad = jump + fcf;
             }
+            // (each strip's power as applied: its load times its speed into the water, on its share under the surface)
+            double taken = 0, given = 0;
+            for (int k = 0; k < nStrips; k++)
+            {
+                double p = ss[k].Planform > 0 ? ss[k].SubLoad * ss[k].V * (1 - sec[k]) : 0;
+                if (p > 0)
+                    taken += p;
+                else
+                    given -= p;
+            }
+            if (given > taken)
+            {
+                double keep = taken / given;
+                for (int k = 0; k < nStrips; k++)
+                    if (ss[k].Planform > 0 && ss[k].SubLoad * ss[k].V < 0)
+                    {
+                        ss[k].SubLoad *= keep;
+                        ss[k].SubCrossflow *= keep;
+                    }
+            }
             return U * maMax + crossflow;
         }
 
@@ -2643,7 +3387,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
         // then each jump spread aft over the rest of its wetted run with the flat-plate loading. Returns the damping
         // these forces put on the vessel (N s/m), for the explicit step's limiter
         private static double Momentum(Strip[] ss, int nStrips, double ka, double rho, double U, float dx, float[] top, float[] bottom,
-                                       Vector3 xHat, HullResult hull, float xMin, double wettedLength)
+                                       Vector3 xHat, HullResult hull, float xMin, double wettedLength, double g)
         {
             // the first wake's line, lagged: the water reaching the afterbody left the step the time it takes to run along
             // the hull ago (and the strips' binning moves where a run ends by a strip from step to step)
@@ -2657,6 +3401,18 @@ namespace FerramAerospaceResearch.FARAeroComponents
             int runStart = -1, wakeFrom = -1;
             float wakeDepth = 0, wakeSlope = 0;
             double maPrevWake = 0;
+            // (the crossflow drag's share by the hull's shape: CrossflowRoundShare on a round one, all of it on a long one)
+            Sections(ss, nStrips, ka);
+            double bMax = 0;
+            for (int k = 0; k < nStrips; k++)
+                if (ss[k].Planform > 0)
+                    bMax = Math.Max(bMax, ss[k].Width);
+            double relief = PartHydrodynamics.LongRelief(wettedLength, bMax);
+            double cdShape = PartHydrodynamics.CrossflowRoundShare + (1 - PartHydrodynamics.CrossflowRoundShare) * relief;
+            double cdIn = PartHydrodynamics.CrossflowDragIn * cdShape, cdOut = PartHydrodynamics.CrossflowDragOut * cdShape;
+            // (the round share's taper by the strip's speed; the stiffness keeps the untapered slope, its bound)
+            double taperRound = 1 - relief, wt2 = PartHydrodynamics.CrossflowTaperCv * PartHydrodynamics.CrossflowTaperCv * g * bMax;
+            double Taper(double v) => taperRound > 0 && wt2 > 0 ? 1 - taperRound * wt2 / (v * v + wt2) : 1;
             for (int k = nStrips - 1; k >= 0; k--)
             {
                 ref Strip s = ref ss[k];
@@ -2667,7 +3423,7 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     runStart = wakeFrom = -1;
                     continue;
                 }
-                Section(ref s, ka);
+                // (its section: Sections above)
                 double ma = s.Ma;
                 double maV = ma * s.V;
                 maVPeak = Math.Max(maVPeak, maV);
@@ -2730,8 +3486,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
                         s.JumpSteady = U * (maW * vRelS - maPrevWakeS);
                         maPrevWakeS = maW * vRelS;
                         stiffness = Math.Max(stiffness, U * maW);
-                        double fw = 0.5 * PartHydrodynamics.CrossflowDragIn * rho * s.Width * reach * dx * vRel * vRel;
-                        stiffness += PartHydrodynamics.CrossflowDragIn * rho * s.Width * reach * dx * vRel;
+                        double fw = 0.5 * cdIn * Taper(vRel) * rho * s.Width * reach * dx * vRel * vRel;
+                        stiffness += cdIn * rho * s.Width * reach * dx * vRel;
                         s.Load = s.Crossflow = fw;
                         continue;
                     }
@@ -2742,8 +3498,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
                     // in the wake: friction and hydrostatics only, and a push into the water
                     if (s.V > 0)
                     {
-                        double fin = 0.5 * PartHydrodynamics.CrossflowDragIn * rho * s.Width * dx * s.V * s.V;
-                        stiffness += PartHydrodynamics.CrossflowDragIn * rho * s.Width * dx * s.V;
+                        double fin = 0.5 * cdIn * Taper(s.V) * rho * s.Width * dx * s.V * s.V;
+                        stiffness += cdIn * rho * s.Width * dx * s.V;
                         s.Load = s.Crossflow = fin;
                     }
                     continue;
@@ -2753,8 +3509,8 @@ namespace FerramAerospaceResearch.FARAeroComponents
                 s.JumpSteady = U * (ma * vSteady - maPrevVs);
                 maPrevVs = ma * vSteady;
                 stiffness = Math.Max(stiffness, U * ma);
-                double cd = s.V > 0 ? PartHydrodynamics.CrossflowDragIn : PartHydrodynamics.CrossflowDragOut;
-                double fcf = 0.5 * cd * rho * s.Width * dx * s.V * Math.Abs(s.V);
+                double cd = s.V > 0 ? cdIn : cdOut;
+                double fcf = 0.5 * cd * Taper(s.V) * rho * s.Width * dx * s.V * Math.Abs(s.V);
                 stiffness += cd * rho * s.Width * dx * Math.Abs(s.V);
                 s.Load = s.Crossflow = fcf;
             }

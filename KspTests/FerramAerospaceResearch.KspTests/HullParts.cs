@@ -395,6 +395,8 @@ namespace FerramAerospaceResearch.KspTests
         public static void Hyper(TestContext ctx, bool on, double defaultRate = 4)
         {
             double rate = ctx.ParamDouble("hyperWarp", defaultRate);
+            rearmAt = 0;
+            Rearmed = 0;
             if (!on || rate <= 1)
             {
                 Flight.HyperWarpOff();
@@ -402,6 +404,27 @@ namespace FerramAerospaceResearch.KspTests
             }
             ctx.Record("hyperWarp", Flight.HyperWarp(rate, 1.0) ? $"{rate:F0}x attempted, time scale {Time.timeScale:F1}" : "refused (real time)");
         }
+
+        /// <summary>
+        /// Hyper-warp (as <see cref="Hyper" /> turned it on) back on when TimeControl has dropped it: it stops when a part
+        /// of the active vessel is destroyed or the vessel is (a crash's breakup). At most every half second of game time;
+        /// called each physics step of a run that wants it. Rearmed: the times it did since Hyper.
+        /// </summary>
+        public static void Keep(TestContext ctx, double defaultRate = 4)
+        {
+            double rate = ctx.ParamDouble("hyperWarp", defaultRate);
+            if (rate <= 1 || Time.timeScale > 1.01f)
+                return;
+            double now = Planetarium.GetUniversalTime();
+            if (now < rearmAt)
+                return;
+            rearmAt = now + 0.5;
+            if (Flight.HyperWarp(rate, 1.0))
+                Rearmed++;
+        }
+
+        public static int Rearmed;
+        private static double rearmAt;
     }
 
     /// <summary>
@@ -494,6 +517,18 @@ namespace FerramAerospaceResearch.KspTests
                 FARDebugValues.wholeWingAspectRatio = bool.Parse(ww);
                 FARDebugValues.UpdateWingInteractions();
             }
+        }
+
+        /// <summary>The crush cap's worst on the loaded vessels (hd.CrushG; each vessel's least scale and its flooding).</summary>
+        public static void RecordCrush(TestContext ctx)
+        {
+            if (PartHydrodynamics.CrushG <= 0)
+                return;
+            var lines = new List<string>();
+            foreach (Vessel v in FlightGlobals.VesselsLoaded)
+                if (v.GetComponent<FARVesselAero>()?.Hydrodynamics is VesselHydrodynamics vh && vh.CrushLeast < 1)
+                    lines.Add($"{v.vesselName} ({v.parts.Count} parts, {v.totalMass:F1} t): least scale {vh.CrushLeast:F2}, taken off {vh.CrushDv:F1} m/s, flooded {vh.Flood:P0}");
+            ctx.Record("crush", lines.Count > 0 ? string.Join("; ", lines) : "never capped");
         }
 
         public static void Restore()

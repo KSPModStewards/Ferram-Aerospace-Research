@@ -17,6 +17,23 @@ namespace FerramAerospaceResearch.KspTests
     /// </summary>
     public static class BoatTests
     {
+        // the frames' times while it lives (real time)
+        private sealed class FrameWatch : MonoBehaviour
+        {
+            public float Worst, Total;
+            public int Frames, Over50;
+
+            private void Update()
+            {
+                float dt = Time.unscaledDeltaTime;
+                Frames++;
+                Total += dt;
+                Worst = Math.Max(Worst, dt);
+                if (dt > 0.05f)
+                    Over50++;
+            }
+        }
+
         // the floatplane tests' (one instance): CustomProceduralParts for the hull, FARTestFloatplane for the motor
         private const string Mods = TestWarp.WaterMods;   // the water tests' instance
 
@@ -204,10 +221,15 @@ namespace FerramAerospaceResearch.KspTests
                 Parts("after 5 s");
                 Vessel v = FlightGlobals.ActiveVessel;
                 string said = null;
+                // (the frames from the button's press to 5 s on the water: its parts' water model made as they come in,
+                // or ahead of time, PartHydrodynamics.PrewarmVessel)
+                var watch = new GameObject("FARTestFrameWatch").AddComponent<FrameWatch>();
                 yield return FarWaterTools.PutOnWater(s => said = s);
                 Parts("placed");
                 v = FlightGlobals.ActiveVessel;
                 yield return Wait.GameSeconds(5);
+                UnityEngine.Object.Destroy(watch.gameObject);
+                ctx.Record("contact frames", $"worst {watch.Worst * 1000:F0} ms, {watch.Over50} over 50 ms ({watch.Frames} frames, {watch.Total:F1} s)");
                 Parts("5 s on the water");
                 ctx.Record("on the water", $"{said}; {v.situation}, {v.srfSpeed:F2} m/s, mass {v.GetTotalMass():F2} t, {v.parts.Count} parts");
 
@@ -258,7 +280,7 @@ namespace FerramAerospaceResearch.KspTests
                     string views = ctx.Param("views");
                     // (views=deck: one view, from ~12 m over the stern looking aft along the wake, its pivot on the sea
                     // 1.25 camDistance behind the CoM: a passenger's view of the wake off a ferry's stern; camDistance ~115)
-                    if (views == "cycle" || views == "demo" || views == "deck")
+                    if (views == "cycle" || views == "demo" || views == "deck" || views == "bow")
                     {
                         float dist0 = (float)ctx.ParamDouble("camDistance", 40), pitch0 = camPitch * Mathf.Rad2Deg;
                         Vector3 bowQuarter = Quaternion.AngleAxis(-30, up0) * -h0;   // (looking back at the bow from ahead, off its starboard side)
@@ -270,6 +292,15 @@ namespace FerramAerospaceResearch.KspTests
                                 ("stern-low", h0, 2f, 0.2f, 0.25f),
                                 ("bow-low", bowQuarter, 5f, 0.17f, -0.25f),
                                 ("top-bow", -h0, 55f, 0.5f, -0.1f),
+                            }
+                            // (views=bow: the bow wave alone: from dead ahead looking straight aft along the hull, then from ahead
+                            // off the starboard bow, above it and low)
+                            : views == "bow"
+                            ? new (string name, Vector3 look, float pitch, float dist, float back)[]
+                            {
+                                ("bow-front", -h0, 10f, 0.08f, -0.3f),
+                                ("bow-high", bowQuarter, 28f, 0.3f, -0.3f),
+                                ("bow-low", bowQuarter, 6f, 0.2f, -0.3f),
                             }
                             : new (string name, Vector3 look, float pitch, float dist, float back)[]
                             {
@@ -287,12 +318,16 @@ namespace FerramAerospaceResearch.KspTests
                         string logPath = Path.Combine(frames, "views.txt");
                         // (each view turns with the course: in a turn it keeps its place about the craft and the wake behind)
                         int current = 0;
+                        float wantDist = dist0 * cycle[0].dist;
                         aimView = course =>
                         {
                             var c = cycle[current % cycle.Length];
                             float turned = course.sqrMagnitude > 0 ? Vector3.SignedAngle(h0, course, up0) : 0;
                             float delta = (Vector3.SignedAngle(look, c.look, up0) + turned) * Mathf.Deg2Rad;
                             cam.camHdg = Math.Abs(slope) > 0.2f ? (delta - a0) / slope : 0;
+                            // (and its distance held: once set, it came out 7-10 m in some runs, 26 in others, the same view)
+                            if (Math.Abs(cam.Distance - wantDist) > 0.5f)
+                                cam.SetDistanceImmediate(wantDist);
                         };
                         // (where the last view's camera and its pivot ended up, about the CoM: m ahead, to starboard, up)
                         string Where(Vector3 p)
@@ -310,9 +345,10 @@ namespace FerramAerospaceResearch.KspTests
                             aimView(vel.magnitude > 1 ? vel.normalized : Vector3.zero);
                             cam.camPitch = c.pitch * Mathf.Deg2Rad;
                             cam.minDistance = Mathf.Min(cam.minDistance, 5f);
-                            cam.SetDistanceImmediate(dist0 * c.dist);
+                            wantDist = dist0 * c.dist;
+                            cam.SetDistanceImmediate(wantDist);
                             anchor.Back = c.back * dist0;
-                            anchor.Height = views == "deck" ? 0f : views == "demo" && c.pitch < 20 ? 1.5f : float.NaN;   // (the low views: 1.5 m above the sea)
+                            anchor.Height = views == "deck" ? 0f : (views == "demo" || views == "bow") && c.pitch < 20 ? 1.5f : float.NaN;   // (the low views: 1.5 m above the sea)
                             log.AppendLine($"{rec.Frame} {c.name}");
                             File.WriteAllText(logPath, log.ToString());
                         };
@@ -363,6 +399,15 @@ namespace FerramAerospaceResearch.KspTests
                 Ctrl.Attach();
                 // (throttle=X: the throttle the runs go at, default 1)
                 Ctrl.SetThrottle((float)ctx.ParamDouble("throttle", 1));
+                // (startSpeed=V: set going at V m/s along its heading at once, not accelerated from rest: quick looks at speed)
+                double startSpeed = ctx.ParamDouble("startSpeed", 0);
+                if (startSpeed > 0)
+                {
+                    Vector3 hd = Vector3.ProjectOnPlane(v.ReferenceTransform.up, v.upAxis).normalized;
+                    Vector3 sv = v.srf_velocity;
+                    v.ChangeWorldVelocity(hd * (float)startSpeed - Vector3.ProjectOnPlane(sv, v.upAxis));
+                    ctx.Record("start speed", $"{startSpeed:F1} m/s");
+                }
                 bool reported = false;
                 var csv = new StringBuilder("t,pitch_in,V_ms,trim_deg,roll_deg,thrust_kN,water_fwd_kN,momentum_fwd_kN,friction_fwd_kN,impact_fwd_kN,crossflow_fwd_kN,hydrostatic_fwd_kN,foil_fwd_kN,water_up_kN," +
                                             "wing_fwd_kN,voxel_fwd_kN,gravity_fwd_kN,ma_fwd_kN,residual_kN,alt_m,vs_ms,heading_deg,drift_deg\n");
@@ -389,14 +434,40 @@ namespace FerramAerospaceResearch.KspTests
                     return course.magnitude < 1 ? 0 : Vector3.SignedAngle(course, Vector3.ProjectOnPlane(v.ReferenceTransform.up, v.upAxis), v.upAxis);
                 }
                 double driftMax = 0;
-                foreach (double pin in pitches)
+                // (speeds=A+B+..: instead of the pitches, one phase per speed (m/s), the stick level: set going at it and held
+                // there every step, the camera's views restarted; each phase's first frame in frames/speeds.txt. For demos
+                // of what changes with speed, e.g. the bow wave)
+                double[] holdSpeeds = ctx.Param("speeds") != null
+                    ? ctx.ParamList("speeds", "").Select(s => double.Parse(s, CultureInfo.InvariantCulture)).ToArray() : null;
+                var phases = holdSpeeds != null ? holdSpeeds.Select(s => (pin: 0.0, hold: s)).ToArray() : pitches.Select(p => (pin: p, hold: 0.0)).ToArray();
+                var speedLog = new StringBuilder();
+                foreach (var (pin, hold) in phases)
                 {
                     Ctrl.Pitch = (float)pin;
                     double ts = Planetarium.GetUniversalTime(), vMax = 0;
                     string atMax = "";
+                    if (hold > 0)
+                    {
+                        if (setView != null)
+                        {
+                            setView(0);
+                            viewIdx = 1;
+                            nextView = ts + viewSec;
+                        }
+                        if (recorderGo != null)
+                        {
+                            speedLog.AppendLine($"{recorderGo.GetComponent<PlaningVideoTests.Recorder>().Frame} {hold:F1}");
+                            File.WriteAllText(Path.Combine(ctx.ResultsDir, "frames", "speeds.txt"), speedLog.ToString());
+                        }
+                    }
                     while (Planetarium.GetUniversalTime() - ts < phaseSec)
                     {
                         yield return fixedWait;
+                        if (hold > 0)
+                        {
+                            Vector3 hd = Vector3.ProjectOnPlane(v.ReferenceTransform.up, v.upAxis).normalized;
+                            v.ChangeWorldVelocity(hd * (float)hold - Vector3.ProjectOnPlane(v.srf_velocity, v.upAxis));
+                        }
                         if (!double.IsNaN(turnAfter) && double.IsNaN(turnHdg) && Planetarium.GetUniversalTime() - t0 >= turnAfter)
                         {
                             float yaw = (float)ctx.ParamDouble("turnYaw", 1), inner = (float)ctx.ParamDouble("turnThrust", 100);

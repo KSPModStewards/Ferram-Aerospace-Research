@@ -1260,6 +1260,16 @@ namespace FerramAerospaceResearch.KspTests
                     recorderGo = new GameObject("FloatplaneDemoRecorder");
                     rec = recorderGo.AddComponent<PlaningVideoTests.Recorder>();
                     rec.Dir = frames;
+                    rec.Fps = 30;
+                    // (record=video: video.mp4 with sound, piped to ffmpeg as it goes (param ffmpeg: its path; soundVolume),
+                    // no frames saved)
+                    if (ctx.Param("record") == "video")
+                    {
+                        rec.Video = Path.Combine(ctx.ResultsDir, "video.mp4");
+                        if (!string.IsNullOrEmpty(ctx.Param("ffmpeg")))
+                            rec.Ffmpeg = ctx.Param("ffmpeg");
+                        rec.SoundVolume = (float)ctx.ParamDouble("soundVolume", 0.5);
+                    }
                     Time.captureFramerate = 30;
                 }
                 // (recording, hyper-warped only when hyperWarp is given: each frame then 1/30 s of real time, more of the

@@ -816,6 +816,138 @@ namespace FerramAerospaceResearch.KspTests
             }
         }
 
+        /// <summary>
+        /// A hydrofoil: the Rudder Rig's tail fin rolled flat (its span across the flow, level) and towed at speed (m/s,
+        /// default 4) at each angle of attack (aoas, deg, default -8+-4+0+4+8), its middle at each depth (depths, m below the
+        /// surface, default 1+0: wholly under, then lying at the surface half in the water). Its lift (FAR's wing model's
+        /// force on it, up) as a lift coefficient on its area at the water's density, against FAR's wing model for the same
+        /// fin in air at sea level (FARWingAerodynamicModel.CalculateForces). Wholly under, a foil is a foil: its lift
+        /// slope the air's. At the surface it planes (PartHydrodynamics.PlaningFoilShare): wet on its lower side only,
+        /// about half the two-sided foil's lift for its wetted share, and never pulled down into the water. Writes
+        /// hydrofoil.csv.
+        /// </summary>
+        [UITest(Kind = "Check", Explicit = true, Mods = Mods, StartsAt = StartState.Flight, Craft = "Rudder Rig", CraftDir = "SPH",
+                LaunchSite = "Runway", TimeoutSec = 1800)]
+        public static IEnumerator Tow_Hydrofoil(TestContext ctx)
+        {
+            double U = ctx.ParamDouble("speed", 4);
+            double[] aoas = ctx.ParamList("aoas", "-8+-4+0+4+8").Select(x => double.Parse(x, CultureInfo.InvariantCulture)).ToArray();
+            double[] depths = ctx.ParamList("depths", "1+0").Select(x => double.Parse(x, CultureInfo.InvariantCulture)).ToArray();
+            WaterParams.Apply(ctx);
+            bool crashWas = CheatOptions.NoCrashDamage;
+            try
+            {
+                yield return Wait.Seconds(5);
+                Vessel v = FlightGlobals.ActiveVessel;
+                Part fin = v.parts.First(q => q.partInfo.name == "tailfin");
+                var wing = fin.Modules.GetModule<ferram4.FARWingAerodynamicModel>();
+                Assert.True(wing != null, "the fin is a FAR wing");
+                CheatOptions.NoCrashDamage = true;
+                v.ActionGroups.SetGroup(KSPActionGroup.SAS, false);
+
+                yield return FarFlightProbe.Place(Far.At(0, 600, 0, "hydrofoil", speedMs: 0));
+                v = FlightGlobals.ActiveVessel;
+                CelestialBody body = v.mainBody;
+                double rhoWater = body.oceanDensity * 1000, rhoAir = body.GetDensity(body.GetPressure(0), body.GetTemperature(0));
+                double q = 0.5 * rhoWater * U * U;
+                Vector3 up = v.upAxis;
+                Vector3 h = Vector3.ProjectOnPlane(v.vesselTransform.up, up).normalized;
+                Vector3 sideW = Vector3.Cross(up, h).normalized;
+                var fixedWait = new WaitForFixedUpdate();
+
+                // the rig turned: its nose along the flow pitched up aoa about the span, the fin's span level across it
+                void Orient(double aoa)
+                {
+                    Vector3 n0 = v.vesselTransform.up;
+                    Vector3 s0 = Vector3.ProjectOnPlane(fin.transform.position - v.rootPart.transform.position, n0).normalized;
+                    Vector3 n1 = Quaternion.AngleAxis((float)aoa, sideW) * h;
+                    Quaternion turn = Quaternion.LookRotation(n1, sideW) * Quaternion.Inverse(Quaternion.LookRotation(n0, s0));
+                    v.SetRotation(turn * v.vesselTransform.rotation);
+                }
+                // the fin's middle depth m below the surface
+                void Sink(double depth)
+                {
+                    Physics.SyncTransforms();
+                    Bounds b = default;
+                    bool any = false;
+                    foreach (Collider col in fin.GetComponentsInChildren<Collider>())
+                        if (col.enabled && !col.isTrigger)
+                        {
+                            if (!any) b = col.bounds;
+                            else b.Encapsulate(col.bounds);
+                            any = true;
+                        }
+                    double mid = FlightGlobals.getAltitudeAtPos(any ? (Vector3d)b.center : (Vector3d)fin.transform.position, body);
+                    v.SetPosition(v.vesselTransform.position + (Vector3d)up * (-depth - mid));
+                }
+
+                var csv = new StringBuilder("depth_m,aoa_set_deg,aoa_deg,submerged,lift_kN,CL_water,CL_air_model,share\n");
+                var rows = new List<(double depth, double aoa, double sub, double clWater, double clAir)>();
+                foreach (double depth in depths)
+                    foreach (double aoaSet in aoas)
+                    {
+                        Orient(aoaSet);
+                        yield return fixedWait;
+                        Sink(depth);
+                        RigidVessel.Set(v, h * (float)U, Vector3.zero);
+                        var lifts = new List<double>();
+                        var subs = new List<double>();
+                        var aoaSeen = new List<double>();
+                        double t0 = Planetarium.GetUniversalTime();
+                        while (Planetarium.GetUniversalTime() - t0 < 3)
+                        {
+                            yield return fixedWait;
+                            if (Planetarium.GetUniversalTime() - t0 > 1.5)
+                            {
+                                lifts.Add(Vector3d.Dot(wing.worldSpaceForce, (Vector3d)up));
+                                subs.Add(fin.submergedPortion);
+                                aoaSeen.Add(wing.CalculateAoA((Vector3d)(h * (float)U)) * Mathf.Rad2Deg);
+                            }
+                            Orient(aoaSet);
+                            Sink(depth);
+                            RigidVessel.Set(v, h * (float)U, Vector3.zero);
+                        }
+                        Vector3d velocity = (Vector3d)(h * (float)U);
+                        Vector3d fAir = wing.CalculateForces(velocity, 0, wing.CalculateAoA(velocity), rhoAir, false);
+                        double clAir = Vector3d.Dot(fAir, (Vector3d)up) / (0.0005 * rhoAir * U * U * wing.S);
+                        double lift = lifts.Average(), sub = subs.Average(), clWater = lift / (q / 1000 * wing.S);
+                        double share = Math.Abs(clAir) * sub > 1e-4 ? clWater / (clAir * sub) : double.NaN;
+                        rows.Add((depth, aoaSet, sub, clWater, clAir));
+                        csv.AppendLine(string.Join(",", F(depth), F(aoaSet), F(aoaSeen.Average()), F(sub), F(lift), F(clWater), F(clAir), F(share),
+                                                   F(wing._scratch.effective_AR), F(wing._scratch.rawLiftSlope), F(wing._scratch.liftslope), F(wing._scratch.stall), F(wing._scratch.ClIncrementFromRear)));
+                    }
+                File.WriteAllText(Path.Combine(ctx.ResultsDir, "hydrofoil.csv"), csv.ToString());
+
+                ctx.Record("fin", $"FAR's area {wing.S:F3} m2, MAC {wing.MAC:F3} m, semispan {wing.b_2:F3} m");
+                // wholly under: its lift slope (water/air) over the angles swept
+                var deep = rows.Where(r => r.sub > 0.98).ToList();
+                var surf = rows.Where(r => r.sub > 0.2 && r.sub < 0.8).ToList();
+                ctx.Record("cases", $"{deep.Count} wholly under, {surf.Count} at the surface (of {rows.Count})");
+                Assert.True(deep.Count >= 2 && surf.Count >= 2, $"cases wholly under and at the surface ({deep.Count}, {surf.Count})");
+                double Slope(List<(double depth, double aoa, double sub, double clWater, double clAir)> d, Func<(double depth, double aoa, double sub, double clWater, double clAir), double> f)
+                {
+                    var a = d.OrderBy(r => r.aoa).ToList();
+                    return (f(a[a.Count - 1]) - f(a[0])) / (a[a.Count - 1].aoa - a[0].aoa);
+                }
+                double sw = Slope(deep, r => r.clWater), sa = Slope(deep, r => r.clAir);
+                ctx.Record("deep", $"lift slope water {sw:F4} / deg, FAR's in air {sa:F4} / deg (water/air {sw / sa:F2})");
+                Assert.True(Math.Abs(sw / sa - 1) < 0.25, $"wholly under, the foil's lift slope the air's (within 25%): {sw / sa:F2}");
+                // at the surface: lifting, about half the two-sided foil's for its wetted share; pushed down, nothing
+                var lifting = surf.Where(r => r.clAir > 0.05).ToList();
+                var pressing = surf.Where(r => r.clAir < -0.05).ToList();
+                double shareUp = lifting.Count > 0 ? lifting.Average(r => r.clWater / (r.clAir * r.sub)) : double.NaN;
+                double pull = pressing.Count > 0 ? pressing.Min(r => r.clWater / (Math.Abs(r.clAir) * r.sub)) : 0;
+                ctx.Record("surface", $"lifting {shareUp:F2} of the two-sided foil's for its wetted share; pushed down {pull:F2}");
+                Assert.True(lifting.Count > 0 && shareUp > 0.3 && shareUp < 0.75, $"at the surface it planes: about half the foil's lift ({shareUp:F2})");
+                Assert.True(pull > -0.1, $"at the surface the water never pulls it down into itself ({pull:F2})");
+            }
+            finally
+            {
+                CheatOptions.NoCrashDamage = crashWas;
+                WaterParams.Restore();
+            }
+        }
+
         private static string F(double x) => x.ToString("G5", CultureInfo.InvariantCulture);
     }
 }

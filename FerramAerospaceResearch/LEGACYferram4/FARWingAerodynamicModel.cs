@@ -94,6 +94,15 @@ namespace ferram4
         /// <summary>A hull plate with FAR's hydrodynamics on: the hull model's in the water, no foil.</summary>
         public bool IsHullPlate => hullPlate && FARDebugValues.hydrodynamics;
 
+        // its load in the water over its joint's break force, smoothed (the aero failure check)
+        private double waterStress;
+
+        /// <summary>Its smoothed load in the water over its joint's break force (1: it tears off; tests).</summary>
+        internal double WaterStress => waterStress;
+
+        /// <summary>The wing's centroid its last forces were worked out at (world space; tests).</summary>
+        internal Vector3d LastCentroid => CurWingCentroid;
+
         [KSPField(isPersistant = false)] public double MAC;
 
         public double MAC_actual;
@@ -1003,6 +1012,8 @@ namespace ferram4
                     Vector3d velocity = moving.GetPointVelocity(CurWingCentroid) +
                                         Krakensbane.GetFrameVelocity() -
                                         FARAtmosphere.GetWind(FlightGlobals.currentMainBody, part, rb.position);
+                    // the motion the force acts on, through still water (no upwash, not relaxed)
+                    Vector3d motion = velocity;
                     if (host != null && HostHull(host) != null)
                         velocity += HullUpwash(host);
 
@@ -1052,6 +1063,49 @@ namespace ferram4
                         Vector3d force = DoCalculateForces(velocity, machNumber, AoA, rho, failureForceScaling);
 
                         worldSpaceForce = force;
+
+                        // a foil lying flat at the surface planes on its lower side (PartHydrodynamics.PlaningFoilShare): the
+                        // water's share of its force cut to a planing plate's, none of it pulling the foil down into the
+                        // water. By the square of how flat it lies (a rudder or keel through the surface: both sides wet),
+                        // fading out as it goes wholly under (a hydrofoil)
+                        if (waterRho > 0 && FARDebugValues.hydrodynamics && part.submergedPortion < 1)
+                        {
+                            Vector3d up = partVessel.upAxis;
+                            double flat = Vector3d.Dot((Vector3d)part_transform.forward, up);
+                            double surf = flat * flat * Math.Min(1, (1 - part.submergedPortion) / 0.1);
+                            if (surf > 0)
+                            {
+                                Vector3d water = force * (waterRho / rho), air = force - water;
+                                double vert = Vector3d.Dot(water, up);
+                                if (vert < 0)
+                                    water -= up * (vert * surf);
+                                water *= 1 - surf * (1 - FerramAerospaceResearch.FARAeroComponents.PartHydrodynamics.PlaningFoilShare);
+                                force = air + water;
+                                worldSpaceForce = force;
+                            }
+                        }
+
+                        // a foil in still water only takes energy from the motion it acts on: its lift is across the
+                        // flow, its drag against it. Worked out from the relaxed flow (RelaxedWaterFlow), which lags
+                        // the motion, the lift of a foil pitching and heaving with its hull leans into the motion and
+                        // pushes it on: a plane ditching at 60 m/s had its wings drive it 20-40 m under the sea at up to
+                        // 145 m/s (WaterTests.Behaviour_PlaneDitchesInTheSea), 260-370 MJ of work against its 36 MJ.
+                        // Its lift is cut back till the force no longer pushes (a lift that leans, not a bigger one: taken
+                        // across the motion instead, a plunging wing's grew to twice its own); its drag too, across the
+                        // motion, if that alone pushes
+                        if (waterRho > 0 && FARDebugValues.hydrodynamics && Vector3d.Dot(force, motion) > 0)
+                        {
+                            Vector3d flowN = velocity / v_scalar;
+                            Vector3d drag = Vector3d.Dot(force, flowN) * flowN, lift = force - drag;
+                            double pDrag = Vector3d.Dot(drag, motion), pLift = Vector3d.Dot(lift, motion);
+                            if (pLift > 0)
+                                lift *= Math.Min(1, Math.Max(0, -pDrag) / pLift);
+                            force = drag + lift;
+                            double along = Vector3d.Dot(force, motion), m2 = motion.sqrMagnitude;
+                            if (along > 0 && m2 > 1e-6)
+                                force -= motion * (along / m2);
+                            worldSpaceForce = force;
+                        }
 
                         if (part.submergedPortion > 0 && !FARDebugValues.hydrodynamics)
                         {
@@ -1131,12 +1185,31 @@ namespace ferram4
                         double forwardScaledForceMag = Vector3d.Dot(scaledForce, forward);
                         Vector3d forwardScaledForce = forwardScaledForceMag * (Vector3d)forward;
 
-                        if (Math.Abs(forwardScaledForceMag) >
+                        // a foil in the water on a hull (WaterHost): its force goes on the hull, so its own joint never
+                        // carries it. It tears off as that joint would (its break force: KSP's breakingForce x 50), on its
+                        // load smoothed over FARAeroPartModule.WaterBreakTau (a splash's one-step spike breaks nothing): a
+                        // ditching plane's 100 kg winglet took 2.9 MN at 60 m/s through the hull's rigidbody, and the
+                        // joints it strained flung the plane 40 m/s up in three steps. (FAR's aero failure limits are the
+                        // air's: a boat's B9 rudder's is 1.4 kN, reached at 4 m/s)
+                        double jointLimit = host != null && part.attachJoint != null && part.attachJoint.Joint != null
+                                                ? part.attachJoint.Joint.breakForce
+                                                : double.PositiveInfinity;
+                        bool wetStress = waterRho > 0 && FARDebugValues.hydrodynamics && FARDebugValues.allowStructuralFailures &&
+                                         !CheatOptions.UnbreakableJoints && jointLimit > 0 && !double.IsInfinity(jointLimit);
+                        waterStress = wetStress
+                                          ? waterStress + (force.magnitude / jointLimit - waterStress) *
+                                            (1 - Math.Exp(-TimeWarp.fixedDeltaTime / Math.Max(1e-3, FARAeroPartModule.WaterBreakTau)))
+                                          : 0;
+                        if (wetStress && waterStress > 1 ||
+                            Math.Abs(forwardScaledForceMag) >
                             YmaxForce * failureForceScaling * (1 + part.submergedPortion * 1000) ||
                             (scaledForce - forwardScaledForce).magnitude >
                             XZmaxForce * failureForceScaling * (1 + part.submergedPortion * 1000))
                             if (part.parent && !partVessel.packed)
                             {
+                                if (wetStress && waterStress > 1)
+                                    FARLogger.Info($"{part.partInfo.title} torn off by the water: {force.magnitude:F0} kN on its joint, smoothed {waterStress:F2}x its break force " +
+                                                   $"{jointLimit:G4} kN; {part.submergedPortion:F2} under at {v_scalar:F1} m/s");
                                 partVessel.SendMessage("AerodynamicFailureStatus");
                                 string msg = Localizer.Format("FARFlightLogAeroFailure",
                                                               KSPUtil.PrintTimeStamp(FlightLogger.met),
@@ -1149,6 +1222,14 @@ namespace ferram4
                                 host = null;
                             }
 
+                        // (the crush cap, PartHydrodynamics.CrushG: a wet foil's force counted raw, applied at the vessel's
+                        // scale; its tear-off above sees it raw)
+                        if (waterRho > 0 && PartHydrodynamics.CrushG > 0 && FARDebugValues.hydrodynamics &&
+                            partVessel.GetComponent<FARVesselAero>()?.Hydrodynamics is VesselHydrodynamics vh)
+                        {
+                            vh.AddFoil(host != null ? host : part, force);
+                            force *= vh.CrushScale;
+                        }
                         (host != null ? host : part).AddForceAtPosition(force, AerodynamicCenter);
                     }
                     else

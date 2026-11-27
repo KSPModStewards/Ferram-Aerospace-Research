@@ -838,6 +838,45 @@ namespace FerramAerospaceResearch.FARAeroComponents
             partLocalAngVel = partTransform.InverseTransformDirection(partLocalAngVel);
         }
 
+        // the water tearing a part off: its drag across the water (horizontal, along the part's horizontal motion: a
+        // splashdown's vertical slam is no part of it), smoothed over WaterBreakTau s, past its breakingForce times
+        // WaterBreakFactor (kN). KSP's joints hold 50x breakingForce, so a gear leg or an engine pod dragged through the
+        // water at speed stayed on at several g; a real one is built for far less drag than the airframe's weight
+        public static double WaterBreakFactor = 6, WaterBreakTau = 0.06;
+        private double waterDragSmooth;
+        internal double WaterDragSmoothed => waterDragSmooth;
+
+        /// <summary>Whether the water has torn this part off this step (WaterBreakFactor); call once a step after the
+        /// water's forces are in (worldSpaceHydroForce).</summary>
+        internal bool WaterTearsOff(double dt)
+        {
+            Vector3 up = vessel != null ? (Vector3)vessel.upAxis : Vector3.up;
+            Vector3 along = Vector3.ProjectOnPlane(worldSpaceVelNorm, up);
+            double drag = 0;
+            if (part.submergedPortion > 0 && along.sqrMagnitude > 1e-4f)
+                drag = Math.Max(0, -Vector3.Dot(Vector3.ProjectOnPlane(worldSpaceHydroForce, up), along.normalized));
+            waterDragSmooth += (drag - waterDragSmooth) * (1 - Math.Exp(-dt / Math.Max(1e-3, WaterBreakTau)));
+            return part.parent != null && WaterBreakFactor > 0 && waterDragSmooth > part.breakingForce * WaterBreakFactor;
+        }
+
+        /// <summary>Tears off what the water's drag on this part tears: the nearest surface-attached part from it to the
+        /// root (itself, or the pod or nacelle it is in), with all that hangs from it. A part stacked all the way to the
+        /// root is the airframe's own line (a fuselage, a hull): none of it comes off.</summary>
+        internal void TearOffByWater()
+        {
+            Part torn = part;
+            while (torn != null && torn.parent != null && torn.attachMode != AttachModes.SRF_ATTACH)
+                torn = torn.parent;
+            double drag = waterDragSmooth;
+            waterDragSmooth = 0;
+            if (torn == null || torn.parent == null)
+                return;
+            string what = torn == part ? part.partInfo.title : $"{torn.partInfo.title} (with {part.partInfo.title})";
+            FARLogger.Info($"{what} torn off by the water: drag {drag:F0} kN on {part.partInfo.title}, breakingForce {part.breakingForce:G4} kN x {WaterBreakFactor:G3}");
+            FlightLogger.eventLog.Add($"[{KSPUtil.PrintTimeStamp(FlightLogger.met)}]: {what} was torn off by the water.");
+            torn.decouple(25);
+        }
+
         private void CheckAeroStressFailure()
         {
             if (partForceMaxY * (1 + part.submergedPortion * 1000) < partLocalForce.y ||

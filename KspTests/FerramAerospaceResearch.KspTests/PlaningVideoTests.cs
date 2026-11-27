@@ -223,13 +223,41 @@ namespace FerramAerospaceResearch.KspTests
 
         private static string F(double x) => x.ToString("G5", CultureInfo.InvariantCulture);
 
-        /// <summary>Saves the screen at the end of every frame and draws the overlay.</summary>
+        /// <summary>Saves the screen at the end of every frame (Dir/NNNNN.jpg), except while Paused (nothing written; the
+        /// frame count not advanced). With Video set: each frame's raw pixels piped to an ffmpeg process instead (Ffmpeg:
+        /// its path, default "ffmpeg" on the PATH), encoded as it goes to that .mp4 at Fps (H.264, Height / Crf / Preset):
+        /// a few MB rather than hundreds of MB of JPEGs, and no encode afterwards. With Sound too (default): the game's
+        /// audio, rendered by Unity's AudioRenderer in step with the capture frame rate (the speakers silent meanwhile),
+        /// each frame's samples kept beside it (those of paused frames dropped with them), muxed in as AAC at the end.
+        /// Finished when the recorder is destroyed. Draws the overlay (Lines) over the frames.
+        /// (Ported from WaterWakes' KspTests TestTools.Recorder.)</summary>
         internal class Recorder : MonoBehaviour
         {
             public string Dir;
             public string[] Lines = Array.Empty<string>();
-            public int Frame;
             private GUIStyle style, shadow;
+            public int Frame;
+            public bool Paused;
+            public string Video, Ffmpeg = "ffmpeg";
+            public int Fps = 30;
+            public int Height = 720, Crf = 24;    // (the demo clips': 720p (aspect kept), crf 24, x264 medium; Height 0: as captured)
+            public string Preset = "medium";
+            public bool Sound = true;
+            public float SoundVolume = 0.5f;   // the listener's volume while it records: KspTest mutes the game (MASTER_VOLUME 0),
+                                               // and AudioRenderer sends the speakers silence meanwhile anyway
+            private float listenerWas = -1;
+            public bool ToneTest;    // (diagnostic: a quiet 440 Hz tone played while recording, to tell a silent game from a broken capture)
+            private float peak;
+            private int peakFrames;
+            private AudioSource tone;
+
+            private System.Diagnostics.Process ff;
+            private Stream pipe;
+            private int vw, vh, bpp;
+            private string target, silentVideo, audioRaw;
+            private FileStream audio;
+            private bool rendering;
+            private int channels, rate;
 
             private IEnumerator Start()
             {
@@ -237,11 +265,199 @@ namespace FerramAerospaceResearch.KspTests
                 while (true)
                 {
                     yield return end;
+                    TakeAudio(!Paused && Video != null);
+                    if (Paused)
+                        continue;
                     Texture2D tex = ScreenCapture.CaptureScreenshotAsTexture();
-                    File.WriteAllBytes(Path.Combine(Dir, $"{Frame:D5}.jpg"), tex.EncodeToJPG(92));
+                    if (Video != null)
+                        Pipe(tex);
+                    else
+                        File.WriteAllBytes(Path.Combine(Dir, $"{Frame:D5}.jpg"), tex.EncodeToJPG(92));
                     Destroy(tex);
                     Frame++;
                 }
+            }
+
+            // this frame's audio (GetSampleCountForCaptureFrame: the capture frame rate's share), kept or dropped
+            private void TakeAudio(bool keep)
+            {
+                if (!Sound || Video == null)
+                    return;
+                if (!rendering)
+                {
+                    rate = AudioSettings.outputSampleRate;
+                    AudioSpeakerMode mode = AudioSettings.GetConfiguration().speakerMode;
+                    channels = mode == AudioSpeakerMode.Mono ? 1 : mode == AudioSpeakerMode.Quad ? 4 : mode == AudioSpeakerMode.Surround ? 5
+                             : mode == AudioSpeakerMode.Mode5point1 ? 6 : mode == AudioSpeakerMode.Mode7point1 ? 8 : 2;
+                    rendering = AudioRenderer.Start();
+                    if (ToneTest)
+                    {
+                        var clip = AudioClip.Create("KspTest tone", rate, 1, rate, false);
+                        var d = new float[rate];
+                        for (int i = 0; i < rate; i++)
+                            d[i] = 0.2f * Mathf.Sin(2 * Mathf.PI * 440 * i / rate);
+                        clip.SetData(d, 0);
+                        tone = gameObject.AddComponent<AudioSource>();
+                        tone.clip = clip;
+                        tone.loop = true;
+                        tone.spatialBlend = 0;
+                        tone.Play();
+                    }
+                    if (!rendering)
+                    {
+                        Debug.LogError("[KspTest] AudioRenderer would not start: the video without sound");
+                        Sound = false;
+                        return;
+                    }
+                }
+                // (each frame: KSP sets the listener's volume from its settings)
+                if (listenerWas < 0)
+                    listenerWas = AudioListener.volume;
+                AudioListener.volume = SoundVolume;
+                int n = AudioRenderer.GetSampleCountForCaptureFrame();
+                if (n <= 0)
+                    return;
+                var buf = new Unity.Collections.NativeArray<float>(n * channels, Unity.Collections.Allocator.Temp);
+                try
+                {
+                    AudioRenderer.Render(buf);
+                    // (diagnostic, each second: the samples' peak, the listener, the sources playing)
+                    for (int i = 0; i < buf.Length; i++)
+                        peak = Mathf.Max(peak, Mathf.Abs(buf[i]));
+                    if (++peakFrames >= Fps)
+                    {
+                        int playing = 0;
+                        foreach (AudioSource a in FindObjectsOfType<AudioSource>())
+                            if (a.isPlaying)
+                                playing++;
+                        Debug.Log($"[KspTest] sound: peak {peak:F4}, listener volume {AudioListener.volume:F2}{(AudioListener.pause ? " PAUSED" : "")}, {playing} sources playing, {n} samples/frame");
+                        peak = 0;
+                        peakFrames = 0;
+                    }
+                    if (!keep)
+                        return;
+                    if (audio == null)
+                    {
+                        audioRaw = Video + ".audio.f32";
+                        audio = new FileStream(audioRaw, FileMode.Create, FileAccess.Write);
+                    }
+                    float[] f = buf.ToArray();
+                    var bytes = new byte[f.Length * 4];
+                    Buffer.BlockCopy(f, 0, bytes, 0, bytes.Length);
+                    audio.Write(bytes, 0, bytes.Length);
+                }
+                finally
+                {
+                    buf.Dispose();
+                }
+            }
+
+            private void Pipe(Texture2D tex)
+            {
+                if (ff == null)
+                {
+                    // (the capture's rows bottom up: flipped and converted by ffmpeg; even sizes for yuv420p). With sound, the
+                    // picture first to a silent file beside it, the sound muxed in at the end
+                    vw = tex.width;
+                    vh = tex.height;
+                    bpp = tex.format == TextureFormat.RGB24 ? 3 : 4;
+                    target = Video;
+                    silentVideo = Sound ? Path.ChangeExtension(Video, ".silent.mp4") : Video;
+                    string pf = bpp == 3 ? "rgb24" : tex.format == TextureFormat.ARGB32 ? "argb" : tex.format == TextureFormat.BGRA32 ? "bgra" : "rgba";
+                    string args = $"-y -loglevel error -f rawvideo -pix_fmt {pf} -s {vw}x{vh} -r {Fps} -i - " +
+                                  $"-vf \"vflip,{(Height > 0 ? $"scale=-2:{Height}" : "crop=trunc(iw/2)*2:trunc(ih/2)*2")}\" -c:v libx264 -preset {Preset} -crf {Crf} -pix_fmt yuv420p -movflags +faststart \"{silentVideo}\"";
+                    try
+                    {
+                        ff = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Ffmpeg, args)
+                        {
+                            UseShellExecute = false, RedirectStandardInput = true, CreateNoWindow = true,
+                        });
+                        pipe = ff.StandardInput.BaseStream;
+                        Debug.Log($"[KspTest] recording video to {Video} ({vw}x{vh} at {Fps} fps{(Sound ? ", with sound" : "")}, {Ffmpeg})");
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogError($"[KspTest] could not start {Ffmpeg} ({e.Message}): saving frames as JPEGs instead");
+                        Video = null;
+                        return;
+                    }
+                }
+                if (tex.width != vw || tex.height != vh)
+                    return;   // (the window resized: those frames dropped)
+                byte[] raw = tex.GetRawTextureData();
+                if (raw.Length != vw * vh * bpp)
+                {
+                    Debug.LogError($"[KspTest] video frame {raw.Length} bytes, not {vw}x{vh}x{bpp} ({tex.format}): recording stopped");
+                    Video = null;
+                    Finish();
+                    return;
+                }
+                try
+                {
+                    pipe.Write(raw, 0, raw.Length);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"[KspTest] video pipe failed ({e.Message}): recording stopped");
+                    Video = null;
+                    Finish();
+                }
+            }
+
+            private void Finish()
+            {
+                if (rendering)
+                {
+                    AudioRenderer.Stop();
+                    rendering = false;
+                }
+                if (listenerWas >= 0)
+                {
+                    AudioListener.volume = listenerWas;
+                    listenerWas = -1;
+                }
+                audio?.Close();
+                if (ff == null)
+                    return;
+                try
+                {
+                    pipe.Close();
+                    if (!ff.WaitForExit(60000))
+                        Debug.LogError("[KspTest] ffmpeg did not finish the video within 60 s");
+                    else
+                        Debug.Log($"[KspTest] video written: {silentVideo}, {Frame} frames, ffmpeg exit {ff.ExitCode}");
+                    ff = null;
+                    if (silentVideo != target)
+                        Mux();
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"[KspTest] finishing the video: {e.Message}");
+                }
+                ff = null;
+            }
+
+            // the sound into the picture (the picture copied as is): Video; the silent file and the raw samples then deleted
+            private void Mux()
+            {
+                if (audio == null || !File.Exists(audioRaw) || new FileInfo(audioRaw).Length == 0)
+                {
+                    File.Copy(silentVideo, target, true);
+                    File.Delete(silentVideo);
+                    Debug.Log($"[KspTest] no sound recorded: {target} silent");
+                    return;
+                }
+                string args = $"-y -loglevel error -i \"{silentVideo}\" -f f32le -ar {rate} -ac {channels} -i \"{audioRaw}\" " +
+                              $"-c:v copy -c:a aac -b:a 160k -ac 2 -shortest -movflags +faststart \"{target}\"";
+                var mux = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Ffmpeg, args) { UseShellExecute = false, CreateNoWindow = true });
+                if (mux.WaitForExit(60000) && mux.ExitCode == 0)
+                {
+                    File.Delete(silentVideo);
+                    File.Delete(audioRaw);
+                    Debug.Log($"[KspTest] video with sound: {target} ({rate} Hz, {channels} ch)");
+                }
+                else
+                    Debug.LogError($"[KspTest] muxing the sound failed (exit {(mux.HasExited ? mux.ExitCode : -1)}): the silent video and the samples kept ({silentVideo}, {audioRaw})");
             }
 
             private void OnGUI()
@@ -261,6 +477,8 @@ namespace FerramAerospaceResearch.KspTests
                     y += lh;
                 }
             }
+
+            private void OnDestroy() => Finish();
         }
     }
 }
